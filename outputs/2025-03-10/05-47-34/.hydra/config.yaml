@@ -1,0 +1,20 @@
+task: binary-addition
+param_type: mlp
+tasks:
+  binary-addition:
+    name: binary-addition
+    seq_len: 22
+    vol: 2
+    train_size: 1800
+    val_size: 200
+  sudoku:
+    name: sudoku
+    seq_len: 81
+    vol: 9
+train:
+  epochs: 100
+  lr: 0.0001
+  batch_size: 100
+sample:
+  steps: 10
+  temperature: 1.0

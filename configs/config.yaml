@@ -1,0 +1,27 @@
+# arguments
+task: binary-addition #sudoku
+param_type: mlp #transformer
+load_ebm_ckpts: True
+
+#all tasks
+tasks:
+  binary-addition:
+    name: binary-addition
+    seq_len: 22 #12-bits input and 10-bits output
+    vol: 2 #binary
+    train_size: 1800
+    val_size: 200
+
+  sudoku: 
+    name: sudoku
+    seq_len: 81 #9x9 ?
+    vol: 9 #1~9 ?
+
+train:
+  epochs: 100
+  lr: 1e-4
+  batch_size: 100
+
+sample:
+  steps: 10
+  temperature: 1.0
