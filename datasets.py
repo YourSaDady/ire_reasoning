@@ -241,14 +241,14 @@ def batchlize(dataset, batch_size=1000):
 
 
 
-def load_data(task, batch_size):
+def load_data(task, train_batch_size, val_batch_size):
     if task == 'sudoku' or task.startswith('binary'):
         train_set = SATDataset(task, split='train')
         val_set = SATDataset(task, split='val')
         print(f'train_set.inp_dim: {train_set.inp_dim}') #12
         print(f'train_set.out_dim: {train_set.out_dim}') #10
-        print(f'first sample: {train_set[0]}') #tensor([[0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 1, 1, 0, 0, 1]], dtype=torch.int8)
+        print(f'first sample: {train_set[0]}') #(tensor([0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0, 1], dtype=torch.int8), tensor([0, 0, 0, 0, 0, 1, 1, 0, 0, 1], dtype=torch.int8))
         print(f'train_size: {len(train_set)}, val_size: {len(val_set)}') #1800, 200
-        return batchlize(train_set, batch_size), batchlize(val_set, batch_size), len(train_set), len(val_set)
+        return batchlize(train_set, train_batch_size), batchlize(val_set, val_batch_size), len(train_set), len(val_set)
     else:
         raise NotImplementedError(f'The specified task: {task} is not defined')

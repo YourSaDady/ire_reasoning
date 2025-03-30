@@ -1,16 +1,29 @@
 # arguments
 task: binary-addition #sudoku
-param_type: mlp #transformer
-load_ebm_ckpts: True
+param_type: transformer #mlp
+special_tokens: ['<mask>']
+load_ebm_ckpts: False
+
+
+# 这个参数暂时无用
+models:
+  llama3.1-8b-instruct:
+    # regular tokens: [0-127999]
+    # special indices: [128000, 128009]
+    # special_tokens_map: {'bos_token': '<|begin_of_text|>', 'eos_token': '<|eot_id|>'}
+
+    name: meta-llama/Llama-3.1-8B-Instruct
 
 #all tasks
 tasks:
   binary-addition:
     name: binary-addition
-    seq_len: 22 #12-bits input and 10-bits output
-    vol: 2 #binary
+    inp_len: 12
+    out_len: 10 #k
+    num_classes: 2 #d #binary (exclude special tokens, eg. <mask>)
     train_size: 1800
     val_size: 200
+    metrics: ['acc']
 
   sudoku: 
     name: sudoku
@@ -18,10 +31,15 @@ tasks:
     vol: 9 #1~9 ?
 
 train:
-  epochs: 100
+  epochs: 10
   lr: 1e-4
   batch_size: 100
+  visualize: True
 
-sample:
+sampling:
+  batch_size: 1
   steps: 10
   temperature: 1.0
+
+visualize:
+  time_step: 1 #the time step between consecutive screenshots 
