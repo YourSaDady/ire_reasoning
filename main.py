@@ -34,42 +34,39 @@ def test(model, test_data):
 @hydra.main(version_base=None, config_path='./configs',
             config_name='config')
 def main(config):
-    # parser = argparse.ArgumentParser()
-    # parser.add_argument('--task', type=str, default='binary-addition')
-    # parser.add_argument('--param_type', type=str, default='mlp')
-    # args = parser.parse_args()
-
-    # Generate synthetic training data (replace with real Sudoku data)
-    # num_samples = 1000
-    # data = torch.randint(0, 10, (num_samples, 5)).float()
     '''1. Load task datasets'''
-    print(f'\nLoading datasets for task: {config.task}...')
-    train_data, val_data, train_size, val_size = load_data(config.task, config.train.batch_size, config.sampling.batch_size) 
+    print(f'\nLoading datasets for task: {config.task_name}...')
+    train_data, val_data, train_size, val_size = load_data(config.task_name, config.train.batch_size, config.sampling.batch_size) 
 
     '''2. Initialize and train EBMs'''
     print(f'\nInitializing EBMs...')
-    task_config = config.tasks[config.task]
+    task_config = config.tasks[config.task_name]
     print(f'inp_len: {task_config.inp_len}, out_len: {task_config.out_len}, num_classes: {task_config.num_classes}')
     sebm = SequentialEBM(
         parameterization=config.param_type,
         task_config=task_config,
+        special_tokens=config.special_tokens,
         )
 
     if not config.load_ebm_ckpts:
         print(f'No checkpoints found.')
-        # print(f'\nBefore training...')
-        # # test(sebm, val_data[0]) 
-        # sebm.evaluate(val_data, store_stat=False, sampling_config=config.sampling, visualize_config=config.visualize) 
+        print(f'\nBefore training...')
+        # test(sebm, val_data[0]) 
+        sebm.evaluate(val_data, store_stat=False, sampling_config=config.sampling, visual_config=config.visualize) 
         
-        print(f'\n3. Start training...')
-        sebm.train(train_data, config.train, config.tasks[config.task])
+        # return##############
+        
+        print(f'\n\n\n3. Start training...')
+        sebm.train(train_data, config.train, config.tasks[config.task_name], config.visualize)
+        
+        # return##############
     else:
         print(f'\n3. Loading checkpoints...')
         sebm.load_ckpts()
 
     '''3. Evaluate'''
-    print(f'\n4. Start evaluation...')
-    sebm.evaluate(val_data, store_stat=True, sampling_config=config.sampling, visualize_config=config.visualize)
+    print(f'\n\n\n4. Start evaluation...')
+    sebm.evaluate(val_data, store_stat=True, sampling_config=config.sampling, visual_config=config.visualize)
 
 
 # Example usage

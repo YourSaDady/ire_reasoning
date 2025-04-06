@@ -1,0 +1,20 @@
+Write to stat file at "./stats/train/binary-addition_mlp.jsonl" to store loss and EBMs statistics...
+epoch:   0%|                                                                                                                                                                                                                                                                                                   | 0/10 [00:00<?, ?it/s]/home/user/shiqi/yichuan/EBM/ire_reasoning/models.py:380: UserWarning: To copy construct from a tensor, it is recommended to use sourceTensor.clone().detach() or sourceTensor.clone().detach().requires_grad_(True), rather than torch.tensor(sourceTensor).
+  neg_xu = torch.tensor(neg_xu, dtype=torch.long).to(device)                                                                                                                                                                                                                                                  | 0/450 [00:00<?, ?it/s]
+batch:   2%|██████▏                                                                                                                                                                                                                                                                                  | 10/450 [00:00<00:18, 23.55it/s]
+epoch:   0%|                                                                                                                                                                                                                                                                                                   | 0/10 [00:00<?, ?it/s]
+Error executing job with overrides: []
+Traceback (most recent call last):
+  File "/home/user/shiqi/yichuan/EBM/ire_reasoning/main.py", line 60, in main
+    sebm.train(train_data, config.train, config.tasks[config.task_name], config.visualize)
+  File "/home/user/shiqi/yichuan/EBM/ire_reasoning/models.py", line 424, in train
+    torch.save(state_dict, ckpts_path)
+  File "/home/user/anaconda3/envs/yichuan_ebdm/lib/python3.9/site-packages/torch/serialization.py", line 849, in save
+    with _open_zipfile_writer(f) as opened_zipfile:
+  File "/home/user/anaconda3/envs/yichuan_ebdm/lib/python3.9/site-packages/torch/serialization.py", line 716, in _open_zipfile_writer
+    return container(name_or_buffer)
+  File "/home/user/anaconda3/envs/yichuan_ebdm/lib/python3.9/site-packages/torch/serialization.py", line 687, in __init__
+    super().__init__(torch._C.PyTorchFileWriter(self.name))
+RuntimeError: Parent directory ./ebm_ckpts does not exist.
+
+Set the environment variable HYDRA_FULL_ERROR=1 for a complete stack trace.

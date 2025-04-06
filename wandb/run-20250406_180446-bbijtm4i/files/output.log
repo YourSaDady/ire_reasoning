@@ -1,0 +1,20 @@
+Write to stat file at "./stats/train/binary-addition_mlp.jsonl" to store loss and EBMs statistics...
+epoch:   0%|                                                                                                                                                                                                                                                                                                   | 0/20 [00:00<?, ?it/s]/home/user/shiqi/yichuan/EBM/ire_reasoning/models.py:380: UserWarning: To copy construct from a tensor, it is recommended to use sourceTensor.clone().detach() or sourceTensor.clone().detach().requires_grad_(True), rather than torch.tensor(sourceTensor).
+  neg_xu = torch.tensor(neg_xu, dtype=torch.long).to(device)                                                                                                                                                                                                                                                   | 0/18 [00:00<?, ?it/s]
+batch:  56%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████▋                                                                                                                             | 10/18 [00:00<00:00, 20.77it/s]
+epoch:   0%|                                                                                                                                                                                                                                                                                                   | 0/20 [00:00<?, ?it/s]
+
+Finished training, Checkpoints saved to ./ebm_ckpts/binary-addition_mlp.pth
+Training spent 0:0:0.
+
+
+
+
+4. Start evaluation...
+Error executing job with overrides: []
+Traceback (most recent call last):
+  File "/home/user/shiqi/yichuan/EBM/ire_reasoning/main.py", line 69, in main
+    sebm.evaluate(val_data, store_stat=True, sampling_config=config.sampling, visualize_config=config.visualize)
+TypeError: evaluate() got an unexpected keyword argument 'visualize_config'
+
+Set the environment variable HYDRA_FULL_ERROR=1 for a complete stack trace.

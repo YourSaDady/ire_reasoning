@@ -1,0 +1,51 @@
+Write to stat file at "./stats/train/binary-addition_mlp.jsonl" to store loss and EBMs statistics...
+epoch:   0%|                                                                                                                                                                                                                                                      | 0/100 [00:00<?, ?it/s]/home/user/shiqi/yichuan/EBM/ire_reasoning/models.py:394: UserWarning: To copy construct from a tensor, it is recommended to use sourceTensor.clone().detach() or sourceTensor.clone().detach().requires_grad_(True), rather than torch.tensor(sourceTensor).
+  neg_xu = torch.tensor(neg_xu, dtype=torch.long).to(device)
+epoch: 100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 100/100 [00:10<00:00,  9.95it/s]
+
+Finished training, Checkpoints saved to ./ebm_ckpts/binary-addition_mlp.pth
+Training spent 0:0:10.
+
+
+
+
+4. Start evaluation...
+  0%|                                                                                                                                                                                                                                                             | 0/102 [00:00<?, ?it/s]
+Error executing job with overrides: []
+Traceback (most recent call last):
+  File "/home/user/shiqi/yichuan/EBM/ire_reasoning/models.py", line 272, in sampling
+    y_oi_prime = torch.multinomial(p_oi, num_samples=1) #Size(batch_size, 1)
+RuntimeError: probability tensor contains either `inf`, `nan` or element < 0
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/home/user/shiqi/yichuan/EBM/ire_reasoning/main.py", line 69, in main
+    sebm.evaluate(val_data, store_stat=True, sampling_config=config.sampling, visual_config=config.visualize)
+  File "/home/user/shiqi/yichuan/EBM/ire_reasoning/models.py", line 550, in evaluate
+    pred_batch, ebms_log = self.sampling(data, sampling_config=sampling_config, visual_ebms=visual_ebms)
+  File "/home/user/shiqi/yichuan/EBM/ire_reasoning/models.py", line 274, in sampling
+    raise RuntimeError(f'multinomial() input: p_oi seems contains nan.\n' \
+RuntimeError: multinomial() input: p_oi seems contains nan.
+p_oi(torch.Size([1, 2])):
+tensor([[nan, nan]])
+ei_dist(torch.Size([1, 2])):
+tensor([[nan, nan]])
+gamma[:, pi[:k], :](torch.Size([1, 1, 2])):
+tensor([[[nan, nan]]])
+gamma(torch.Size([1, 10, 2])):
+tensor([[[nan, nan],
+         [nan, nan],
+         [nan, nan],
+         [nan, nan],
+         [nan, nan],
+         [nan, nan],
+         [nan, nan],
+         [nan, nan],
+         [nan, nan],
+         [nan, nan]]])
+model_input(torch.Size([1, 22])):
+tensor([[0., 0., 1., 1., 0., 0., 1., 1., 1., 1., 0., 0., 2., 2., 2., 2., 0., 2.,
+         2., 2., 2., 2.]])
+
+Set the environment variable HYDRA_FULL_ERROR=1 for a complete stack trace.

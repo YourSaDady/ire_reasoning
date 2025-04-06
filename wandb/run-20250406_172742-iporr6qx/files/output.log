@@ -1,0 +1,18 @@
+Write to stat file at "./stats/train/binary-addition_mlp.jsonl" to store loss and EBMs statistics...
+epoch:   0%|                                                                                                                                                                                                                                                                                                   | 0/10 [00:00<?, ?it/s]/home/user/shiqi/yichuan/EBM/ire_reasoning/models.py:376: UserWarning: To copy construct from a tensor, it is recommended to use sourceTensor.clone().detach() or sourceTensor.clone().detach().requires_grad_(True), rather than torch.tensor(sourceTensor).
+  neg_xu = torch.tensor(neg_xu, dtype=torch.long).to(device)                                                                                                                                                                                                                                                  | 0/450 [00:00<?, ?it/s]
+Inside self.mask, mask_idx = 2, randomly generated mask_list = [0, 1, 0, 1, 0, 0, 1, 0, 0, 0]
+batch:   2%|██████▏                                                                                                                                                                                                                                                                                  | 10/450 [00:00<00:26, 16.88it/s]
+epoch:   0%|                                                                                                                                                                                                                                                                                                   | 0/10 [00:00<?, ?it/s]
+Inside self.mask, mask_idx = 2, randomly generated mask_list = [1, 1, 1, 1, 1, 1, 0, 1, 1, 1]
+Inside self.mask, mask_idx = 2, randomly generated mask_list = [0, 0, 0, 0, 0, 0, 0, 0, 0, 1]
+Inside self.mask, mask_idx = 2, randomly generated mask_list = [0, 0, 1, 0, 1, 0, 0, 0, 0, 0]
+Inside self.mask, mask_idx = 2, randomly generated mask_list = [1, 1, 0, 0, 0, 1, 0, 1, 1, 0]
+Inside self.mask, mask_idx = 2, randomly generated mask_list = [1, 1, 0, 1, 1, 1, 1, 1, 1, 1]
+Inside self.mask, mask_idx = 2, randomly generated mask_list = [1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
+Inside self.mask, mask_idx = 2, randomly generated mask_list = [0, 1, 1, 0, 1, 0, 0, 0, 0, 1]
+Inside self.mask, mask_idx = 2, randomly generated mask_list = [0, 0, 1, 0, 0, 1, 0, 0, 0, 0]
+Inside self.mask, mask_idx = 2, randomly generated mask_list = [1, 1, 1, 1, 1, 1, 1, 1, 0, 1]
+Inside self.mask, mask_idx = 2, randomly generated mask_list = [1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
+
+Finished training, spending 0:0:0.

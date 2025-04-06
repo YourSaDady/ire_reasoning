@@ -13,7 +13,8 @@ os.chdir('/home/user/shiqi/yichuan/EBM/ire_reasoning')
 Sudoku Task. Borrowed from IRED
 '''
 def get_data_dir(identifier):
-    base_dir = osp.join(osp.dirname(__file__), 'datasets') # ./datasets??
+    # base_dir = osp.join(osp.dirname(__file__), 'datasets') # ./datasets??
+    base_dir = f'/home/user/shiqi/yichuan/EBM/datasets'
     print(f'base_dir: {base_dir}')
     if identifier.startswith('sudoku'):
         return osp.join(base_dir, 'sudoku')
@@ -82,7 +83,7 @@ class SATDataset(Dataset): #identifier 就是 'binary_arith' + {split}
             self.labels = self.labels[int(nr_datapoints * 0.9):]
 
         if dataset_identifier == 'sudoku':
-            self.cond_entry = (self.features.sum(axis=-1) == 1)[:, :, :, None].expand(-1, -1, -1, 9)
+            self.cond_entry = (self.features.sum(axis=-1) == 1)[:, :, :, None].expand(-1, -1, -1, 9) #?
         self.inp_dim = self.features[0].numel()
         self.out_dim = self.labels[0].numel()
 
@@ -234,10 +235,15 @@ class SATDataset(Dataset): #identifier 就是 'binary_arith' + {split}
 
 #     return train_loader, valid_loader
 
-
-def batchlize(dataset, batch_size=1000):
-    dataset = [torch.cat([data[0].unsqueeze(0), data[1].unsqueeze(0)], dim=1) for data in dataset] #TODO: binary-arith only (for now)
-    return [torch.cat(dataset[idx:idx+batch_size], dim=0) for idx in range(0, len(dataset), batch_size)]
+'''sample_num * [Size(inp_len), Size(out_len)] -> batch_num * Size(batch_size, inp_len+out_len)'''
+def batchlize(dataset, batch_size=1000): #TODO: add Sudoku specification
+    dataset = [torch.cat([data[0].unsqueeze(0), data[1].unsqueeze(0)], dim=1) for data in dataset] #list[Size(1, inp_len+out_len)]
+    batches = [] #list[Size(batch_size, inp_len+out_len)]
+    for idx in range(0, len(dataset), batch_size):
+        if idx+batch_size < len(dataset): #ensure all batches are full with samples
+            batches.append(torch.cat(dataset[idx:idx+batch_size], dim=0))
+            assert batches[-1].size(0) == batch_size
+    return batches
 
 
 
@@ -248,7 +254,9 @@ def load_data(task, train_batch_size, val_batch_size):
         print(f'train_set.inp_dim: {train_set.inp_dim}') #12
         print(f'train_set.out_dim: {train_set.out_dim}') #10
         print(f'first sample: {train_set[0]}') #(tensor([0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0, 1], dtype=torch.int8), tensor([0, 0, 0, 0, 0, 1, 1, 0, 0, 1], dtype=torch.int8))
-        print(f'train_size: {len(train_set)}, val_size: {len(val_set)}') #1800, 200
-        return batchlize(train_set, train_batch_size), batchlize(val_set, val_batch_size), len(train_set), len(val_set)
+        train_batches, val_batches = batchlize(train_set, train_batch_size), batchlize(val_set, val_batch_size)
+        train_size, val_size = len(train_batches)*train_batch_size, len(val_batches)*val_batch_size
+        print(f'train_size: {train_size}, val_size: {val_size}') #1800, 200
+        return train_batches, val_batches, train_size, val_size
     else:
         raise NotImplementedError(f'The specified task: {task} is not defined')

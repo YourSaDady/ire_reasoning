@@ -1,0 +1,15 @@
+{"time":"2025-04-06T23:05:50.338403761+08:00","level":"INFO","msg":"stream: starting","core version":"0.19.9","symlink path":"/home/user/shiqi/yichuan/EBM/ire_reasoning/wandb/run-20250406_230550-xmgitm4v/logs/debug-core.log"}
+{"time":"2025-04-06T23:05:50.688594304+08:00","level":"INFO","msg":"created new stream","id":"xmgitm4v"}
+{"time":"2025-04-06T23:05:50.688698117+08:00","level":"INFO","msg":"stream: started","id":"xmgitm4v"}
+{"time":"2025-04-06T23:05:50.688711183+08:00","level":"INFO","msg":"writer: Do: started","stream_id":"xmgitm4v"}
+{"time":"2025-04-06T23:05:50.68876777+08:00","level":"INFO","msg":"sender: started","stream_id":"xmgitm4v"}
+{"time":"2025-04-06T23:05:50.688859108+08:00","level":"INFO","msg":"handler: started","stream_id":"xmgitm4v"}
+{"time":"2025-04-06T23:05:51.021782545+08:00","level":"INFO","msg":"Starting system monitor"}
+{"time":"2025-04-06T23:06:49.194014709+08:00","level":"INFO","msg":"stream: closing","id":"xmgitm4v"}
+{"time":"2025-04-06T23:06:49.19406008+08:00","level":"INFO","msg":"Stopping system monitor"}
+{"time":"2025-04-06T23:06:49.194183813+08:00","level":"INFO","msg":"Stopped system monitor"}
+{"time":"2025-04-06T23:06:49.965928488+08:00","level":"INFO","msg":"fileTransfer: Close: file transfer manager closed"}
+{"time":"2025-04-06T23:06:50.233520631+08:00","level":"INFO","msg":"handler: closed","stream_id":"xmgitm4v"}
+{"time":"2025-04-06T23:06:50.233593835+08:00","level":"INFO","msg":"writer: Close: closed","stream_id":"xmgitm4v"}
+{"time":"2025-04-06T23:06:50.233611325+08:00","level":"INFO","msg":"sender: closed","stream_id":"xmgitm4v"}
+{"time":"2025-04-06T23:06:50.233743999+08:00","level":"INFO","msg":"stream: closed","id":"xmgitm4v"}

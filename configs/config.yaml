@@ -1,6 +1,6 @@
 # arguments
-task: binary-addition #sudoku
-param_type: transformer #mlp
+task_name: binary-addition #sudoku
+param_type: mlp # transformer
 special_tokens: ['<mask>']
 load_ebm_ckpts: False
 
@@ -25,16 +25,45 @@ tasks:
     val_size: 200
     metrics: ['acc']
 
-  sudoku: 
-    name: sudoku
-    seq_len: 81 #9x9 ?
-    vol: 9 #1~9 ?
+  binary-inversion:
+    name: binary-inversion
+    inp_len: 12
+    out_len: 10 #k
+    num_classes: 2 #d #binary (exclude special tokens, eg. <mask>)
+    train_size: 1800
+    val_size: 200
+    metrics: ['acc']
+
+  binary-subtraction:
+    name: binary-subtraction
+    inp_len: 12
+    out_len: 10 #k
+    num_classes: 2 #d #binary (exclude special tokens, eg. <mask>)
+    train_size: 1800
+    val_size: 200
+    metrics: ['acc']
+
+  # sudoku: 
+  #   name: sudoku
+  #   seq_len: 81 #9x9 ?
+  #   vol: 9 #1~9 ?
+
+  # sudoku:
+  #   name: sudoku
+  #   inp_len: ? #<9x9?
+  #   out_len: ?
+  #   num_classes: 9 #1~9
+  #   train_size: ?
+  #   val_size: ?
+
 
 train:
-  epochs: 10
-  lr: 1e-4
-  batch_size: 100
+  epochs: 100
+  lr: 1e-3
+  early_stop_threshold: 0.3
+  batch_size:  100
   visualize: True
+  wandb: True
 
 sampling:
   batch_size: 1
@@ -42,4 +71,5 @@ sampling:
   temperature: 1.0
 
 visualize:
-  time_step: 1 #the time step between consecutive screenshots 
+  batch_step: 10 #visualize per <batch_step> number of batches
+  time_step: 2 #the time step between consecutive screenshots 

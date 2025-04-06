@@ -1,0 +1,15 @@
+{"time":"2025-04-06T21:17:54.701741219+08:00","level":"INFO","msg":"stream: starting","core version":"0.19.9","symlink path":"/home/user/shiqi/yichuan/EBM/ire_reasoning/wandb/run-20250406_211754-jpbnb2sq/logs/debug-core.log"}
+{"time":"2025-04-06T21:17:55.062058732+08:00","level":"INFO","msg":"created new stream","id":"jpbnb2sq"}
+{"time":"2025-04-06T21:17:55.06217245+08:00","level":"INFO","msg":"stream: started","id":"jpbnb2sq"}
+{"time":"2025-04-06T21:17:55.062388267+08:00","level":"INFO","msg":"writer: Do: started","stream_id":"jpbnb2sq"}
+{"time":"2025-04-06T21:17:55.062506486+08:00","level":"INFO","msg":"handler: started","stream_id":"jpbnb2sq"}
+{"time":"2025-04-06T21:17:55.062414891+08:00","level":"INFO","msg":"sender: started","stream_id":"jpbnb2sq"}
+{"time":"2025-04-06T21:17:55.318994533+08:00","level":"INFO","msg":"Starting system monitor"}
+{"time":"2025-04-06T21:18:07.497534066+08:00","level":"INFO","msg":"stream: closing","id":"jpbnb2sq"}
+{"time":"2025-04-06T21:18:07.497573159+08:00","level":"INFO","msg":"Stopping system monitor"}
+{"time":"2025-04-06T21:18:07.497622385+08:00","level":"INFO","msg":"Stopped system monitor"}
+{"time":"2025-04-06T21:18:08.703206468+08:00","level":"INFO","msg":"fileTransfer: Close: file transfer manager closed"}
+{"time":"2025-04-06T21:18:09.005236647+08:00","level":"INFO","msg":"handler: closed","stream_id":"jpbnb2sq"}
+{"time":"2025-04-06T21:18:09.005307422+08:00","level":"INFO","msg":"writer: Close: closed","stream_id":"jpbnb2sq"}
+{"time":"2025-04-06T21:18:09.005319472+08:00","level":"INFO","msg":"sender: closed","stream_id":"jpbnb2sq"}
+{"time":"2025-04-06T21:18:09.005434162+08:00","level":"INFO","msg":"stream: closed","id":"jpbnb2sq"}

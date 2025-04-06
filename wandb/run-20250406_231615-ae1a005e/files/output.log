@@ -1,0 +1,20 @@
+Write to stat file at "./stats/train/binary-inversion_mlp.jsonl" to store loss and EBMs statistics...
+epoch:   0%|                                                                                                                                                                                                                                                      | 0/100 [00:00<?, ?it/s]/home/user/shiqi/yichuan/EBM/ire_reasoning/models.py:394: UserWarning: To copy construct from a tensor, it is recommended to use sourceTensor.clone().detach() or sourceTensor.clone().detach().requires_grad_(True), rather than torch.tensor(sourceTensor).
+  neg_xu = torch.tensor(neg_xu, dtype=torch.long).to(device)
+epoch:  74%|███████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████▍                                                             | 74/100 [00:07<00:02,  9.90it/s]
+
+Finished training, Checkpoints saved to ./ebm_ckpts/binary-inversion_mlp.pth
+Training spent 0:0:7.
+
+
+
+
+4. Start evaluation...
+100%|███████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 102/102 [00:50<00:00,  2.04it/s]
+
+Final Result:
+{'acc': {'he': 0.0, 'se': 0.3425}}
+
+Finished evaluation.
+statistics saved to ./stats/evaluate/binary-inversion_mlp_stat.jsonl,
+visualfile saved to: ./stats/evaluate/binary-inversion_mlp_visual.jsonl.

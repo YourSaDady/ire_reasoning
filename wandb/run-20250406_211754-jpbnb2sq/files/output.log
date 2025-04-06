@@ -1,0 +1,96 @@
+Write to stat file at "./stats/train/binary-addition_mlp.jsonl" to store loss and EBMs statistics...
+epoch:   0%|                                                                                                                                                                                                                                                                                                   | 0/50 [00:00<?, ?it/s]/home/user/shiqi/yichuan/EBM/ire_reasoning/models.py:393: UserWarning: To copy construct from a tensor, it is recommended to use sourceTensor.clone().detach() or sourceTensor.clone().detach().requires_grad_(True), rather than torch.tensor(sourceTensor).
+  neg_xu = torch.tensor(neg_xu, dtype=torch.long).to(device)
+epoch: 100%|██████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 50/50 [00:11<00:00,  4.52it/s]
+
+Finished training, Checkpoints saved to ./ebm_ckpts/binary-addition_mlp.pth
+Training spent 0:0:11.
+
+
+
+
+4. Start evaluation...
+  0%|                                                                                                                                                                                                                                                                                                         | 0/200 [00:00<?, ?it/s]
+Error executing job with overrides: []
+Traceback (most recent call last):
+  File "/home/user/shiqi/yichuan/EBM/ire_reasoning/models.py", line 275, in sampling
+    y_oi_prime = torch.multinomial(p_oi, num_samples=1) #Size(batch_size, 1)
+RuntimeError: probability tensor contains either `inf`, `nan` or element < 0
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/home/user/shiqi/yichuan/EBM/ire_reasoning/main.py", line 74, in <module>
+    main()
+  File "/home/user/anaconda3/envs/yichuan_ebdm/lib/python3.9/site-packages/hydra/main.py", line 94, in decorated_main
+    _run_hydra(
+  File "/home/user/anaconda3/envs/yichuan_ebdm/lib/python3.9/site-packages/hydra/_internal/utils.py", line 394, in _run_hydra
+    _run_app(
+  File "/home/user/anaconda3/envs/yichuan_ebdm/lib/python3.9/site-packages/hydra/_internal/utils.py", line 457, in _run_app
+    run_and_report(
+  File "/home/user/anaconda3/envs/yichuan_ebdm/lib/python3.9/site-packages/hydra/_internal/utils.py", line 223, in run_and_report
+    raise ex
+  File "/home/user/anaconda3/envs/yichuan_ebdm/lib/python3.9/site-packages/hydra/_internal/utils.py", line 220, in run_and_report
+    return func()
+  File "/home/user/anaconda3/envs/yichuan_ebdm/lib/python3.9/site-packages/hydra/_internal/utils.py", line 458, in <lambda>
+    lambda: hydra.run(
+  File "/home/user/anaconda3/envs/yichuan_ebdm/lib/python3.9/site-packages/hydra/_internal/hydra.py", line 132, in run
+    _ = ret.return_value
+  File "/home/user/anaconda3/envs/yichuan_ebdm/lib/python3.9/site-packages/hydra/core/utils.py", line 260, in return_value
+    raise self._return_value
+  File "/home/user/anaconda3/envs/yichuan_ebdm/lib/python3.9/site-packages/hydra/core/utils.py", line 186, in run_job
+    ret.return_value = task_function(task_cfg)
+  File "/home/user/shiqi/yichuan/EBM/ire_reasoning/main.py", line 69, in main
+    sebm.evaluate(val_data, store_stat=True, sampling_config=config.sampling, visual_config=config.visualize)
+  File "/home/user/shiqi/yichuan/EBM/ire_reasoning/models.py", line 543, in evaluate
+    pred_batch, ebms_log = self.sampling(data, sampling_config=sampling_config, visual_ebms=visual_ebms)
+  File "/home/user/shiqi/yichuan/EBM/ire_reasoning/models.py", line 277, in sampling
+    raise RuntimeError(f'multinomial() input: p_oi seems contains nan.\n' \
+RuntimeError: multinomial() input: p_oi seems contains nan.
+ei_dist(torch.Size([1, 2])):
+tensor([[nan, nan]])
+yo(torch.Size([1, 1, 1])):
+tensor([[[0]]])
+gamma[:, pi[:k], :](torch.Size([1, 1, 2])):
+tensor([[[nan, nan]]])
+Traceback (most recent call last):
+  File "/home/user/shiqi/yichuan/EBM/ire_reasoning/models.py", line 275, in sampling
+    y_oi_prime = torch.multinomial(p_oi, num_samples=1) #Size(batch_size, 1)
+RuntimeError: probability tensor contains either `inf`, `nan` or element < 0
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/home/user/shiqi/yichuan/EBM/ire_reasoning/main.py", line 74, in <module>
+    main()
+  File "/home/user/anaconda3/envs/yichuan_ebdm/lib/python3.9/site-packages/hydra/main.py", line 94, in decorated_main
+    _run_hydra(
+  File "/home/user/anaconda3/envs/yichuan_ebdm/lib/python3.9/site-packages/hydra/_internal/utils.py", line 394, in _run_hydra
+    _run_app(
+  File "/home/user/anaconda3/envs/yichuan_ebdm/lib/python3.9/site-packages/hydra/_internal/utils.py", line 457, in _run_app
+    run_and_report(
+  File "/home/user/anaconda3/envs/yichuan_ebdm/lib/python3.9/site-packages/hydra/_internal/utils.py", line 223, in run_and_report
+    raise ex
+  File "/home/user/anaconda3/envs/yichuan_ebdm/lib/python3.9/site-packages/hydra/_internal/utils.py", line 220, in run_and_report
+    return func()
+  File "/home/user/anaconda3/envs/yichuan_ebdm/lib/python3.9/site-packages/hydra/_internal/utils.py", line 458, in <lambda>
+    lambda: hydra.run(
+  File "/home/user/anaconda3/envs/yichuan_ebdm/lib/python3.9/site-packages/hydra/_internal/hydra.py", line 132, in run
+    _ = ret.return_value
+  File "/home/user/anaconda3/envs/yichuan_ebdm/lib/python3.9/site-packages/hydra/core/utils.py", line 260, in return_value
+    raise self._return_value
+  File "/home/user/anaconda3/envs/yichuan_ebdm/lib/python3.9/site-packages/hydra/core/utils.py", line 186, in run_job
+    ret.return_value = task_function(task_cfg)
+  File "/home/user/shiqi/yichuan/EBM/ire_reasoning/main.py", line 69, in main
+    sebm.evaluate(val_data, store_stat=True, sampling_config=config.sampling, visual_config=config.visualize)
+  File "/home/user/shiqi/yichuan/EBM/ire_reasoning/models.py", line 543, in evaluate
+    pred_batch, ebms_log = self.sampling(data, sampling_config=sampling_config, visual_ebms=visual_ebms)
+  File "/home/user/shiqi/yichuan/EBM/ire_reasoning/models.py", line 277, in sampling
+    raise RuntimeError(f'multinomial() input: p_oi seems contains nan.\n' \
+RuntimeError: multinomial() input: p_oi seems contains nan.
+ei_dist(torch.Size([1, 2])):
+tensor([[nan, nan]])
+yo(torch.Size([1, 1, 1])):
+tensor([[[0]]])
+gamma[:, pi[:k], :](torch.Size([1, 1, 2])):
+tensor([[[nan, nan]]])

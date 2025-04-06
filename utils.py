@@ -42,12 +42,18 @@ class VisualizeEBMs:
     '''
     Visualize the sequence of EBMs TODO: 模仿下IRED的visual!
     '''
-    def __init__(self, task_config, visual_config, sampling_config):
+    def __init__(self, batch_idx, task_config, visual_config, sampling_config=None):
         self.num_ebms=task_config['out_len']
         self.num_vars=task_config['out_len']
         self.num_classes=task_config['num_classes']
-        self.num_times=sampling_config.steps
+        if sampling_config:
+            self.num_times=sampling_config.steps
+        else:
+            self.num_times=1
         self.time_step=visual_config.time_step #time unit
+        self.batch_step = visual_config.batch_step
+        self.visualize = (batch_idx % self.batch_step == 0) # determine whether the current class performs visualization, 
+                                                            # used in sampling (called outside this class)
         self.ebms_log = self._init_ebms()
 
 
@@ -81,7 +87,7 @@ class VisualizeEBMs:
             k_key = f'ebm_{k}'
             ebms_log[k_key] = {}
             for t in range(0, self.num_times, self.time_step):
-                t_key = f't{t}' 
+                t_key = f't{t+1}' 
                 ebms_log[k_key][t_key] = []
         return ebms_log
 

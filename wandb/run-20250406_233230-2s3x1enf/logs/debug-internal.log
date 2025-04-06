@@ -1,0 +1,7 @@
+{"time":"2025-04-06T23:32:30.18465539+08:00","level":"INFO","msg":"stream: starting","core version":"0.19.9","symlink path":"/home/user/shiqi/yichuan/EBM/ire_reasoning/wandb/run-20250406_233230-2s3x1enf/logs/debug-core.log"}
+{"time":"2025-04-06T23:32:30.530548783+08:00","level":"INFO","msg":"created new stream","id":"2s3x1enf"}
+{"time":"2025-04-06T23:32:30.530641199+08:00","level":"INFO","msg":"stream: started","id":"2s3x1enf"}
+{"time":"2025-04-06T23:32:30.530671844+08:00","level":"INFO","msg":"writer: Do: started","stream_id":"2s3x1enf"}
+{"time":"2025-04-06T23:32:30.530807549+08:00","level":"INFO","msg":"sender: started","stream_id":"2s3x1enf"}
+{"time":"2025-04-06T23:32:30.530884164+08:00","level":"INFO","msg":"handler: started","stream_id":"2s3x1enf"}
+{"time":"2025-04-06T23:32:30.835995174+08:00","level":"INFO","msg":"Starting system monitor"}

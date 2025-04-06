@@ -1,0 +1,15 @@
+{"time":"2025-04-06T23:39:38.696215532+08:00","level":"INFO","msg":"stream: starting","core version":"0.19.9","symlink path":"/home/user/shiqi/yichuan/EBM/ire_reasoning/wandb/run-20250406_233938-sympeejr/logs/debug-core.log"}
+{"time":"2025-04-06T23:39:39.053803216+08:00","level":"INFO","msg":"created new stream","id":"sympeejr"}
+{"time":"2025-04-06T23:39:39.053909995+08:00","level":"INFO","msg":"stream: started","id":"sympeejr"}
+{"time":"2025-04-06T23:39:39.053944232+08:00","level":"INFO","msg":"writer: Do: started","stream_id":"sympeejr"}
+{"time":"2025-04-06T23:39:39.053981427+08:00","level":"INFO","msg":"handler: started","stream_id":"sympeejr"}
+{"time":"2025-04-06T23:39:39.054095706+08:00","level":"INFO","msg":"sender: started","stream_id":"sympeejr"}
+{"time":"2025-04-06T23:39:39.419128721+08:00","level":"INFO","msg":"Starting system monitor"}
+{"time":"2025-04-06T23:40:26.859526163+08:00","level":"INFO","msg":"stream: closing","id":"sympeejr"}
+{"time":"2025-04-06T23:40:26.859577657+08:00","level":"INFO","msg":"Stopping system monitor"}
+{"time":"2025-04-06T23:40:26.859700153+08:00","level":"INFO","msg":"Stopped system monitor"}
+{"time":"2025-04-06T23:40:28.246412699+08:00","level":"INFO","msg":"fileTransfer: Close: file transfer manager closed"}
+{"time":"2025-04-06T23:40:28.49478374+08:00","level":"INFO","msg":"handler: closed","stream_id":"sympeejr"}
+{"time":"2025-04-06T23:40:28.494852697+08:00","level":"INFO","msg":"writer: Close: closed","stream_id":"sympeejr"}
+{"time":"2025-04-06T23:40:28.494891691+08:00","level":"INFO","msg":"sender: closed","stream_id":"sympeejr"}
+{"time":"2025-04-06T23:40:28.494966158+08:00","level":"INFO","msg":"stream: closed","id":"sympeejr"}

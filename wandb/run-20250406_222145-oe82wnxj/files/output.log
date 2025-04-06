@@ -1,0 +1,82 @@
+Write to stat file at "./stats/train/binary-addition_mlp.jsonl" to store loss and EBMs statistics...
+epoch:   0%|                                                                                                                                                                                                                                                       | 0/50 [00:00<?, ?it/s]/home/user/shiqi/yichuan/EBM/ire_reasoning/models.py:393: UserWarning: To copy construct from a tensor, it is recommended to use sourceTensor.clone().detach() or sourceTensor.clone().detach().requires_grad_(True), rather than torch.tensor(sourceTensor).
+  neg_xu = torch.tensor(neg_xu, dtype=torch.long).to(device)
+epoch:   6%|██████████████▎                                                                                                                                                                                                                                | 3/50 [00:00<00:09,  4.91it/s]
+
+Finished training, Checkpoints saved to ./ebm_ckpts/binary-addition_mlp.pth
+Training spent 0:0:0.
+
+
+
+
+4. Start evaluation...
+ 81%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████▊                                              | 162/200 [01:17<00:18,  2.10it/s]
+Traceback (most recent call last):
+  File "/home/user/shiqi/yichuan/EBM/ire_reasoning/main.py", line 74, in <module>
+    main()
+  File "/home/user/anaconda3/envs/yichuan_ebdm/lib/python3.9/site-packages/hydra/main.py", line 94, in decorated_main
+    _run_hydra(
+  File "/home/user/anaconda3/envs/yichuan_ebdm/lib/python3.9/site-packages/hydra/_internal/utils.py", line 394, in _run_hydra
+    _run_app(
+  File "/home/user/anaconda3/envs/yichuan_ebdm/lib/python3.9/site-packages/hydra/_internal/utils.py", line 457, in _run_app
+    run_and_report(
+  File "/home/user/anaconda3/envs/yichuan_ebdm/lib/python3.9/site-packages/hydra/_internal/utils.py", line 220, in run_and_report
+    return func()
+  File "/home/user/anaconda3/envs/yichuan_ebdm/lib/python3.9/site-packages/hydra/_internal/utils.py", line 458, in <lambda>
+    lambda: hydra.run(
+  File "/home/user/anaconda3/envs/yichuan_ebdm/lib/python3.9/site-packages/hydra/_internal/hydra.py", line 119, in run
+    ret = run_job(
+  File "/home/user/anaconda3/envs/yichuan_ebdm/lib/python3.9/site-packages/hydra/core/utils.py", line 186, in run_job
+    ret.return_value = task_function(task_cfg)
+  File "/home/user/shiqi/yichuan/EBM/ire_reasoning/main.py", line 69, in main
+    sebm.evaluate(val_data, store_stat=True, sampling_config=config.sampling, visual_config=config.visualize)
+  File "/home/user/shiqi/yichuan/EBM/ire_reasoning/models.py", line 549, in evaluate
+    pred_batch, ebms_log = self.sampling(data, sampling_config=sampling_config, visual_ebms=visual_ebms)
+  File "/home/user/shiqi/yichuan/EBM/ire_reasoning/models.py", line 257, in sampling
+    gamma = self.model.forward(model_input, is_ebm=False) #Size(batch_size, out_len, num_classes)
+  File "/home/user/shiqi/yichuan/EBM/ire_reasoning/models.py", line 91, in forward
+    h = swish(self.fc2(h))
+  File "/home/user/anaconda3/envs/yichuan_ebdm/lib/python3.9/site-packages/torch/nn/modules/module.py", line 1736, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+  File "/home/user/anaconda3/envs/yichuan_ebdm/lib/python3.9/site-packages/torch/nn/modules/module.py", line 1747, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/home/user/anaconda3/envs/yichuan_ebdm/lib/python3.9/site-packages/torch/nn/modules/linear.py", line 125, in forward
+    return F.linear(input, self.weight, self.bias)
+KeyboardInterrupt
+Traceback (most recent call last):
+  File "/home/user/shiqi/yichuan/EBM/ire_reasoning/main.py", line 74, in <module>
+    main()
+  File "/home/user/anaconda3/envs/yichuan_ebdm/lib/python3.9/site-packages/hydra/main.py", line 94, in decorated_main
+    _run_hydra(
+  File "/home/user/anaconda3/envs/yichuan_ebdm/lib/python3.9/site-packages/hydra/_internal/utils.py", line 394, in _run_hydra
+    _run_app(
+  File "/home/user/anaconda3/envs/yichuan_ebdm/lib/python3.9/site-packages/hydra/_internal/utils.py", line 457, in _run_app
+    run_and_report(
+  File "/home/user/anaconda3/envs/yichuan_ebdm/lib/python3.9/site-packages/hydra/_internal/utils.py", line 220, in run_and_report
+    return func()
+  File "/home/user/anaconda3/envs/yichuan_ebdm/lib/python3.9/site-packages/hydra/_internal/utils.py", line 458, in <lambda>
+    lambda: hydra.run(
+  File "/home/user/anaconda3/envs/yichuan_ebdm/lib/python3.9/site-packages/hydra/_internal/hydra.py", line 119, in run
+    ret = run_job(
+  File "/home/user/anaconda3/envs/yichuan_ebdm/lib/python3.9/site-packages/hydra/core/utils.py", line 186, in run_job
+    ret.return_value = task_function(task_cfg)
+  File "/home/user/shiqi/yichuan/EBM/ire_reasoning/main.py", line 69, in main
+    sebm.evaluate(val_data, store_stat=True, sampling_config=config.sampling, visual_config=config.visualize)
+  File "/home/user/shiqi/yichuan/EBM/ire_reasoning/models.py", line 549, in evaluate
+    pred_batch, ebms_log = self.sampling(data, sampling_config=sampling_config, visual_ebms=visual_ebms)
+  File "/home/user/shiqi/yichuan/EBM/ire_reasoning/models.py", line 257, in sampling
+    gamma = self.model.forward(model_input, is_ebm=False) #Size(batch_size, out_len, num_classes)
+  File "/home/user/shiqi/yichuan/EBM/ire_reasoning/models.py", line 91, in forward
+    h = swish(self.fc2(h))
+  File "/home/user/anaconda3/envs/yichuan_ebdm/lib/python3.9/site-packages/torch/nn/modules/module.py", line 1736, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+  File "/home/user/anaconda3/envs/yichuan_ebdm/lib/python3.9/site-packages/torch/nn/modules/module.py", line 1747, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/home/user/anaconda3/envs/yichuan_ebdm/lib/python3.9/site-packages/torch/nn/modules/linear.py", line 125, in forward
+    return F.linear(input, self.weight, self.bias)
+KeyboardInterrupt
+Error in atexit._run_exitfuncs:
+Traceback (most recent call last):
+  File "/home/user/anaconda3/envs/yichuan_ebdm/lib/python3.9/threading.py", line 1080, in _wait_for_tstate_lock
+    if lock.acquire(block, timeout):
+KeyboardInterrupt

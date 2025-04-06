@@ -1,0 +1,20 @@
+Write to stat file at "./stats/train/binary-addition_mlp.jsonl" to store loss and EBMs statistics...
+epoch:   0%|                                                                                                                                                                                                                                                       | 0/50 [00:00<?, ?it/s]/home/user/shiqi/yichuan/EBM/ire_reasoning/models.py:393: UserWarning: To copy construct from a tensor, it is recommended to use sourceTensor.clone().detach() or sourceTensor.clone().detach().requires_grad_(True), rather than torch.tensor(sourceTensor).
+  neg_xu = torch.tensor(neg_xu, dtype=torch.long).to(device)
+epoch:  32%|████████████████████████████████████████████████████████████████████████████▏                                                                                                                                                                 | 16/50 [00:03<00:07,  4.66it/s]
+
+Finished training, Checkpoints saved to ./ebm_ckpts/binary-addition_mlp.pth
+Training spent 0:0:3.
+
+
+
+
+4. Start evaluation...
+100%|███████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 200/200 [01:31<00:00,  2.18it/s]
+
+Final Result:
+{'acc': {'he': 0.005, 'se': 0.6995}}
+
+Finished evaluation.
+statistics saved to ./stats/evaluate/binary-addition_mlp_stat.jsonl,
+visualfile saved to: ./stats/evaluate/binary-addition_mlp_visual.jsonl.

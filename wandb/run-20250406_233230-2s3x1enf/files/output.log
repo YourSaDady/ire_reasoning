@@ -1,0 +1,63 @@
+Write to stat file at "./stats/train/binary-addition_mlp.jsonl" to store loss and EBMs statistics...
+epoch:   0%|                                                                                                                                                                                                                                                      | 0/100 [00:00<?, ?it/s]/home/user/shiqi/yichuan/EBM/ire_reasoning/models.py:394: UserWarning: To copy construct from a tensor, it is recommended to use sourceTensor.clone().detach() or sourceTensor.clone().detach().requires_grad_(True), rather than torch.tensor(sourceTensor).
+  neg_xu = torch.tensor(neg_xu, dtype=torch.long).to(device)
+epoch:   1%|██▍                                                                                                                                                                                                                                           | 1/100 [00:00<00:16,  6.12it/s]
+
+Finished training, Checkpoints saved to ./ebm_ckpts/binary-addition_mlp.pth
+Training spent 0:0:0.
+
+
+
+
+4. Start evaluation...
+ 49%|███████████████████████████████████████████████████████████████████████████████████████████████████████████████████████▌                                                                                                                            | 50/102 [00:24<00:25,  2.03it/s]
+Error executing job with overrides: []
+Traceback (most recent call last):
+  File "/home/user/shiqi/yichuan/EBM/ire_reasoning/models.py", line 272, in sampling
+    y_oi_prime = torch.multinomial(p_oi, num_samples=1) #Size(batch_size, 1)
+KeyboardInterrupt
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/home/user/shiqi/yichuan/EBM/ire_reasoning/main.py", line 69, in main
+    sebm.evaluate(val_data, store_stat=True, sampling_config=config.sampling, visual_config=config.visualize)
+  File "/home/user/shiqi/yichuan/EBM/ire_reasoning/models.py", line 550, in evaluate
+    pred_batch, ebms_log = self.sampling(data, sampling_config=sampling_config, visual_ebms=visual_ebms)
+  File "/home/user/shiqi/yichuan/EBM/ire_reasoning/models.py", line 274, in sampling
+    raise RuntimeError(f'multinomial() input: p_oi seems contains nan.\n' \
+RuntimeError: multinomial() input: p_oi seems contains nan.
+p_oi(torch.Size([1, 2])):
+tensor([[0.9196, 0.0804]])
+ei_dist(torch.Size([1, 2])):
+tensor([[-10.3653,  -7.9281]])
+gamma[:, pi[:k], :](torch.Size([1, 8, 2])):
+tensor([[[-1.1867,  1.4260],
+         [-0.9730,  0.7180],
+         [-0.4304,  0.2737],
+         [-1.0622,  1.3750],
+         [-0.9065,  0.7726],
+         [-2.6437,  2.6127],
+         [-1.3973,  1.0577],
+         [-1.7655,  1.6507]]])
+gamma(torch.Size([1, 10, 2])):
+tensor([[[-2.6437,  2.6127],
+         [-1.1867,  1.4260],
+         [-1.2636,  1.0062],
+         [-1.7655,  1.6507],
+         [-1.3973,  1.0577],
+         [-1.0622,  1.3750],
+         [-0.9730,  0.7180],
+         [-0.4304,  0.2737],
+         [-0.9065,  0.7726],
+         [-2.0386,  1.4663]]])
+model_input(torch.Size([1, 22])):
+tensor([[0., 0., 0., 1., 0., 1., 1., 1., 1., 1., 1., 0., 0., 0., 2., 0., 0., 0.,
+         0., 0., 0., 2.]])
+
+Set the environment variable HYDRA_FULL_ERROR=1 for a complete stack trace.
+Error in atexit._run_exitfuncs:
+Traceback (most recent call last):
+  File "/home/user/anaconda3/envs/yichuan_ebdm/lib/python3.9/threading.py", line 1080, in _wait_for_tstate_lock
+    if lock.acquire(block, timeout):
+KeyboardInterrupt
