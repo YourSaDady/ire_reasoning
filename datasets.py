@@ -61,9 +61,15 @@ class SudokuDataset(Dataset):
     def __getitem__(self, idx):
         return _rescale(self.features[idx].reshape(-1)), _rescale(self.labels[idx].reshape(-1)), self.cond_entry[idx].reshape(-1)
 
-def _rescale(x):
+def _rescale(x): # 1 -> 1; 0 -> -1 (暂时不用)
     return (x - 0.5) * 2
 
+def _decimal(tensor): #Sudoku: Size(9,9,9) -> Size(9,9) with observed values 1~9 and unobserved values 10
+    assert tensor.size() == (9,9,9), "The tensor is not a one-hot feature for Sudoku!"
+    mask = torch.sum(tensor, dim=-1) == 0
+    decimal_sudoku = torch.argmax(tensor, dim=-1) + 1
+    decimal_sudoku = torch.where(mask, torch.tensor(10), decimal_sudoku)
+    return decimal_sudoku.view(9,9)
 
 '''
 Contains tasks: sudoku, binary-{addition, substraction, inversion}
@@ -78,12 +84,15 @@ class SATDataset(Dataset): #identifier 就是 'binary_arith' + {split}
         if self.split == 'train':
             self.features = self.features[:int(nr_datapoints * 0.9)]
             self.labels = self.labels[:int(nr_datapoints * 0.9)]
+            print(f'\nInside SATDataset __init__():\nself.features[0]({self.features[0].shape}): \n{self.features[0]}\n'\
+                f'self.labels[0]({self.labels[0]}): \n{self.labels[0]}') # Size([9,9,9]), last row is one-hot vector (全0是masked)
         else:
             self.features = self.features[int(nr_datapoints * 0.9):]
             self.labels = self.labels[int(nr_datapoints * 0.9):]
 
         if dataset_identifier == 'sudoku':
-            self.cond_entry = (self.features.sum(axis=-1) == 1)[:, :, :, None].expand(-1, -1, -1, 9) #?
+            self.cond_entry = (self.features.sum(axis=-1) == 1)[:, :, :, None].expand(-1, -1, -1, 9) #condition entries
+            print(f'\nself.cond_entry[0]({self.cond_entry[0].shape}): \n{self.cond_entry[0]}') # torch.Size([9, 9, 9]), 单行全为True / False
         self.inp_dim = self.features[0].numel()
         self.out_dim = self.labels[0].numel()
 
@@ -92,7 +101,9 @@ class SATDataset(Dataset): #identifier 就是 'binary_arith' + {split}
 
     def __getitem__(self, idx):
         if self.task == 'sudoku':
-            return _rescale(self.features[idx].reshape(-1)), _rescale(self.labels[idx].reshape(-1)), self.cond_entry[idx].reshape(-1)
+            #return 3 x Size(9*9) with values [1~10], [1~9], [T/F]
+            return _decimal(self.features[idx]).reshape(-1), _decimal(self.labels[idx]).reshape(-1), self.cond_entry[idx][:, :, 0].reshape(-1)
+            # return _rescale(self.features[idx].reshape(-1)), _rescale(self.labels[idx].reshape(-1)), self.cond_entry[idx].reshape(-1)
         elif self.task.startswith('binary'):
             return self.features[idx], self.labels[idx]
 
@@ -236,13 +247,22 @@ class SATDataset(Dataset): #identifier 就是 'binary_arith' + {split}
 #     return train_loader, valid_loader
 
 '''sample_num * [Size(inp_len), Size(out_len)] -> batch_num * Size(batch_size, inp_len+out_len)'''
-def batchlize(dataset, batch_size=1000): #TODO: add Sudoku specification
-    dataset = [torch.cat([data[0].unsqueeze(0), data[1].unsqueeze(0)], dim=1) for data in dataset] #list[Size(1, inp_len+out_len)]
+def batchlize(task, dataset, batch_size=1000): #TODO: add Sudoku specification
     batches = [] #list[Size(batch_size, inp_len+out_len)]
-    for idx in range(0, len(dataset), batch_size):
-        if idx+batch_size < len(dataset): #ensure all batches are full with samples
-            batches.append(torch.cat(dataset[idx:idx+batch_size], dim=0))
-            assert batches[-1].size(0) == batch_size
+    if task.startswith('binary'):
+        dataset = [torch.cat([data[0].unsqueeze(0), data[1].unsqueeze(0)], dim=1) for data in dataset] #list[Size(1, inp_len+out_len)]
+        for idx in range(0, len(dataset), batch_size):
+            if idx+batch_size < len(dataset): #ensure all batches are full with samples
+                batches.append(torch.cat(dataset[idx:idx+batch_size], dim=0))
+                assert batches[-1].size(0) == batch_size
+    elif task == 'sudoku': # cannot batchalize (since masked positions differs among samples)
+        batches = [
+                    (
+                        torch.cat([data[0].unsqueeze(0), data[1].unsqueeze(0)], dim=1), \
+                        data[2] \
+                    ) \
+                        for data in dataset \
+                ] #list[(feature_label: Size(1, 9*9+9*9), cond_entry: Size(9*9))]
     return batches
 
 
@@ -251,12 +271,12 @@ def load_data(task, train_batch_size, val_batch_size):
     if task == 'sudoku' or task.startswith('binary'):
         train_set = SATDataset(task, split='train')
         val_set = SATDataset(task, split='val')
-        print(f'train_set.inp_dim: {train_set.inp_dim}') #12
-        print(f'train_set.out_dim: {train_set.out_dim}') #10
+        print(f'train_set.inp_dim: {train_set.inp_dim}') #12 #729(sudoku)
+        print(f'train_set.out_dim: {train_set.out_dim}') #10 #729(sudoku)
         print(f'first sample: {train_set[0]}') #(tensor([0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0, 1], dtype=torch.int8), tensor([0, 0, 0, 0, 0, 1, 1, 0, 0, 1], dtype=torch.int8))
-        train_batches, val_batches = batchlize(train_set, train_batch_size), batchlize(val_set, val_batch_size)
+        train_batches, val_batches = batchlize(task, train_set, train_batch_size), batchlize(task, val_set, val_batch_size)
         train_size, val_size = len(train_batches)*train_batch_size, len(val_batches)*val_batch_size
-        print(f'train_size: {train_size}, val_size: {val_size}') #1800, 200
+        print(f'train_size: {train_size}, val_size: {val_size}') #1800, 200 #8900, 999(sudoku)
         return train_batches, val_batches, train_size, val_size
     else:
         raise NotImplementedError(f'The specified task: {task} is not defined')

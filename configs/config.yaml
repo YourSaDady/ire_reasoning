@@ -1,5 +1,5 @@
 # arguments
-task_name: binary-addition #sudoku
+task_name: binary-inversion  # binary-addition
 param_type: mlp # transformer
 special_tokens: ['<mask>']
 load_ebm_ckpts: False
@@ -48,25 +48,25 @@ tasks:
   #   seq_len: 81 #9x9 ?
   #   vol: 9 #1~9 ?
 
-  # sudoku:
-  #   name: sudoku
+  sudoku:
+    name: sudoku
   #   inp_len: ? #<9x9?
   #   out_len: ?
-  #   num_classes: 9 #1~9
+    num_classes: 9 #1~9
   #   train_size: ?
   #   val_size: ?
 
 
 train:
   epochs: 100
-  lr: 1e-3
-  early_stop_threshold: 0.3
-  batch_size:  100
+  lr: 1e-4
+  early_stop_threshold: 0.5
+  batch_size:  100 #100 #sudoku must be 1
   visualize: True
   wandb: True
 
 sampling:
-  batch_size: 1
+  batch_size: 10
   steps: 10
   temperature: 1.0
 

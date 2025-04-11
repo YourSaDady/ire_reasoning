@@ -38,6 +38,8 @@ def main(config):
     print(f'\nLoading datasets for task: {config.task_name}...')
     train_data, val_data, train_size, val_size = load_data(config.task_name, config.train.batch_size, config.sampling.batch_size) 
 
+    # return ##############
+
     '''2. Initialize and train EBMs'''
     print(f'\nInitializing EBMs...')
     task_config = config.tasks[config.task_name]
@@ -47,6 +49,8 @@ def main(config):
         task_config=task_config,
         special_tokens=config.special_tokens,
         )
+
+    # return ##############
 
     if not config.load_ebm_ckpts:
         print(f'No checkpoints found.')
