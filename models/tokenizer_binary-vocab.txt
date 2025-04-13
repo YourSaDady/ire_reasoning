@@ -1,0 +1,9 @@
+[PAD]
+[CLS]
+[SEP]
+[MASK]
+[UNK]
+$
++
+0
+1

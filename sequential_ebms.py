@@ -1,3 +1,7 @@
+'''
+Seqential EBMs wrappers for all base models
+'''
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -22,6 +26,8 @@ from transformers.modeling_outputs import CausalLMOutput
 from utils import convert_time, VisualizeEBMs, check_grad
 from typing import Optional, Union, Callable
 import wandb
+
+from models import MLP, BERTDataset, DiscreteDiffusion
 
 inf = 1000000
 
@@ -57,54 +63,9 @@ def random_flip(samples: Union[torch.Tensor, list[torch.Tensor]], flip_range:int
         return flipped_samples[0]
     return flipped_samples
 
-# Borrowed from IRED EBM class
-class MLP(nn.Module):
+class MLPSequentialEBMs():
     '''
-    Modified from IRED (Simplified?).
-
-    '''
-    def __init__(self, inp_dim, out_dim, num_classes, hidden_dim=512):
-        super(MLP, self).__init__()
-        h = hidden_dim
-        
-        self.inp_dim = inp_dim
-        self.out_dim = out_dim
-        self.num_classes = num_classes
-
-        self.fc1 = nn.Linear(inp_dim + out_dim, h)
-        self.fc2 = nn.Linear(h, h)
-        self.fc3 = nn.Linear(h, h)
-        self.fc4 = nn.Linear(h, out_dim * num_classes)
-
-    def forward(self, x, is_ebm=True):
-        '''
-        params: 
-            is_ebm: bool
-            x: Size(batch_size, inp_len+out_len) # already concatenated
-            
-        return:
-            energy (scalar) 
-            or latent vector (Size(batch_size, out_len, num_classes))
-        '''
-            
-        h = swish(self.fc1(x))
-        h = swish(self.fc2(h))
-        h = swish(self.fc3(h))
-        h = self.fc4(h).view(x.size(0), self.out_dim, self.num_classes)
-
-        if is_ebm:
-            output = h.pow(2).sum(dim=-1)[..., None] #最后一个维度上平方和，然后添加一个none在最后
-        else:
-            output = h #raw prediction dist (not normalized)?
-
-        return output
-    
-    # def parameters(self):#TODO
-    #     return super(MLP, self).parameters()
-    
-class SequentialEBM():
-    '''
-    sequential EBMs wrapper for different model architectures
+    sequential EBMs wrapper for MLP model architectures
     '''
     def __init__(self, parameterization='mlp', task_config=None, special_tokens=['<mask>']):
         self.task_config=task_config
@@ -127,6 +88,8 @@ class SequentialEBM():
     def _build_model(self, parameterization):
         if parameterization == 'mlp':
             return MLP(self.inp_len, self.out_len, self.num_classes)
+        elif parameterization == 'bert':
+            return DiscreteDiffusion(vocab_size=self.num_classes) #x.shape = Size(batch_size, 1, seq_len, seq_len)
         else:
             raise NotImplementedError
         
@@ -572,3 +535,95 @@ class SequentialEBM():
                 statfile.write('\nFinal Result:\n' + json.dumps(stat_dict))
         #end of stat write
         print(f'\nFinished evaluation. \nstatistics saved to {stat_path}, \nvisualfile saved to: {visual_path}.')
+        
+        
+        
+class BERTSequentialEBMs(SequentialEBMs):
+    def __init__(self, task_config):
+        self.task_config = task_config
+        self.inp_len = task_config.inp_len
+        self.out_len = task.config.out_len
+        self.vocab_size = task_config.num_classes
+        self.device = 'cpu' ###########for debugging
+        
+        self.model = self._build_model()
+        
+    def _build_model(self): #initialize a bert
+        self.model = DiscreteDiffusion(vocab_size=self.vocab_size)
+        
+    def energy(self, idx:int, val: bool, rest_idx: torch.Tensor, latent: torch.Tensor) \
+        -> torch.Tensor:
+        '''
+        E(x_ui (=val) ; rest_idx)
+        
+        Given a specified dimension, an index table and a latent value source, 
+        calculate the energy value for the specified index value on that dimension, 
+        or all the energy values along that dimension.
+        
+        params:
+            idx: the specified index "i" to predict
+            val: whether the predict value "x_{u'_i}" is given, determines what to return
+            rest_idx: the conditional values (include pos i!), represented by a 2D tensor of Size(|x_{u'_{<=i}}|, 1)
+            latent: the value source for energy calculation, represented by a 2D tensor of Size(|x_{u'_{<=i}}|, num_classes) 
+            
+        return:
+                energy: Size(1), if specified val;
+                energy vector: Size(num_classes), otherwise
+        '''
+        assert latent.dim() == rest_idx.dim() and latent.size(0) == rest_idx.size(0), \
+            f"latent.shape = {latent.shape}, rest_idx.shape = {rest_idx.shape}"
+            
+        if val:
+            energy = torch.gather(input=latent, dim=-1, index=rest_idx) #Size(out_len, 1)
+
+        else:
+            expanded_idx = torch.zeros(rest_idx.size(0) self.num_classes)
+            for pos in range(expanded_idx.size(0)): #|u'i|
+                if pos == idx: #enumerate all vals on ui
+                    expanded_idx[pos, :] = torch.arange(self.num_classes) 
+                else: #fill the original val on other positions for each class
+                    expanded_idx[pos, :] = rest_idx[pos, :].expand(-1, self.num_classes) 
+            expanded_idx = expanded_idx.to(torch.long).to(device)
+            energy = torch.gather(input=latent, dim=-1, index=expanded_idx) #Size(out_len, num_classes)
+                
+        return torch.sum(energy, dim=1) #sum along all ui positions
+        
+    def sampling(self, sample_batch, sampler='gibbs', sampling_config=None):
+        raise
+    
+    def pseudolikelihood(self, latent, mlm_label):
+        '''
+        Non-batchalized! (single sample)
+        
+        estimte the logp using the model output logits and the MLM labels 
+        params: 
+            - latent: model output logits, Size(out_len, num_classes)
+            - mlm_label: input_ids for the masked tokens, Size(out_len)
+        return:
+            - lop_xu: the conditional logprob distribution, Size(out_len, num_classes)
+        '''
+        assert latent.size(0) == mlm_label.size(0), f'latent.shape: {latent.shape}, ' \
+            f'mlm_label({mlm_label.shape}): {mlm_label}'
+        u = torch.nonzero(latent).squeeze() #Size(|u|)
+        pi = torch.randperm(u.size(0)) #a random estimating order
+        u_prime = u[pi]
+        logp_xu = []
+        mlm_label = mlm_label.unsqueeze(-1)
+        for i in range(len(u_prime)): #iter through |u'| EBMs
+            condition_vals = mlm_label[u_prime[:i+1], :] #inclusive x_{u'_i}
+            condition_latent = latent[u_prime[:i+1], :]
+            print(f'\ni: {i}, rest_idx({condition_vals.shape}): \n{condition_vals}\ncondition_latent.shape: {condition_latent.shape}')
+            ei_dist = self.energy(idx=i, val=False, rest_idx=condition_vals, latent=condition_latent)
+            ei = self.energy(idx=i, val=True, rest_idx=condition_vals, latent=condition_latent)
+            print(f'\nei_dist.shape: {ei_dist.shape}, ei: {ei}')
+            z_ui = torch.sum(torch.exp(-1*ei_dist), dim=-1) #Size(1)
+            expanded_z_ui = z_ui.unsqueeze(0).expand_as(ei_dist) #Size(num_classes)?
+            logp_xui = torch.log(torch.exp(-1*ei_dist) / expanded_z_ui)
+            print(f'\nlogp_xui.shape: {logp_xui.shape}') #Size(num_classes)
+            logp_xu.append(logp_xui.unsqueeze(0)) #Eq.(0), with sum replaced by concatenation
+        #end of EBM iter
+        logp_xu = torch.cat(logp_xu, dim=0) #Size(|u'|, num_classes)
+        
+        return logp_xu
+    
+    

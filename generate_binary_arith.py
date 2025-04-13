@@ -14,6 +14,7 @@ import random
 import torch
 import os
 import os.path as osp
+from tqdm import tqdm
 os.chdir('/home/user/shiqi/yichuan/EBM')
 print(f'The current working directory: {os.getcwd()}')
 
@@ -88,16 +89,110 @@ def generate_inversion_samples():
         labels.append(y_bits)
     return torch.tensor(features, dtype=torch.int8), torch.tensor(labels, dtype=torch.int8)
 
+'''
+Larger Binary-arithmetics, overall sequence length is 42-bits.
+Save in txt format, separate string x and y with " +++$+++ "
+Each sample pair: ('0 1 0 ...' + " +++$+++ " + '1 0 0 ...')
+
+Addition: x1 + x2 = y
+    - flag: '00'
+    - x1: 13-bits
+    - x2: 13-bits
+    - y: 14-bits
+
+Subtraction: x1 - x2 = y
+    - flag: '01'
+    - x1: 14-bits
+    - x2: 13-bits
+    - y: 13-bits
+
+Inversion: !x = y
+    - flag: '10'
+    - x: 20-bits
+    - y: 20-bits
+'''
+def generate_addition_samples_txt(save_in_txt=True): 
+    features, labels = [], []
+    for x1 in tqdm(range(2**13), desc='addition'): # 0 to 2^13
+        for x2 in range(2**13): # 0 to 2^13
+            y = x1 + x2
+            x_bin = '00' + format(x1, '013b') + format(x2, '013b')
+            y_bin = format(y, '014b')
+            if save_in_txt:
+                features.append(' '.join(x_bin))
+                labels.append(' '.join(y_bin))
+            else:
+                features.append([int(bit) for bit in x_bin])
+                labels.append([int(bit) for bit in y_bin])
+    if save_in_txt:
+        return features, labels
+    else:
+        return torch.tensor(features, dtype=torch.int8), torch.tensor(labels, dtype=torch.int8)
+    
+def generate_subtraction_samples_txt(save_in_txt=True): 
+    features, labels = [], []
+    for x2 in tqdm(range(2**13), desc='subtraction'): # 0 to 2^13
+        for y in range(2**13): # 0 to 2^13
+            x1 = x2 + y #y = x1 - x2
+            x_bin = '01' + format(x1, '014b') + format(x2, '013b')
+            y_bin = format(y, '013b')
+            if save_in_txt:
+                features.append(' '.join(x_bin))
+                labels.append(' '.join(y_bin))
+            else:
+                features.append([int(bit) for bit in x_bin])
+                labels.append([int(bit) for bit in y_bin])
+    if save_in_txt:
+        return features, labels
+    else:
+        return torch.tensor(features, dtype=torch.int8), torch.tensor(labels, dtype=torch.int8)
+    
+def generate_inversion_samples_txt(save_in_txt=True):
+    features, labels = [], []
+    for num in tqdm(range(2**20), desc='inversion'):  # 2^20 possible values
+        x_bits_str = bin(num)[2:].zfill(20)
+        x_bits = ' '.join('10' + x_bits_str) 
+        y_bits = ' '.join('1' if bit == '0' else '0' for bit in x_bits_str)
+        if save_in_txt:
+            features.append(x_bits)
+            labels.append(y_bits)
+        else:
+            features.append([int(bit) for bit in x_bits.split()])
+            labels.append([int(bit) for bit in y_bits.split()])
+    if save_in_txt:
+        return features, labels
+    else:
+        return torch.tensor(features, dtype=torch.int8), torch.tensor(labels, dtype=torch.int8)
+
+
+
+save_in_txt = True
+train_val_rate = 0.9
+
 # Create directories and save tensors
 splits = {
-    "addition": generate_addition_samples(),
-    "subtraction": generate_subtraction_samples(),
-    "inversion": generate_inversion_samples()
+    "addition": generate_addition_samples_txt(save_in_txt),
+    "subtraction": generate_subtraction_samples_txt(save_in_txt),
+    "inversion": generate_inversion_samples_txt(save_in_txt)
 }
 
-for split_name, (x, y) in splits.items():
-    split_path = f'./datasets/binary_arith/{split_name}'
+for split_name, (xs, ys) in splits.items():
+    x_ys = list(zip(xs, ys))
+    random.shuffle(x_ys)
+    split_path = f'./datasets/binary_arith_txt/{split_name}'
     if not osp.exists(split_path):
         os.makedirs(split_path, exist_ok=True)
-    torch.save(x, osp.join(split_path, "features.pt"))
-    torch.save(y, osp.join(split_path, "labels.pt"))
+    if save_in_txt:
+        train_num = int(len(xs)*0.9)
+        train_data = x_ys[:train_num]
+        val_data = x_ys[train_num:]
+        with open(osp.join(split_path, 'train.txt'), 'w') as train_file:
+            for x_y in train_data:
+                train_file.write(' +++$+++ '.join(x_y) + '\n') #replaced by [UNK]
+        with open(osp.join(split_path, 'val.txt'), 'w') as val_file:
+            for x_y in val_data:
+                val_file.write(' +++$+++ '.join(x_y) + '\n')
+        print(f'\n{split_name} datasets \ntrain({len(train_data)}) and val ({len(val_data)}) saved to {split_path}')
+    else:
+        torch.save(x_ys[0], osp.join(split_path, "features.pt"))
+        torch.save(x_ys[1], osp.join(split_path, "labels.pt"))

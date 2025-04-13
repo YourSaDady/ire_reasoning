@@ -1,0 +1,379 @@
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+import sys
+import os
+import random
+import math
+import itertools
+from datasets import Dataset
+from pathlib import Path
+os.chdir('/home/user/shiqi/yichuan/EBM')
+print(f'The current working directory: {os.getcwd()}')
+from tokenizers import BertWordPieceTokenizer
+
+'''
+A simplified version of BERT and its relative classes from scratch.
+
+Train like a f**king LlaDA (Masked Diffusion)
+
+Simplified parts (assumptions):
+    - no is_next_label flag and random get_item
+'''
+
+class PositionalEmbedding(nn.Module):
+    '''
+    Using sine-cosine position embedding
+    
+    pos_emb: Size(max_len, d_model), where d_model is the output dimension
+    '''
+    def __init__(self, d_model, max_len=128):
+        super().__init__()
+        # Compute the positional encodings once in log space.
+        pe = torch.zeros(max_len, d_model).float()
+        pe.require_grad = False
+
+        for pos in range(max_len):   
+            # for each dimension of the each position
+            for i in range(0, d_model, 2):   
+                pe[pos, i] = math.sin(pos / (10000 ** ((2 * i)/d_model)))
+                pe[pos, i + 1] = math.cos(pos / (10000 ** ((2 * (i + 1))/d_model)))
+
+        # include the batch size
+        self.pe = pe.unsqueeze(0)   
+        # self.register_buffer('pe', pe)
+
+    def forward(self, x):
+        return self.pe
+    
+class BERTEmbedding(nn.Module):
+    '''
+    Consisting with:
+        - TokenEmbedding
+        - PositionalEmbedding
+        - SegmentEmbedding
+        
+    Take sum
+    '''
+    def __init__(self, vocab_size=7, embed_size=128, seq_len=256, drop_out=0.1):
+        super().__init__()
+        self.embed_size = embed_size
+        # (m, seq_len) --> (m, seq_len, embed_size)
+        # padding_idx is not updated during training, remains as fixed pad (0)
+        self.token = nn.Embedding(vocab_size, embed_size, padding_idx=0)
+        self.segment = nn.Embedding(3, embed_size, padding_idx=0)
+        self.position = PositionalEmbedding(d_model=embed_size, max_len=seq_len)
+        self.dropout = nn.Dropout(p=dropout)
+       
+    def forward(self, sequence, segment_label):
+        x = self.token(sequence) + self.position(sequence) + self.segment(segment_label)
+        return self.dropout(x) 
+    
+
+class BERTDataset(Dataset):
+    def __init__(self, data_pair, tokenizer, max_len=256):
+        '''
+        Init params:
+            - data_pair: a list of (x, y) pairs, where x and y are strings, and words are separated by blank spaces
+            - 
+        '''
+        self.tokenizer = tokenizer
+        self.max_len = max_len
+        self.corpus_lines = len(data_pair)
+        self.lines = data_pair
+        
+    def __len__(self):
+        return self.corpus_lines
+
+    def __getitem__(self, item, t, is_pos=True):
+        '''
+        Select a sample pair from the data_pair, and preprocess.  
+        
+        params:
+            - item: line index
+            - t: a random masking rate from a specific schedule
+            - is_pos: positive means x and y from the same line pair; otherwise negative
+            
+        output_dict:
+            - bert_input: masked context tensor of Size(max_len)
+            - bert_label: padded label tensor of Size(max_len)
+            - segment_label: 1s and 2s tensor of Size(max_len)
+            - is_positive: bool, indicating whether is positive or not 
+        '''
+        # get pos / neg sentence pair
+        t1, t2 = self.get_sent(item, is_pos)
+        # randomly mask words with t% rate
+        t1_masked, t1_label, t2_masked, t2_label = self.random_mask(t1, t), self.random_mask(t2, t)
+        # complete the start and end of sequences and their labels with special tokens
+        t1 = [self.tokenizer.vocab['[CLS]']] + t1_masked + [self.tokenizer.vocab['[SEP]']]
+        t2 = t2_masked + [self.tokenizer.vocab['[SEP]']]
+        t1_label = [self.tokenizer.vocab['[PAD]']] + t1_label + [self.tokenizer.vocab['[PAD]']]
+        t2_label = t2_label + [self.tokenizer.vocab['[PAD]']]
+        # concatenate t1 and t2 and add padding to max_len
+        segmen_label = ([1 for _ in range(len(t1))] + [2 for _ in range(len(t2))])[:self.max_len]
+        bert_input = (t1 + t2)[:self.max_len]
+        bert_label = (t1_label + t2_label)[:self.max_len]
+        padding = [self.tokenzier.vocab['[PAD]'] for _ in range(self.max_len - len(bert_input))]
+        bert_input.extend(padding), bert_label.extend(padding), segment_label.extend(padding)
+        
+        output = {
+            'bert_input': bert_input,
+            'bert_label': bert_label,
+            'segment_label': segment_label,
+            'is_positive': is_pos
+        }
+        return {k: torch.tensor(v) for k, v in output.items()}
+        
+        
+    def get_sent(self, idx, is_pos):
+        if is_pos:
+            t1, t2 = self.lines[idx][0], self.lines[idx][1]
+        else:
+            t1, t2 = self.lines[idx][0], self.lines[rand.randrange(len(self.lines))][1]
+            
+        return t1, t2
+    
+    def random_mask(self, sentence, t):
+        tokens = sentence.split() #only useful for textual sentences
+        output_label = []
+        output =[]
+        # t% of the tokens will be masked
+        for i, token in enumerate(tokens): # iter through words
+            prob = rand.random()
+            # remove cls and sep token
+            token_id = self.tokenizer(token)['input_ids'][1:-1] # token list
+            # mask tokens of a word with t%
+            if prob < t:
+                for i in range(len(token_id)):
+                    output.append(self.tokenzier.vocab('[MASK]'))
+                output_label.append(token_id)
+            else:
+                output.append(token_id)
+                for i in range(len(token_id)):
+                    output_label.append(0)
+        # flattening
+        output = list(itertools.chain(*[[x] if not isinstance(x, list) else x for x in output]))
+        output_label = list(itertools.chain(*[[x] if not isinstance(x, list) else x for x in output_label]))
+        assert len(output) == len(output_label)
+        return output, output_label
+        
+    
+### attention layers
+class MultiHeadedAttention(torch.nn.Module):
+    
+    def __init__(self, heads, d_model, dropout=0.1):
+        super(MultiHeadedAttention, self).__init__()
+        
+        assert d_model % heads == 0
+        self.d_k = d_model // heads
+        self.heads = heads
+        self.dropout = torch.nn.Dropout(dropout)
+
+        self.query = torch.nn.Linear(d_model, d_model)
+        self.key = torch.nn.Linear(d_model, d_model)
+        self.value = torch.nn.Linear(d_model, d_model)
+        self.output_linear = torch.nn.Linear(d_model, d_model)
+        
+    def forward(self, query, key, value, mask):
+        """
+        query, key, value of shape: (batch_size, max_len, d_model)
+        mask of shape: (batch_size, 1, 1, max_words)
+        """
+        # (batch_size, max_len, d_model)
+        query = self.query(query)
+        key = self.key(key)        
+        value = self.value(value)   
+        
+        # (batch_size, max_len, d_model) --> (batch_size, max_len, h, d_k) --> (batch_size, h, max_len, d_k)
+        query = query.view(query.shape[0], -1, self.heads, self.d_k).permute(0, 2, 1, 3)   
+        key = key.view(key.shape[0], -1, self.heads, self.d_k).permute(0, 2, 1, 3)  
+        value = value.view(value.shape[0], -1, self.heads, self.d_k).permute(0, 2, 1, 3)  
+        
+        # (batch_size, h, max_len, d_k) matmul (batch_size, h, d_k, max_len) --> (batch_size, h, max_len, max_len)
+        scores = torch.matmul(query, key.permute(0, 1, 3, 2)) / math.sqrt(query.size(-1))
+
+        # fill 0 mask with super small number so it wont affect the softmax weight
+        # (batch_size, h, max_len, max_len)
+        scores = scores.masked_fill(mask == 0, -1e9)    
+
+        # (batch_size, h, max_len, max_len)
+        # softmax to put attention weight for all non-pad tokens
+        # max_len X max_len matrix of attention
+        weights = F.softmax(scores, dim=-1)           
+        weights = self.dropout(weights)
+
+        # (batch_size, h, max_len, max_len) matmul (batch_size, h, max_len, d_k) --> (batch_size, h, max_len, d_k)
+        context = torch.matmul(weights, value)
+
+        # (batch_size, h, max_len, d_k) --> (batch_size, max_len, h, d_k) --> (batch_size, max_len, d_model)
+        context = context.permute(0, 2, 1, 3).contiguous().view(context.shape[0], -1, self.heads * self.d_k)
+
+        # (batch_size, max_len, d_model)
+        return self.output_linear(context)
+
+class FeedForward(torch.nn.Module):
+    "Implements FFN equation."
+
+    def __init__(self, d_model, middle_dim=2048, dropout=0.1):
+        super(FeedForward, self).__init__()
+        
+        self.fc1 = torch.nn.Linear(d_model, middle_dim)
+        self.fc2 = torch.nn.Linear(middle_dim, d_model)
+        self.dropout = torch.nn.Dropout(dropout)
+        self.activation = torch.nn.GELU()
+
+    def forward(self, x):
+        out = self.activation(self.fc1(x))
+        out = self.fc2(self.dropout(out))
+        return out
+
+class EncoderLayer(torch.nn.Module):
+    '''
+    layer: Attn -> drop -> LN -> FFN -> drop -> LN
+    '''
+    def __init__(
+        self, 
+        d_model=768,
+        heads=12, 
+        feed_forward_hidden=768 * 4, 
+        dropout=0.1
+        ):
+        super(EncoderLayer, self).__init__()
+        self.layernorm = torch.nn.LayerNorm(d_model)
+        self.self_multihead = MultiHeadedAttention(heads, d_model)
+        self.feed_forward = FeedForward(d_model, middle_dim=feed_forward_hidden)
+        self.dropout = torch.nn.Dropout(dropout)
+
+    def forward(self, embeddings, mask):
+        # embeddings: (batch_size, max_len, d_model)
+        # encoder mask: (batch_size, 1, 1, max_len)
+        # result: (batch_size, max_len, d_model)
+        interacted = self.dropout(self.self_multihead(embeddings, embeddings, embeddings, mask))
+        # residual layer
+        interacted = self.layernorm(interacted + embeddings)
+        # bottleneck
+        feed_forward_out = self.dropout(self.feed_forward(interacted))
+        encoded = self.layernorm(feed_forward_out + interacted)
+        return encoded
+    
+class BERT(torch.nn.Module):
+    """
+    BERT model : Bidirectional Encoder Representations from Transformers.
+    """
+
+    def __init__(self, vocab_size, d_hidden=128, n_layers=6, heads=6, dropout=0.1):
+        """
+        :param vocab_size: vocab_size of total words
+        :param d_hidden: BERT model hidden size
+        :param n_layers: numbers of Transformer blocks(layers)
+        :param attn_heads: number of attention heads
+        :param dropout: dropout rate
+        """
+
+        super().__init__()
+        self.d_hidden = d_hidden
+        self.n_layers = n_layers
+        self.heads = heads
+
+        # paper noted they used 4 * hidden_size for ff_network_hidden_size
+        self.feed_forward_hidden = d_hidden * 4
+
+        # embedding for BERT, sum of positional, segment, token embeddings
+        self.embedding = BERTEmbedding(vocab_size=vocab_size, embed_size=d_hidden)
+
+        # multi-layers transformer blocks, deep network
+        self.encoder_blocks = torch.nn.ModuleList(
+            [EncoderLayer(d_hidden, heads, d_hidden * 4, dropout) for _ in range(n_layers)])
+
+    def forward(self, x, segment_info): #inputs are two tensors
+        # attention masking for padded token
+        # (batch_size, 1, seq_len, seq_len)
+        mask = (x > 0).unsqueeze(1).repeat(1, x.size(1), 1).unsqueeze(1)
+
+        # embedding the indexed sequence to sequence of vectors
+        x = self.embedding(x, segment_info)
+
+        # running over multiple transformer blocks
+        for encoder in self.encoder_blocks:
+            x = encoder.forward(x, mask)
+        return x    
+    
+class MLMDecoder(nn.Module): #task-specified decoder
+    """
+    predicting origin token from masked input sequence
+    n-class classification problem, n-class = vocab_size
+    """
+
+    def __init__(self, out_len, vocab_size):
+        """
+        :param out_len: output size of BERT model
+        :param vocab_size: total vocab size
+        """
+        super().__init__()
+        self.linear = torch.nn.Linear(out_len, vocab_size)
+        self.softmax = torch.nn.LogSoftmax(dim=-1)
+
+    def forward(self, x, is_ebm=True): #inputs are output from BERT and an is_ebm flag
+        if is_ebm:
+            return self.linear(x) #Size(batch_size, out_len, vocab_size) ?
+        else:
+            return self.softmax(self.linear(x))
+        
+'''The ultimate base_model for sequential EBMs'''
+def DiscreteDiffusion(nn.Module):
+    def __init__(self, vocab_size=vocab_size, hidden_size=128, out_len=10, n_layers=6, heads=6, \
+        dropout=0.1):
+        super().__init__()
+        self.bert = BERT(
+            vocab_size=vocab_size, 
+            d_hidden=hidden_size, 
+            n_layers=n_layers, 
+            heads=heads, 
+            dropout=dropout
+        )
+        self.decoder = MLMDecoder(
+            out_len, 
+            vocab_size
+        )
+    def forward(self, x, segment_label, is_ebm):
+        return self.decoder(self.bert(x, segment_label), is_ebm)
+    
+'''
+Train a WordPiece Tokenizer
+'''
+def train_tokenizer(task):
+    if task.startswith('binary'):
+        paths = [str(x) for x in Path('./datasets/binary_arith_txt').glob('**/*.txt')]
+        print(f'Total: {len(paths)} paths are found. \n{paths}')
+    else:
+        raise NotImplementedError
+    
+    ### training own tokenizer
+    tokenizer = BertWordPieceTokenizer(
+        clean_text=True, #remove control characters
+        # handle_chinese_chars=False,
+        # strip_accents=False,
+        lowercase=True
+    )
+
+    if task.startswith('binary'):
+        vocab_size=2
+    elif task == 'sudoku':
+        vocab_size=9
+        
+    tokenizer.train( 
+        files=paths,
+        vocab_size=vocab_size,  #0, 1 and special tokens
+        # min_frequency=5,
+        # limit_alphabet=1000, 
+        # wordpieces_prefix='##',
+        special_tokens=['[PAD]', '[CLS]', '[SEP]', '[MASK]', '[UNK]'],
+        show_progress=True
+        )
+
+    tokenizer.save_model('./ire_reasoning/models', f'tokenizer_{task}')
+    # tokenizer = BertTokenizer.from_pretrained(f'./models/tokenizer_{task}-vocab.txt', local_files_only=True)
+    print(f'\nTrained tokenizer saved to "./models/tokenizer_{task}"')
+    
+if __name__ == "__main__":
+    train_tokenizer('binary')
