@@ -9,6 +9,9 @@ sys.path.append('/home/user/shiqi/yichuan/EBM/ire_reasoning')
 os.chdir('/home/user/shiqi/yichuan/EBM/ire_reasoning')
 # print(f'The current working directory: {os.getcwd()}')
 
+from models.bert import train_tokenizer
+from datasets import Dataloader
+
 '''
 Sudoku Task. Borrowed from IRED
 '''
@@ -280,3 +283,36 @@ def load_data(task, train_batch_size, val_batch_size):
         return train_batches, val_batches, train_size, val_size
     else:
         raise NotImplementedError(f'The specified task: {task} is not defined')
+    
+def load_bert_data(task, stage, max_len, train_batch_size, val_data_size):
+    '''
+    params:
+        max_len: the padding length to the BERTDataset, the same parameter for initializing BERT
+    '''
+    print(f'Now start training tokenizer...')
+    tokenizer = train_tokenizer(task)
+    # tokenizer = Tokenizer.from_file('./ire_reasoning/models/tokenizer_{task}.json')
+    
+    if task.startswith('binary'):
+        if task.endswith('addition'):
+            train_path, test_path = '../datasets/binary_arith_txt/addition/train.txt', '../datasets/binary_arith_txt/addition/test.txt'
+            train_pairs, test_pairs = [], []
+            for path, pairs in zip([train_path, test_path], [train_pairs, test_pairs]):
+                if path.endswith('train.txt'):
+                    tag = 'train'
+                else:
+                    tag = 'test'
+                with open(path, 'r') as file:
+                    for line in file:
+                        t1, t2 = line.strip().split(' +++$+++ ')
+                        pairs.append((t1, t2))
+                
+                print(f'\n{tag} set size: {len(pairs)}')
+            train_data, test_data = BERTDataset(train_pairs, stage=stage, max_len=max_len, tokenizer=tokenizer) \
+                BERTDataset(test_pairs, stage=stage, max_len=max_len, tokenizer=tokenizer)
+            train_loader, test_loader = Dataloader(train_data, batch_size=train_batch_size, shuffle=True, pin_memory=True) \
+                Dataloader(test_data, batch_size=val_batch_size, shuffle=True, pin_memory=True)
+        return train_loader, test_loader, len(train_data), len(test_data)
+
+    else:
+        raise NotImplementedError

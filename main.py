@@ -15,7 +15,7 @@ os.chdir('/home/user/shiqi/yichuan/EBM/ire_reasoning')
 print(f'The current working directory: {os.getcwd()}')
 import hydra
 from models import SequentialEBM
-from datasets import load_data
+from datasets import load_bert_data
 
 def test(model, test_data):
     '''
@@ -68,6 +68,7 @@ def SequentialEBMsTrainer:
         model,
         train_dataloader,
         test_dataloader,
+        stage,
         lr=1e-4,
         weight_decay=0.01,
         betas=(0.9, 0.999),
@@ -79,14 +80,15 @@ def SequentialEBMsTrainer:
         self.model = model
         self.train_data = train_dataloader
         self.test_data = test_dataloader
+        self.stage = stage
         # Schedule the optimizer (as stated in paper)
-        self.optim = optim.AdamW(self.model.parameters(), lr=lr, betas=betas, weight_decay=weight_decay)
+        self.optim = optim.AdamW(self.model.bert.parameters(), lr=lr, betas=betas, weight_decay=weight_decay)
         self.optim_schedule = ScheduledOptim(
             self.optim, self.model.bert.d_model, n_warmup_steps=warmup_steps
         )
         self.criterion = nn.CrossEntropyLoss().to(device)
         self.log_freq = log_freq
-        print("Total Parameters:", sum([p.nelement() for p in self.model.parameters()]))
+        print("Total Parameters:", sum([p.nelement() for p in self.model.bert.parameters()]))
         
     def train(self, epoch):
         self.iteration(epoch, self.train_data)
@@ -95,7 +97,7 @@ def SequentialEBMsTrainer:
         self.iteration(epoch, self.test_data, train=False)
         
         
-    def iteration(self, epoch, data_loader, train=True):
+    def iteration(self, epoch, data_loader, train=True): #algorithm core function
         
         avg_loss = 0.0
         total_correct = 0
@@ -125,7 +127,6 @@ def SequentialEBMsTrainer:
             print(f'\ngamma shape: {gamma.shape}') #Size(batch_size, out_len, num_classes)
             
             # 2-1. Estimate the 1D conditional logp(xu | xo) via pseudolikelihood
-            # TODO: perform row by row, cannot batchalize??
             ce_loss = torch.tensor(0., requires_grad=True).to(self.device)
             for r in range(xu.size(0)): #iter through batch
                 logp_xu = self.model.pseudolikelihood(gamma[r], xu[r]) #Size(|u'|, num_classes)
@@ -172,8 +173,9 @@ def SequentialEBMsTrainer:
             config_name='config')
 def main(config):
     '''1. Load task datasets'''
-    print(f'\nLoading datasets for task: {config.task_name}...')
-    train_data, val_data, train_size, val_size = load_data(config.task_name, config.train.batch_size, config.sampling.batch_size) 
+    print(f'\nLoading datasets for task: {config.task_name}, max_len: {config.max_len}...')
+    max_len = config.tasks[config.task_name].inp_len + config.tasks[config.task_name].out_len
+    train_loader, test_loader, train_size, test_size = load_bert_data(config.task_name, config.train.stage, max_len, config.train.batch_size, config.sampling.batch_size) 
 
     # return ##############
 
@@ -186,6 +188,13 @@ def main(config):
         task_config=task_config,
         special_tokens=config.special_tokens,
         )
+    sebm_trainer = SequentialEBMsTrainer(
+        sebm,
+        train_loader,
+        test_loader,
+        stage=config.train.stage,
+        device='cpu'
+    )
 
     # return ##############
 
@@ -193,12 +202,12 @@ def main(config):
         print(f'No checkpoints found.')
         print(f'\nBefore training...')
         # test(sebm, val_data[0]) 
-        sebm.evaluate(val_data, store_stat=False, sampling_config=config.sampling, visual_config=config.visualize) 
+        sebm_trainer.evaluate(val_data, store_stat=False, sampling_config=config.sampling, visual_config=config.visualize) 
         
         # return##############
         
         print(f'\n\n\n3. Start training...')
-        sebm.train(train_data, config.train, config.tasks[config.task_name], config.visualize)
+        sebm_trainer.train(train_data, config.train, config.tasks[config.task_name], config.visualize)
         
         # return##############
     else:
@@ -207,7 +216,7 @@ def main(config):
 
     '''3. Evaluate'''
     print(f'\n\n\n4. Start evaluation...')
-    sebm.evaluate(val_data, store_stat=True, sampling_config=config.sampling, visual_config=config.visualize)
+    sebm_trainer.evaluate(val_data, store_stat=True, sampling_config=config.sampling, visual_config=config.visualize)
 
 
 # Example usage

@@ -543,13 +543,14 @@ class BERTSequentialEBMs(SequentialEBMs):
         self.task_config = task_config
         self.inp_len = task_config.inp_len
         self.out_len = task.config.out_len
+        self.max_len = self.inp_len + self.out_len #the max length model can take in
         self.vocab_size = task_config.num_classes
         self.device = 'cpu' ###########for debugging
         
         self.model = self._build_model()
         
     def _build_model(self): #initialize a bert
-        self.model = DiscreteDiffusion(vocab_size=self.vocab_size)
+        self.model = DiscreteDiffusion(vocab_size=self.vocab_size, max_len=self.max_len) #Assume inp_len >= out_len
         
     def energy(self, idx:int, val: bool, rest_idx: torch.Tensor, latent: torch.Tensor) \
         -> torch.Tensor:
@@ -588,8 +589,110 @@ class BERTSequentialEBMs(SequentialEBMs):
                 
         return torch.sum(energy, dim=1) #sum along all ui positions
         
-    def sampling(self, sample_batch, sampler='gibbs', sampling_config=None):
-        raise
+    def sampling(self, sample_batch, sampler='gibbs', sampling_config=None, visual_ebms=None):
+        '''
+        Sampling on  the given sample batch, returns the prediction batch, the evaluation result and a viualization.
+
+        params:
+            - sample_batch: dict, 'bert_input'(Size(batch_size, inp_len)) and 'bert_label'(Size(batch_size, out_len))
+            - sampler (str): the sampling method, default: Gibbs
+            - sampling_config: batch_size, steps, temperature, metrics, etc.
+            - visual_ebms (VisualEBMs): an empty dic for storing EBM landscapes
+
+        returns:
+            - y_pred (Size(batch_size, out_len)): non-one-hot predicted sequence
+            - ebms_log (VisualEBMs.ebms_log): a filled dict containing the energy landscapes (num_vars x num_classes) and losses for a sample batch
+        '''
+        #___________configs_____________
+        batch_size = sampling_config.batch_size #should be one!!
+        steps_num = sampling_config.steps
+        T = sampling_config.temperature #?
+        time_step=visual_ebms.time_step #1
+        criterion = nn.CrossEntropyLoss()
+        softmax = nn.Softmax(dim=1)
+        #____________________________________
+        self.model.to(device)
+        sample_batch = sample_batch.to(device)
+        with torch.no_grad():
+            if sampler == 'gibbs':
+                onehot_sample_batch = torch.nn.functional.one_hot(sample_batch.type(torch.long), self.num_classes) #one-hot transfer
+                x = onehot_sample_batch[:, :self.inp_len, :]
+                '''1. Randomly initialize 'y_pred' and sample an unmasking order 'pi'.'''
+                y_pred = torch.randint(low=0, high=self.num_classes, size=(batch_size, self.out_len)).to(device) #not one-hot
+                pi = torch.randperm(self.out_len) #unmasking order
+                # print(f'\nInside sampling(), the randomly initialized y_pred({y_pred.shape}): \n{y_pred}' \
+                #     f'\nunmasking order: {pi}')
+                for k in range(1, self.ebm_num+1):
+                    # print(f'\n\n{k}-th EBM: ')
+                    yo = torch.unsqueeze(y_pred[:, pi[:k]], 2) #.to(device) #shuffled, Size(batch_size, |pi_k|, 1)
+                    '''2. Gibbs sampling on yo'''
+                    for t in range(steps_num): #TODO: log the energy landscapes and losses
+                        # print(f'\nInside {t}-th step: ')
+                        # y = sample_batch[:, self.inp_len:self.inp_len+k] #just for calculating the loss
+                        masked_y = torch.full((batch_size, self.out_len), 2).to(device)
+                        # print(f'\nmasked_y before: \n{masked_y}')
+                        masked_y[:, pi[:k]] = yo.squeeze(2) #这一步并不会改变yo.shape (Size(batch_size, k, 1))
+                        # print(f'\nmasked_y after: \n{masked_y}')
+                        model_input = torch.cat([sample_batch[:, :self.inp_len], masked_y], dim=1).float().to(device) #Size(batch_size, inp_len+out_len)
+                        gamma = self.model.forward(model_input, is_ebm=False) #Size(batch_size, out_len, num_classes)
+                        yo_energy = self.energy(idx=pi[0], val=True, rest_idx=yo, latent=gamma[:, pi[:k], :]) #Size(batch_size, 1)
+                        # print(f'\nyo_energy({yo_energy.shape}): \n{yo_energy}')
+                        #build conditional distribution (logits)
+                        energy_landscape = torch.zeros((k, self.num_classes), device=device) # first sample in each batch!
+                        losses = torch.zeros(k).to(device)
+                        yo_prime = yo.clone()
+                        for i in range(k):
+                            ei_dist = self.energy(idx=pi[i], val=False, rest_idx=yo, latent=gamma[:, pi[:k], :]) #Size(batch_size, num_classes)
+                            z_oi = torch.sum(torch.exp(-1*ei_dist), dim=-1) #Size(batch_size)
+                            expanded_zoi = z_oi.unsqueeze(1).expand_as(ei_dist) #Size(batch_size, num_classes)
+                            # Sample from the 1D conditional p(y_{o_i} | y_{o_-i})
+                            p_oi = torch.exp(-1*ei_dist) / expanded_zoi #Size(batch_size, num_classes)
+                            
+                            try:
+                                y_oi_prime = torch.multinomial(p_oi, num_samples=1) #Size(batch_size, 1)
+                            except:
+                                raise RuntimeError(f'multinomial() input: p_oi seems contains nan.\n' \
+                                    f'p_oi({p_oi.shape}): \n{p_oi}\n' \
+                                    f'ei_dist({ei_dist.shape}): \n{ei_dist}\ngamma[:, pi[:k], :]({gamma[:, pi[:k], :].shape}): \n{gamma[:, pi[:k], :]}\n'\
+                                    f'gamma({gamma.shape}): \n{gamma}\n'\
+                                    f'model_input({model_input.shape}): \n{model_input}')
+                            
+                            # print(f'\nThe sampled p_oi.shape = {p_oi.shape}') #Size(1, 2)
+                            yo_prime[:, i, :] = y_oi_prime
+                            if t % time_step == 0:
+                                # Record the i-th row of the energy landscape and losses at (k, t)
+                                energy_landscape[i, :] = ei_dist[0, :] #Size(1, num_classes)
+                                yi = sample_batch[0, self.inp_len+pi[i]].view(-1).to(torch.long)
+                                # print(f'\n CE between p_oi: {p_oi[0:1, :]} and yi: {yi}')
+                                losses[i] = criterion(p_oi[0:1, :], yi)
+                        # end position iter
+                        
+                        # try:
+                        yo_prime_energy = self.energy(idx=pi[0], val=True, rest_idx=yo_prime, latent=gamma[:, pi[:k], :]) #Size(batch_size, 1)
+                        # except:   
+                        #     raise RuntimeError(f'Error!: rest_idx(yo_prime).shape: {yo_prime.shape}, latent(gamma[:, pi[:k], :]).shape: {gamma[:, pi[:k], :].shape}')
+                        
+                        '''3. Check if the energy decreases after a single Gibbs step'''
+                        mask = yo_prime_energy < yo_energy
+                        expanded_mask = mask.unsqueeze(2).expand_as(yo) #Size(batch_size, |pi_k|, 1)
+                        # print(f'\nyo_energy({yo_energy.shape}): \n{yo_energy}\nyo_prime_energy({yo_prime_energy.shape}): \n{yo_prime_energy}' \
+                        #     f'\nexpanded_mask({expanded_mask.shape}): \n{expanded_mask}')
+                        # print(f'\nBefore update, yo({yo.shape}): \n{yo}')
+                        yo[expanded_mask] = yo_prime[expanded_mask] #update the entire sample row of yo if the energy decreases
+                        # print(f'\nAfter update, yo({yo.shape}): \n{yo}')
+                        if t % time_step == 0: 
+                            # print(f'1st samples\' energy_landscape({energy_landscape.shape}): \n{energy_landscape}\nlosses({losses.shape}): {losses}')
+                            visual_ebms.screenshot(k, t+1, energy_landscape, torch.mean(losses.cpu()).item())
+                    #end of step iter
+                    y_pred[:, pi[:k]] = yo.squeeze(-1) 
+                    # print(f'predicted y = \n{y_pred}, ground_truth y = \n{sample_batch[:, self.inp_len:]} \nafter T = {steps_num} steps')
+                #end of ebm iter
+                if visual_ebms.visualize:
+                    return y_pred, visual_ebms.ebms_log
+                else:
+                    return y_pred, None
+            else:
+                raise NotImplementedError
     
     def pseudolikelihood(self, latent, mlm_label):
         '''

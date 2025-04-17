@@ -71,16 +71,17 @@ class BERTEmbedding(nn.Module):
     
 
 class BERTDataset(Dataset):
-    def __init__(self, data_pair, tokenizer, max_len=256):
+    def __init__(self, data_pair, tokenizer, stage, max_len=256):
         '''
         Init params:
             - data_pair: a list of (x, y) pairs, where x and y are strings, and words are separated by blank spaces
-            - 
+            - stage: pretrain / sft specify the masking area when calling __getitem__()
         '''
         self.tokenizer = tokenizer
         self.max_len = max_len
         self.corpus_lines = len(data_pair)
         self.lines = data_pair
+        self.stage = stage
         
     def __len__(self):
         return self.corpus_lines
@@ -102,19 +103,28 @@ class BERTDataset(Dataset):
         '''
         # get pos / neg sentence pair
         t1, t2 = self.get_sent(item, is_pos)
-        # randomly mask words with t% rate
-        t1_masked, t1_label, t2_masked, t2_label = self.random_mask(t1, t), self.random_mask(t2, t)
-        # complete the start and end of sequences and their labels with special tokens
-        t1 = [self.tokenizer.vocab['[CLS]']] + t1_masked + [self.tokenizer.vocab['[SEP]']]
-        t2 = t2_masked + [self.tokenizer.vocab['[SEP]']]
-        t1_label = [self.tokenizer.vocab['[PAD]']] + t1_label + [self.tokenizer.vocab['[PAD]']]
-        t2_label = t2_label + [self.tokenizer.vocab['[PAD]']]
-        # concatenate t1 and t2 and add padding to max_len
-        segmen_label = ([1 for _ in range(len(t1))] + [2 for _ in range(len(t2))])[:self.max_len]
-        bert_input = (t1 + t2)[:self.max_len]
-        bert_label = (t1_label + t2_label)[:self.max_len]
-        padding = [self.tokenzier.vocab['[PAD]'] for _ in range(self.max_len - len(bert_input))]
-        bert_input.extend(padding), bert_label.extend(padding), segment_label.extend(padding)
+        '''randomly mask t1 and t2 with a uniformly sampled masking rate t'''
+        if sel.stage == 'pretrained':
+            # randomly mask words with t% rate
+            t1_masked, t1_label, t2_masked, t2_label = self.random_mask(t1, t), self.random_mask(t2, t)
+            # complete the start and end of sequences and their labels with special tokens
+            t1 = [self.tokenizer.vocab['[CLS]']] + t1_masked + [self.tokenizer.vocab['[SEP]']]
+            t2 = t2_masked + [self.tokenizer.vocab['[SEP]']]
+            t1_label = [self.tokenizer.vocab['[PAD]']] + t1_label + [self.tokenizer.vocab['[PAD]']]
+            t2_label = t2_label + [self.tokenizer.vocab['[PAD]']]
+            # concatenate t1 and t2 and add padding to max_len
+            segmen_label = ([1 for _ in range(len(t1))] + [2 for _ in range(len(t2))])[:self.max_len]
+            bert_input = (t1 + t2)[:self.max_len]
+            bert_label = (t1_label + t2_label)[:self.max_len]
+            padding = [self.tokenzier.vocab['[PAD]'] for _ in range(self.max_len - len(bert_input))]
+            bert_input.extend(padding), bert_label.extend(padding), segment_label.extend(padding)
+            
+        '''fully mask the t2 while maintain the t1'''
+        elif self.stage == 'sft': #TODO
+            raise NotImplementedError
+        else:
+            raise NotImplementedError
+        
         
         output = {
             'bert_input': bert_input,
@@ -261,7 +271,7 @@ class BERT(torch.nn.Module):
     BERT model : Bidirectional Encoder Representations from Transformers.
     """
 
-    def __init__(self, vocab_size, d_hidden=128, n_layers=6, heads=6, dropout=0.1):
+    def __init__(self, vocab_size, d_hidden=128, n_layers=6, heads=6, max_len=256, dropout=0.1):
         """
         :param vocab_size: vocab_size of total words
         :param d_hidden: BERT model hidden size
@@ -279,7 +289,7 @@ class BERT(torch.nn.Module):
         self.feed_forward_hidden = d_hidden * 4
 
         # embedding for BERT, sum of positional, segment, token embeddings
-        self.embedding = BERTEmbedding(vocab_size=vocab_size, embed_size=d_hidden)
+        self.embedding = BERTEmbedding(vocab_size=vocab_size, embed_size=d_hidden, seq_len=max_len) #只有这里用了max_len?
 
         # multi-layers transformer blocks, deep network
         self.encoder_blocks = torch.nn.ModuleList(
@@ -322,13 +332,14 @@ class MLMDecoder(nn.Module): #task-specified decoder
 '''The ultimate base_model for sequential EBMs'''
 def DiscreteDiffusion(nn.Module):
     def __init__(self, vocab_size=vocab_size, hidden_size=128, out_len=10, n_layers=6, heads=6, \
-        dropout=0.1):
+        max_len=256, dropout=0.1):
         super().__init__()
         self.bert = BERT(
             vocab_size=vocab_size, 
             d_hidden=hidden_size, 
             n_layers=n_layers, 
             heads=heads, 
+            max_len=max_len,
             dropout=dropout
         )
         self.decoder = MLMDecoder(
@@ -374,6 +385,7 @@ def train_tokenizer(task):
     tokenizer.save_model('./ire_reasoning/models', f'tokenizer_{task}')
     # tokenizer = BertTokenizer.from_pretrained(f'./models/tokenizer_{task}-vocab.txt', local_files_only=True)
     print(f'\nTrained tokenizer saved to "./models/tokenizer_{task}"')
+    return tokenizer
     
 if __name__ == "__main__":
     train_tokenizer('binary')
