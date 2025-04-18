@@ -14,8 +14,10 @@ sys.path.append('/home/user/shiqi/yichuan/EBM/ire_reasoning')
 os.chdir('/home/user/shiqi/yichuan/EBM/ire_reasoning')
 print(f'The current working directory: {os.getcwd()}')
 import hydra
-from models import SequentialEBM
-from datasets import load_bert_data
+from sequential_ebms import BERTSequentialEBMs
+from datasets import load_bert_data, load_data
+from utils import convert_time, VisualizeEBMs
+import random as rand
 
 def test(model, test_data):
     '''
@@ -29,6 +31,16 @@ def test(model, test_data):
     for k in range(1, model.ebm_num+1):
         output_dict = model.generate(x, k)
         print(f'\n___________\n{k}-th output_dict: \n{output_dict}\n__________\n')
+        
+def unmasking_schedule(k, scheduler='cosine'):
+    if scheduler == 'cosine':
+        return 0.5 * (1 + np.cos(np.linspace(0, np.pi, k)))
+    elif scheduler == 'linear':
+        return np.linspace(1, 0, k)
+    elif scheduler == 'quadratic':
+        return np.linspace(1, 0, k) ** 2
+    else:
+        raise NotImplementedError
 
 class ScheduledOptim():
     '''A simple wrapper class for learning rate scheduling'''
@@ -62,17 +74,18 @@ class ScheduledOptim():
         for param_group in self._optimizer.param_groups:
             param_group['lr'] = lr
 
-def SequentialEBMsTrainer:
+class SequentialEBMsTrainer:
     def __init__(
         self,
         model,
         train_dataloader,
         test_dataloader,
-        stage,
         lr=1e-4,
         weight_decay=0.01,
         betas=(0.9, 0.999),
-        warnup_steps=10000,
+        warmup_steps=10000,
+        sampler='gibbs',
+        sampling_times=10,
         log_freq=10, #log every 10 batches
         device='cpu' ########debugging
     ):
@@ -80,7 +93,6 @@ def SequentialEBMsTrainer:
         self.model = model
         self.train_data = train_dataloader
         self.test_data = test_dataloader
-        self.stage = stage
         # Schedule the optimizer (as stated in paper)
         self.optim = optim.AdamW(self.model.bert.parameters(), lr=lr, betas=betas, weight_decay=weight_decay)
         self.optim_schedule = ScheduledOptim(
@@ -88,16 +100,83 @@ def SequentialEBMsTrainer:
         )
         self.criterion = nn.CrossEntropyLoss().to(device)
         self.log_freq = log_freq
+        # sampling configs:
+        self.sampler = sampler
+        self.sampling_times = sampling_times
         print("Total Parameters:", sum([p.nelement() for p in self.model.bert.parameters()]))
         
-    def train(self, epoch):
-        self.iteration(epoch, self.train_data)
+    def train(self, epoch, stage):
+        self.iteration(epoch, self.train_data, stage)
 
-    def test(self, epoch):
-        self.iteration(epoch, self.test_data, train=False)
+    def test(self, epoch, stage):
+        self.iteration(epoch, self.test_data, stage, train=False)
         
+    def evaluate(self, k, scheduler='cosine', visualize=False): #Inference
+        '''
+        Recover a fully masked sequence using a specified scheduler, with decreasing t
+        '''
+        t_list = unmasking_schedule(k, scheduler)
+        if visualize:
+            raise NotImplementedError
+        else:
+            self.iteration(1, self.test_data, stage='inference', train=False, \
+                schedule=t_list)
         
-    def iteration(self, epoch, data_loader, train=True): #algorithm core function
+    def add_schedule(self, data, schedule):
+        '''
+        simply add a schedule label key-value pair to the data dict
+        
+        params:
+            data: batchalized data dict with bert_inputs, bert_labels, segment_labels and is_positive
+            schedule: a list of decreasing unmasking rate t
+        return:
+            scheduled_data: batchalized data dict extended with schedule_label k-v pair
+        '''
+        scheduled_data = data
+        batch_size, io_len = data['bert_label'].size()
+        print(f"bert_label.shape: {data['bert_label'].shape}")
+        schedule_label = [[0]*io_len]*batch_size #initialize a 2D batchalized schedule label
+        print(f"\nspecial token_ids: CLS={self.tokenizer.vocab['[CLS]']}, " \
+            f"SEP={self.tokenizer.vocab['[SEP]']}, PAD={self.tokenizer.vocab['[PAD]']}, " \
+                f"MASK={self.tokenizer.vocab['[MASK]']}")
+        special_ids = {
+            self.tokenizer.vocab['[CLS]'],
+            self.tokenizer.vocab['[SEP]'],
+            self.tokenizer.vocab['[PAD]'],
+            self.tokenizer.vocab['[MASK]'] 
+        }
+        assert self.tokenizer.vocab['[PAD]'] == 0
+        full_label = data['bert_label'].tolist()
+        assert len(full_label)==batch_size and len(full_label[0])==io_len, \
+            f'bert_label: Size({len(full_label)}, {len(full_label[0])})'
+        for k, t in enumerate(schedule):
+            unmask_num = int(t * torch.count_nonzero(data['bert_label'][0]))
+            assert unmask_num > 0, f'unmasking number should be positive! Got {unmask_num}'
+            print(f'k: {k}, unmask_num: {unmask_num}')
+            for bid in range(batch_size):
+                for pos, label in enumerate(full_label[bid]):
+                    #pick the remaining t2 tokens as unmasking candidate
+                    if label not in special_ids and schedule_label[bid][pos]==0: 
+                        prob = rand.random()
+                        if prob < t:
+                            schedule_label[bid][pos] = k+1 #1-indexed
+                    if torch.count_nonzero(schedule_label[bid]) == unmask_num:
+                        break
+        schedule_label = torch.tensor(schedule_label)
+        print(f'\nschedule_label: \n{schedule_label}')
+        scheduled_data['schedule_label'] = schedule_label
+        assert torch.count_nonzero(schedule_label) == torch.count_nonzero(data['bert_label']), \
+            f'nonzero labels count: schedule={torch.count_nonzero(schedule_label)}, ' \
+                f'bert={torch.count_nonzero(data['bert_label'])}'
+        return scheduled_data    
+                        
+        
+    def iteration(self, epoch, data_loader, stage, train=True, schedule=None, \
+                  visual_ebms=None):
+        '''
+        Algorithm core function (exclude sampling details)
+        Performs train / test / evaluation iterations during different stages
+        '''
         
         avg_loss = 0.0
         total_correct = 0
@@ -108,57 +187,86 @@ def SequentialEBMsTrainer:
         # progress bar
         data_iter = tqdm.tqdm(
             enumerate(data_loader),
-            desc="EP_%s:%d" % (mode, epoch),
+            desc="EP_%s_%s:%d" % (mode, stage, epoch),
             total=len(data_loader),
             bar_format="{l_bar}{r_bar}"
         )
 
-        for i, data in data_iter:
-
-            # 0. batch_data will be sent into the device(GPU or cpu)
-            data = {key: value.to(self.device) for key, value in data.items()}
-            print(f'\ndata: {data}')
-            
-            
-            xo, xu = data['bert_input'], data['bert_label'] #already masked with rate t
-            print(f'\nxo({xo.shape}): \n{xo}\nxu({xu.shape}): \n{xu.shape}\n')
-            # 1. Forward MLM to generate the gamma for calculating the energy landscapes
-            gamma = self.model.forward(xo, data['bert_label'], is_ebm=True) 
-            print(f'\ngamma shape: {gamma.shape}') #Size(batch_size, out_len, num_classes)
-            
-            # 2-1. Estimate the 1D conditional logp(xu | xo) via pseudolikelihood
-            ce_loss = torch.tensor(0., requires_grad=True).to(self.device)
-            for r in range(xu.size(0)): #iter through batch
-                logp_xu = self.model.pseudolikelihood(gamma[r], xu[r]) #Size(|u'|, num_classes)
-                xu_label = torch.nonzero(xu[r]).squeeze() #Size(|u'|)
-                assert lop_xu.size(0) == xu_label.size(0), \
-                    f'\nlop_xu.shape: {logp_xu.shape}, xu_label.shape: {xu_label.shape}'
-                ce_loss += self.criterion(logp_xu, xu_label)
-            
-            # 2-2. Contrast-loss
-            # TODO
-            contrast_loss = torch.tensor(0., requires_grad=True).to(self.device)#########暫设0
-            loss = ce_loss + contrast_loss
-
-            # 3. backward and optimization only in train
+        for i, data in data_iter: #batch
             if train:
+                '''MLM training pradigm with varying t'''
+                # 0. batch_data will be sent into the device(GPU or cpu)
+                data = {key: value.to(self.device) for key, value in data.items()}
+                print(f'\ndata: {data}')
+                xo, xu = data['bert_input'], data['bert_label'] #already masked with rate t
+                print(f'\nxo({xo.shape}): \n{xo}\nxu({xu.shape}): \n{xu.shape}\n')
+                # 1. Forward MLM to generate the gamma for calculating the energy landscapes
+                gamma = self.model.forward(xo, data['segment_label'], is_ebm=True) 
+                print(f'\ngamma shape: {gamma.shape}') #Size(batch_size, out_len, num_classes)
+                
+                # 2-1. Estimate the 1D conditional logp(xu | xo) via pseudolikelihood
+                ce_loss = torch.tensor(0., requires_grad=True).to(self.device)
+                for r in range(xu.size(0)): #iter through batch
+                    logp_xu = self.model.pseudolikelihood(gamma[r], xu[r]) #Size(|u'|, num_classes)
+                    xu_label = torch.nonzero(xu[r]).squeeze() #Size(|u'|)
+                    assert logp_xu.size(0) == xu_label.size(0), \
+                        f'\nlop_xu.shape: {logp_xu.shape}, xu_label.shape: {xu_label.shape}'
+                    ce_loss += self.criterion(logp_xu, xu_label)
+                
+                # 2-2. Contrast-loss
+                # TODO
+                contrast_loss = torch.tensor(0., requires_grad=True).to(self.device)#########暫设0
+                loss = ce_loss + contrast_loss
+
+                # 3. backward and optimization only in train
                 self.optim_schedule.zero_grad()
                 loss.backward()
                 self.optim_schedule.step_and_update_lr()
 
-            # next sentence prediction accuracy
-            # correct = next_sent_output.argmax(dim=-1).eq(data["is_next"]).sum().item()
-            avg_loss += loss.item()
-            # total_correct += correct
-            # total_element += data["is_next"].nelement()
-
-            post_fix = {
-                "epoch": epoch,
-                "iter": i,
-                "avg_loss": avg_loss / (i + 1),
-                # "avg_acc": total_correct / total_element * 100,
-                "loss": loss.item()
-            }
+                # next sentence prediction accuracy
+                # correct = next_sent_output.argmax(dim=-1).eq(data["is_next"]).sum().item()
+                avg_loss += loss.item()
+                # total_correct += correct
+                # total_element += data["is_next"].nelement()
+                post_fix = { # TODO: 不同情况k v 不同
+                    "epoch": epoch,
+                    "sample": i,
+                    "avg_loss": avg_loss / (i + 1),
+                    # "avg_acc": total_correct / total_element * 100,
+                    "loss": loss.item()
+                }
+                
+            elif not train and schedule:
+                '''inference with scheduled t and sequential EBMs sampling'''
+                # 1. break down the sequence tokens according to the schedule
+                scheduled_data = self.add_schedule(data, schedule)
+                # 2. iterate through k EBMs, send input to device, and each EBM performs gibbs sampling
+                partial_pred = torch.zeros_like(scheduled_data['bert_input']) #init
+                k_losses = {}
+                for k, t in enumerate(schedule):
+                    partial_pred, sth = self.model.sampling(
+                        k+1, #1-indexed unmasking order label
+                        partial_pred,
+                        scheduled_data, 
+                        self.sampler,
+                        self.sampling_times,
+                        visual_ebms=visual_ebms
+                    )
+                    if visual_ebms == None:
+                        k_losses[k] = sth
+                pred = partial_pred
+                print(f'pred: \n{pred}, \nk_losses: \n{k_losses}')
+                # 3. check correctness (tk-avg and final) and record the energy landscape TODO
+                # TODO 单独记录energy变化
+                post_fix = {
+                    "sample": i,
+                    "final_acc": final_acc
+                }
+            
+            else:
+                '''test the MLM training effectiveness and sampling'''
+                # TODO 或许没用？
+                raise NotImplementedError
 
             if i % self.log_freq == 0:
                 data_iter.write(str(post_fix))
@@ -172,10 +280,22 @@ def SequentialEBMsTrainer:
 @hydra.main(version_base=None, config_path='./configs',
             config_name='config')
 def main(config):
+    print(f'\n___\nStage: {config.train.stage}\n___\n')
     '''1. Load task datasets'''
-    print(f'\nLoading datasets for task: {config.task_name}, max_len: {config.max_len}...')
-    max_len = config.tasks[config.task_name].inp_len + config.tasks[config.task_name].out_len
-    train_loader, test_loader, train_size, test_size = load_bert_data(config.task_name, config.train.stage, max_len, config.train.batch_size, config.sampling.batch_size) 
+    if config.param_type == 'bert':
+        max_len = config.tasks[config.task_name].inp_len + config.tasks[config.task_name].out_len + 3
+        train_loader, test_loader, train_size, test_size = load_bert_data(
+            config.task_name, 
+            config.train.stage, #这里声明了stage: pretrain / sft
+            max_len,
+            config.train.batch_size, 
+            config.sampling.batch_size
+        )
+        print(f'\nLoaded datasets for task: {config.task_name}, max_len: {config.max_len}, ' \
+            f'train:test={train_size}:{test_size}...')
+    elif config.param_type == 'mlp':
+        train_loader, test_loader, train_size, test_size = load_data(
+            config.task_name, config.train.batch_size, config.sampling.batch_size) 
 
     # return ##############
 
@@ -183,17 +303,18 @@ def main(config):
     print(f'\nInitializing EBMs...')
     task_config = config.tasks[config.task_name]
     print(f'inp_len: {task_config.inp_len}, out_len: {task_config.out_len}, num_classes: {task_config.num_classes}')
-    sebm = SequentialEBM(
-        parameterization=config.param_type,
-        task_config=task_config,
-        special_tokens=config.special_tokens,
-        )
+    if config.param_type == 'bert':
+        sebm = BERTSequentialEBMs(
+            task_config=task_config,
+            device='cpu'
+            )
+    else:
+        raise NotImplementedError
     sebm_trainer = SequentialEBMsTrainer(
         sebm,
         train_loader,
         test_loader,
-        stage=config.train.stage,
-        device='cpu'
+        config.train.lr,
     )
 
     # return ##############
@@ -202,12 +323,13 @@ def main(config):
         print(f'No checkpoints found.')
         print(f'\nBefore training...')
         # test(sebm, val_data[0]) 
-        sebm_trainer.evaluate(val_data, store_stat=False, sampling_config=config.sampling, visual_config=config.visualize) 
+        sebm_trainer.evaluate(1, config.train.stage) 
         
         # return##############
         
         print(f'\n\n\n3. Start training...')
-        sebm_trainer.train(train_data, config.train, config.tasks[config.task_name], config.visualize)
+        for epoch in config.epochs:
+            sebm_trainer.train(epoch, config.train.stage)
         
         # return##############
     else:
@@ -216,7 +338,7 @@ def main(config):
 
     '''3. Evaluate'''
     print(f'\n\n\n4. Start evaluation...')
-    sebm_trainer.evaluate(val_data, store_stat=True, sampling_config=config.sampling, visual_config=config.visualize)
+    sebm_trainer.evaluate(1, config.train.stage)
 
 
 # Example usage

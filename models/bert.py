@@ -3,9 +3,10 @@ import torch.nn as nn
 import torch.nn.functional as F
 import sys
 import os
-import random
+import random as rand
 import math
 import itertools
+import transformers
 from datasets import Dataset
 from pathlib import Path
 os.chdir('/home/user/shiqi/yichuan/EBM')
@@ -63,7 +64,7 @@ class BERTEmbedding(nn.Module):
         self.token = nn.Embedding(vocab_size, embed_size, padding_idx=0)
         self.segment = nn.Embedding(3, embed_size, padding_idx=0)
         self.position = PositionalEmbedding(d_model=embed_size, max_len=seq_len)
-        self.dropout = nn.Dropout(p=dropout)
+        self.dropout = nn.Dropout(p=drop_out)
        
     def forward(self, sequence, segment_label):
         x = self.token(sequence) + self.position(sequence) + self.segment(segment_label)
@@ -103,27 +104,29 @@ class BERTDataset(Dataset):
         '''
         # get pos / neg sentence pair
         t1, t2 = self.get_sent(item, is_pos)
-        '''randomly mask t1 and t2 with a uniformly sampled masking rate t'''
-        if sel.stage == 'pretrained':
-            # randomly mask words with t% rate
-            t1_masked, t1_label, t2_masked, t2_label = self.random_mask(t1, t), self.random_mask(t2, t)
-            # complete the start and end of sequences and their labels with special tokens
-            t1 = [self.tokenizer.vocab['[CLS]']] + t1_masked + [self.tokenizer.vocab['[SEP]']]
-            t2 = t2_masked + [self.tokenizer.vocab['[SEP]']]
-            t1_label = [self.tokenizer.vocab['[PAD]']] + t1_label + [self.tokenizer.vocab['[PAD]']]
-            t2_label = t2_label + [self.tokenizer.vocab['[PAD]']]
-            # concatenate t1 and t2 and add padding to max_len
-            segmen_label = ([1 for _ in range(len(t1))] + [2 for _ in range(len(t2))])[:self.max_len]
-            bert_input = (t1 + t2)[:self.max_len]
-            bert_label = (t1_label + t2_label)[:self.max_len]
-            padding = [self.tokenzier.vocab['[PAD]'] for _ in range(self.max_len - len(bert_input))]
-            bert_input.extend(padding), bert_label.extend(padding), segment_label.extend(padding)
-            
-        '''fully mask the t2 while maintain the t1'''
-        elif self.stage == 'sft': #TODO
-            raise NotImplementedError
+        # randomly mask t1 and t2 with a uniformly sampled masking rate t
+        if self.stage == 'pretrained':
+            t1_processed, t1_label, t2_processed, t2_label = self.mask(t1, t), self.mask(t2, t)
+        # mask t2 with random t while keep t1 unmasked
+        elif self.stage == 'sft':
+            t1_processed, t1_label, t2_processed, t2_label = self.mask(t1, 0), self.mask(t2, t)
+        # keep t1 unmasked and t2 fully masked as the initial sequence 
+        elif self.stage == 'inference':
+            t1_processed, t1_label, t2_processed, t2_label = self.mask(t1, 0), self.mask(t2, 1)
         else:
             raise NotImplementedError
+        
+        # complete the start and end of sequences and their labels with special tokens
+        t1 = [self.tokenizer.vocab['[CLS]']] + t1_processed + [self.tokenizer.vocab['[SEP]']]
+        t2 = t2_processed + [self.tokenizer.vocab['[SEP]']]
+        t1_label = [self.tokenizer.vocab['[PAD]']] + t1_label + [self.tokenizer.vocab['[PAD]']]
+        t2_label = t2_label + [self.tokenizer.vocab['[PAD]']]
+        # concatenate t1 and t2 and add padding to max_len
+        segment_label = ([1 for _ in range(len(t1))] + [2 for _ in range(len(t2))])[:self.max_len]
+        bert_input = (t1 + t2)[:self.max_len]
+        bert_label = (t1_label + t2_label)[:self.max_len]
+        padding = [self.tokenzier.vocab['[PAD]'] for _ in range(self.max_len - len(bert_input))]
+        bert_input.extend(padding), bert_label.extend(padding), segment_label.extend(padding)
         
         
         output = {
@@ -143,7 +146,7 @@ class BERTDataset(Dataset):
             
         return t1, t2
     
-    def random_mask(self, sentence, t):
+    def mask(self, sentence, t):
         tokens = sentence.split() #only useful for textual sentences
         output_label = []
         output =[]
@@ -330,8 +333,8 @@ class MLMDecoder(nn.Module): #task-specified decoder
             return self.softmax(self.linear(x))
         
 '''The ultimate base_model for sequential EBMs'''
-def DiscreteDiffusion(nn.Module):
-    def __init__(self, vocab_size=vocab_size, hidden_size=128, out_len=10, n_layers=6, heads=6, \
+class DiscreteDiffusion(nn.Module):
+    def __init__(self, vocab_size, hidden_size=128, out_len=10, n_layers=6, heads=6, \
         max_len=256, dropout=0.1):
         super().__init__()
         self.bert = BERT(

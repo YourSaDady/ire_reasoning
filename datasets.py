@@ -4,13 +4,12 @@ import os
 import torch
 import pandas as pd
 import numpy as np
-from torch.utils.data.dataset import Dataset
-sys.path.append('/home/user/shiqi/yichuan/EBM/ire_reasoning')
-os.chdir('/home/user/shiqi/yichuan/EBM/ire_reasoning')
+sys.path.append('/home/yichuan/HKU/EBM/ire_reasoning')
+os.chdir('/home/yichuan/HKU/EBM/ire_reasoning')
 # print(f'The current working directory: {os.getcwd()}')
 
-from models.bert import train_tokenizer
-from datasets import Dataloader
+from models.bert import train_tokenizer, BERTDataset
+from datasets import Dataset, Dataloader
 
 '''
 Sudoku Task. Borrowed from IRED
@@ -284,7 +283,7 @@ def load_data(task, train_batch_size, val_batch_size):
     else:
         raise NotImplementedError(f'The specified task: {task} is not defined')
     
-def load_bert_data(task, stage, max_len, train_batch_size, val_data_size):
+def load_bert_data(task, stage, max_len, train_batch_size, val_batch_size):
     '''
     params:
         max_len: the padding length to the BERTDataset, the same parameter for initializing BERT
@@ -308,9 +307,9 @@ def load_bert_data(task, stage, max_len, train_batch_size, val_data_size):
                         pairs.append((t1, t2))
                 
                 print(f'\n{tag} set size: {len(pairs)}')
-            train_data, test_data = BERTDataset(train_pairs, stage=stage, max_len=max_len, tokenizer=tokenizer) \
+            train_data, test_data = BERTDataset(train_pairs, stage=stage, max_len=max_len, tokenizer=tokenizer), \
                 BERTDataset(test_pairs, stage=stage, max_len=max_len, tokenizer=tokenizer)
-            train_loader, test_loader = Dataloader(train_data, batch_size=train_batch_size, shuffle=True, pin_memory=True) \
+            train_loader, test_loader = Dataloader(train_data, batch_size=train_batch_size, shuffle=True, pin_memory=True), \
                 Dataloader(test_data, batch_size=val_batch_size, shuffle=True, pin_memory=True)
         return train_loader, test_loader, len(train_data), len(test_data)
 
