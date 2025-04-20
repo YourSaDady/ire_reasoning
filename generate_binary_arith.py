@@ -15,7 +15,7 @@ import torch
 import os
 import os.path as osp
 from tqdm import tqdm
-os.chdir('/home/user/shiqi/yichuan/EBM')
+os.chdir('/home/yichuan/HKU/EBM')
 print(f'The current working directory: {os.getcwd()}')
 
 def generate_addition_samples_old(num_samples=2000):

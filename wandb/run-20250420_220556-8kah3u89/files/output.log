@@ -1,0 +1,14 @@
+EP_train_pretrain:0:   0%|| 0/15099495 [00:05<?, ?it/s]
+Error executing job with overrides: []
+Traceback (most recent call last):
+  File "/home/yichuan/HKU/EBM/ire_reasoning/main.py", line 377, in main
+    sebm_trainer.train(epoch, config.train.stage)
+  File "/home/yichuan/HKU/EBM/ire_reasoning/main.py", line 112, in train
+    self.iteration(epoch, self.train_data, stage)
+  File "/home/yichuan/HKU/EBM/ire_reasoning/main.py", line 220, in iteration
+    logp_xu = self.sebm.pseudolikelihood(gamma[r], xu[r]) #Size(|u'|, num_classes)
+  File "/home/yichuan/HKU/EBM/ire_reasoning/sequential_ebms.py", line 770, in pseudolikelihood
+    assert torch.isnan(logp_xui) == False, f'logp_xui is NaN!! ei_dist: \n{ei_dist}, \nexpanded_z_ui: \n{expanded_z_ui}'
+RuntimeError: Boolean value of Tensor with more than one value is ambiguous
+
+Set the environment variable HYDRA_FULL_ERROR=1 for a complete stack trace.

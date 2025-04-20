@@ -1,0 +1,216 @@
+EP_train_pretrain:0:   0%|| 0/15099495 [00:00<?, ?it/s]/home/yichuan/HKU/EBM/ire_reasoning/main.py:229: UserWarning: To copy construct from a tensor, it is recommended to use sourceTensor.clone().detach() or sourceTensor.clone().detach().requires_grad_(True), rather than torch.tensor(sourceTensor).
+  loss_is_nan = torch.isnan(torch.tensor(ce_loss)).any()
+                                                                     
+{'epoch': 0, 'sample': 0, 'avg_loss': 6.914140224456787, 'loss': 6.914140224456787}
+{'epoch': 0, 'sample': 10, 'avg_loss': 6.954730944199995, 'loss': 7.088412761688232}
+{'epoch': 0, 'sample': 20, 'avg_loss': 6.8918919790358775, 'loss': 6.836653232574463}
+{'epoch': 0, 'sample': 30, 'avg_loss': 6.824892536286385, 'loss': 6.649904727935791}
+{'epoch': 0, 'sample': 40, 'avg_loss': 6.765329314441216, 'loss': 6.466365814208984}
+{'epoch': 0, 'sample': 50, 'avg_loss': 6.669114103504255, 'loss': 6.309012413024902}
+{'epoch': 0, 'sample': 60, 'avg_loss': 6.566615651865474, 'loss': 5.807852745056152}
+{'epoch': 0, 'sample': 70, 'avg_loss': 6.447366251072413, 'loss': 5.66402530670166}
+{'epoch': 0, 'sample': 80, 'avg_loss': 6.34264251920912, 'loss': 5.517693519592285}
+{'epoch': 0, 'sample': 90, 'avg_loss': 6.232696061605935, 'loss': 5.432390213012695}
+{'epoch': 0, 'sample': 100, 'avg_loss': 6.133177931946103, 'loss': 5.444155693054199}
+{'epoch': 0, 'sample': 110, 'avg_loss': 6.041818747649321, 'loss': 4.8618645668029785}
+{'epoch': 0, 'sample': 120, 'avg_loss': 5.958253068372238, 'loss': 4.864944934844971}
+{'epoch': 0, 'sample': 130, 'avg_loss': 5.883067371281049, 'loss': 5.015700817108154}
+{'epoch': 0, 'sample': 140, 'avg_loss': 5.825185028373772, 'loss': 5.1963396072387695}
+{'epoch': 0, 'sample': 150, 'avg_loss': 5.767379195484894, 'loss': 4.954435348510742}
+{'epoch': 0, 'sample': 160, 'avg_loss': 5.7203955679946805, 'loss': 5.080625534057617}
+{'epoch': 0, 'sample': 170, 'avg_loss': 5.668308991437767, 'loss': 5.061366558074951}
+{'epoch': 0, 'sample': 180, 'avg_loss': 5.617541347419359, 'loss': 4.748358726501465}
+{'epoch': 0, 'sample': 190, 'avg_loss': 5.578448350516913, 'loss': 5.022010803222656}
+{'epoch': 0, 'sample': 200, 'avg_loss': 5.546087552065873, 'loss': 4.861841201782227}
+{'epoch': 0, 'sample': 210, 'avg_loss': 5.508015786302034, 'loss': 4.686839580535889}
+{'epoch': 0, 'sample': 220, 'avg_loss': 5.478980692263642, 'loss': 5.0282793045043945}
+{'epoch': 0, 'sample': 230, 'avg_loss': 5.450478462945847, 'loss': 4.890202522277832}
+{'epoch': 0, 'sample': 240, 'avg_loss': 5.428467643706136, 'loss': 4.815114974975586}
+{'epoch': 0, 'sample': 250, 'avg_loss': 5.401768129660314, 'loss': 4.769468784332275}
+{'epoch': 0, 'sample': 260, 'avg_loss': 5.3836557563694045, 'loss': 5.0114030838012695}
+{'epoch': 0, 'sample': 270, 'avg_loss': 5.368005099771647, 'loss': 4.891946792602539}
+{'epoch': 0, 'sample': 280, 'avg_loss': 5.348589189536207, 'loss': 4.739125728607178}
+{'epoch': 0, 'sample': 290, 'avg_loss': 5.329437123131506, 'loss': 4.855218410491943}
+{'epoch': 0, 'sample': 300, 'avg_loss': 5.313798875903767, 'loss': 4.754082679748535}
+{'epoch': 0, 'sample': 310, 'avg_loss': 5.299095268801477, 'loss': 4.962655067443848}
+{'epoch': 0, 'sample': 320, 'avg_loss': 5.284601648277212, 'loss': 4.608896255493164}
+{'epoch': 0, 'sample': 330, 'avg_loss': 5.273514855664303, 'loss': 4.884334564208984}
+{'epoch': 0, 'sample': 340, 'avg_loss': 5.261132929681683, 'loss': 4.736569881439209}
+{'epoch': 0, 'sample': 350, 'avg_loss': 5.245316313882159, 'loss': 4.4997735023498535}
+{'epoch': 0, 'sample': 360, 'avg_loss': 5.235471090121282, 'loss': 5.2142181396484375}
+{'epoch': 0, 'sample': 370, 'avg_loss': 5.227234761991269, 'loss': 5.026272296905518}
+{'epoch': 0, 'sample': 380, 'avg_loss': 5.215136709488596, 'loss': 4.677554130554199}
+{'epoch': 0, 'sample': 390, 'avg_loss': 5.207978425428386, 'loss': 5.097844123840332}
+{'epoch': 0, 'sample': 400, 'avg_loss': 5.2004232680113835, 'loss': 4.543234825134277}
+{'epoch': 0, 'sample': 410, 'avg_loss': 5.189356394347773, 'loss': 4.9019775390625}
+{'epoch': 0, 'sample': 420, 'avg_loss': 5.180349707886612, 'loss': 4.662113189697266}
+{'epoch': 0, 'sample': 430, 'avg_loss': 5.169895265052601, 'loss': 4.91352653503418}
+{'epoch': 0, 'sample': 440, 'avg_loss': 5.163136901768968, 'loss': 4.813738822937012}
+{'epoch': 0, 'sample': 450, 'avg_loss': 5.153110486176485, 'loss': 4.528475761413574}
+{'epoch': 0, 'sample': 460, 'avg_loss': 5.144862437713689, 'loss': 5.003698825836182}
+{'epoch': 0, 'sample': 470, 'avg_loss': 5.140841074050612, 'loss': 5.091297626495361}
+{'epoch': 0, 'sample': 480, 'avg_loss': 5.135033478608003, 'loss': 5.0580644607543945}
+{'epoch': 0, 'sample': 490, 'avg_loss': 5.13086609345104, 'loss': 4.900123596191406}
+{'epoch': 0, 'sample': 500, 'avg_loss': 5.122377350896657, 'loss': 4.663613796234131}
+{'epoch': 0, 'sample': 510, 'avg_loss': 5.1186086268341, 'loss': 5.08064079284668}
+{'epoch': 0, 'sample': 520, 'avg_loss': 5.112433517734286, 'loss': 5.04661226272583}
+{'epoch': 0, 'sample': 530, 'avg_loss': 5.107796521734608, 'loss': 4.794795989990234}
+{'epoch': 0, 'sample': 540, 'avg_loss': 5.10039490384227, 'loss': 5.105430603027344}
+{'epoch': 0, 'sample': 550, 'avg_loss': 5.093726615940378, 'loss': 4.931741714477539}
+{'epoch': 0, 'sample': 560, 'avg_loss': 5.088147324036787, 'loss': 4.699334144592285}
+{'epoch': 0, 'sample': 570, 'avg_loss': 5.084097262648067, 'loss': 5.154296875}
+{'epoch': 0, 'sample': 580, 'avg_loss': 5.079244291105287, 'loss': 4.616366386413574}
+{'epoch': 0, 'sample': 590, 'avg_loss': 5.075469230032209, 'loss': 4.86695671081543}
+{'epoch': 0, 'sample': 600, 'avg_loss': 5.07161403138705, 'loss': 4.7454633712768555}
+{'epoch': 0, 'sample': 610, 'avg_loss': 5.0658365435373955, 'loss': 4.564063549041748}
+{'epoch': 0, 'sample': 620, 'avg_loss': 5.062448020910487, 'loss': 4.928747177124023}
+{'epoch': 0, 'sample': 630, 'avg_loss': 5.061044085422522, 'loss': 4.979288101196289}
+{'epoch': 0, 'sample': 640, 'avg_loss': 5.056949491991825, 'loss': 4.792187213897705}
+{'epoch': 0, 'sample': 650, 'avg_loss': 5.050738781461701, 'loss': 4.21706485748291}
+{'epoch': 0, 'sample': 660, 'avg_loss': 5.047285561121538, 'loss': 4.801249027252197}
+{'epoch': 0, 'sample': 670, 'avg_loss': 5.043681077203878, 'loss': 4.8596954345703125}
+{'epoch': 0, 'sample': 680, 'avg_loss': 5.040390854890126, 'loss': 4.279783248901367}
+{'epoch': 0, 'sample': 690, 'avg_loss': 5.037507803153716, 'loss': 4.261707305908203}
+{'epoch': 0, 'sample': 700, 'avg_loss': 5.035484745907206, 'loss': 4.507413864135742}
+{'epoch': 0, 'sample': 710, 'avg_loss': 5.030497831299, 'loss': 4.943202495574951}
+{'epoch': 0, 'sample': 720, 'avg_loss': 5.0272239375544325, 'loss': 4.360739231109619}
+{'epoch': 0, 'sample': 730, 'avg_loss': 5.025806750546728, 'loss': 5.060239315032959}
+{'epoch': 0, 'sample': 740, 'avg_loss': 5.022143566013187, 'loss': 4.6741557121276855}
+{'epoch': 0, 'sample': 750, 'avg_loss': 5.019208402671763, 'loss': 4.964620590209961}
+{'epoch': 0, 'sample': 760, 'avg_loss': 5.0173703925524995, 'loss': 4.918691635131836}
+{'epoch': 0, 'sample': 770, 'avg_loss': 5.014490785611124, 'loss': 4.960369110107422}
+{'epoch': 0, 'sample': 780, 'avg_loss': 5.010378432182283, 'loss': 4.466207981109619}
+{'epoch': 0, 'sample': 790, 'avg_loss': 5.006874712619709, 'loss': 4.990504264831543}
+{'epoch': 0, 'sample': 800, 'avg_loss': 5.003239155410976, 'loss': 4.745876312255859}
+{'epoch': 0, 'sample': 810, 'avg_loss': 5.00258191211009, 'loss': 5.051570892333984}
+{'epoch': 0, 'sample': 820, 'avg_loss': 5.001255936221868, 'loss': 4.7905192375183105}
+{'epoch': 0, 'sample': 830, 'avg_loss': 5.0012628874336915, 'loss': 5.035033702850342}
+{'epoch': 0, 'sample': 840, 'avg_loss': 4.999089323241135, 'loss': 4.273314476013184}
+{'epoch': 0, 'sample': 850, 'avg_loss': 4.99599367555244, 'loss': 3.9202468395233154}
+{'epoch': 0, 'sample': 860, 'avg_loss': 4.994381479546861, 'loss': 4.863739013671875}
+{'epoch': 0, 'sample': 870, 'avg_loss': 4.991634602387928, 'loss': 4.743752479553223}
+{'epoch': 0, 'sample': 880, 'avg_loss': 4.989022502563598, 'loss': 4.669179916381836}
+{'epoch': 0, 'sample': 890, 'avg_loss': 4.987314152262695, 'loss': 4.969132900238037}
+{'epoch': 0, 'sample': 900, 'avg_loss': 4.985956526755229, 'loss': 5.31175422668457}
+{'epoch': 0, 'sample': 910, 'avg_loss': 4.98428346427683, 'loss': 4.719529628753662}
+{'epoch': 0, 'sample': 920, 'avg_loss': 4.9829778011148065, 'loss': 5.043606758117676}
+{'epoch': 0, 'sample': 930, 'avg_loss': 4.980409335116951, 'loss': 4.9222092628479}
+{'epoch': 0, 'sample': 940, 'avg_loss': 4.978968373773962, 'loss': 4.889163017272949}
+{'epoch': 0, 'sample': 950, 'avg_loss': 4.97802913000907, 'loss': 4.910216808319092}
+{'epoch': 0, 'sample': 960, 'avg_loss': 4.976410409538357, 'loss': 4.887233734130859}
+{'epoch': 0, 'sample': 970, 'avg_loss': 4.974838467263046, 'loss': 4.6207075119018555}
+{'epoch': 0, 'sample': 980, 'avg_loss': 4.974000799303512, 'loss': 4.841259002685547}
+{'epoch': 0, 'sample': 990, 'avg_loss': 4.973578499015477, 'loss': 5.079768657684326}
+{'epoch': 0, 'sample': 1000, 'avg_loss': 4.9723125044758865, 'loss': 4.971953868865967}
+{'epoch': 0, 'sample': 1010, 'avg_loss': 4.970824172069953, 'loss': 4.866209030151367}
+{'epoch': 0, 'sample': 1020, 'avg_loss': 4.968910257216182, 'loss': 4.5784430503845215}
+{'epoch': 0, 'sample': 1030, 'avg_loss': 4.966776207508564, 'loss': 5.140532493591309}
+{'epoch': 0, 'sample': 1040, 'avg_loss': 4.965497101418223, 'loss': 4.596219539642334}
+{'epoch': 0, 'sample': 1050, 'avg_loss': 4.963151377569937, 'loss': 4.831321716308594}
+{'epoch': 0, 'sample': 1060, 'avg_loss': 4.96163851466525, 'loss': 4.920315265655518}
+{'epoch': 0, 'sample': 1070, 'avg_loss': 4.959338242266359, 'loss': 4.691308975219727}
+{'epoch': 0, 'sample': 1080, 'avg_loss': 4.957635091919242, 'loss': 4.845582962036133}
+{'epoch': 0, 'sample': 1090, 'avg_loss': 4.956575706396269, 'loss': 4.99011754989624}
+{'epoch': 0, 'sample': 1100, 'avg_loss': 4.956559768706208, 'loss': 4.775234699249268}
+{'epoch': 0, 'sample': 1110, 'avg_loss': 4.9551720471128915, 'loss': 4.665215015411377}
+{'epoch': 0, 'sample': 1120, 'avg_loss': 4.954712211607185, 'loss': 5.025984287261963}
+{'epoch': 0, 'sample': 1130, 'avg_loss': 4.953090799476698, 'loss': 4.6316633224487305}
+{'epoch': 0, 'sample': 1140, 'avg_loss': 4.951339221648435, 'loss': 4.076102256774902}
+{'epoch': 0, 'sample': 1150, 'avg_loss': 4.950310661728541, 'loss': 4.845826148986816}
+{'epoch': 0, 'sample': 1160, 'avg_loss': 4.949332541376224, 'loss': 5.0237908363342285}
+{'epoch': 0, 'sample': 1170, 'avg_loss': 4.948778790352591, 'loss': 4.7700629234313965}
+{'epoch': 0, 'sample': 1180, 'avg_loss': 4.947919252663724, 'loss': 5.059017181396484}
+{'epoch': 0, 'sample': 1190, 'avg_loss': 4.946678721534415, 'loss': 4.865816116333008}
+{'epoch': 0, 'sample': 1200, 'avg_loss': 4.944429632031253, 'loss': 4.168976783752441}
+{'epoch': 0, 'sample': 1210, 'avg_loss': 4.943645102637155, 'loss': 4.75440788269043}
+{'epoch': 0, 'sample': 1220, 'avg_loss': 4.942570139793565, 'loss': 4.902216911315918}
+{'epoch': 0, 'sample': 1230, 'avg_loss': 4.94163830526276, 'loss': 5.091705322265625}
+{'epoch': 0, 'sample': 1240, 'avg_loss': 4.940806893933502, 'loss': 4.700957298278809}
+{'epoch': 0, 'sample': 1250, 'avg_loss': 4.940244092072229, 'loss': 4.7782464027404785}
+{'epoch': 0, 'sample': 1260, 'avg_loss': 4.939226744006684, 'loss': 5.025196075439453}
+{'epoch': 0, 'sample': 1270, 'avg_loss': 4.938744413862071, 'loss': 4.869880676269531}
+{'epoch': 0, 'sample': 1280, 'avg_loss': 4.938575824846242, 'loss': 4.996407985687256}
+{'epoch': 0, 'sample': 1290, 'avg_loss': 4.9379146416735775, 'loss': 4.529529571533203}
+{'epoch': 0, 'sample': 1300, 'avg_loss': 4.936203866990872, 'loss': 4.577277183532715}
+{'epoch': 0, 'sample': 1310, 'avg_loss': 4.93480596626014, 'loss': 4.340156555175781}
+{'epoch': 0, 'sample': 1320, 'avg_loss': 4.934288462935569, 'loss': 4.832201957702637}
+{'epoch': 0, 'sample': 1330, 'avg_loss': 4.9334596754643005, 'loss': 4.765448093414307}
+{'epoch': 0, 'sample': 1340, 'avg_loss': 4.932543803114752, 'loss': 4.820980072021484}
+{'epoch': 0, 'sample': 1350, 'avg_loss': 4.932136132044761, 'loss': 4.657012939453125}
+{'epoch': 0, 'sample': 1360, 'avg_loss': 4.931671361026302, 'loss': 4.73231840133667}
+{'epoch': 0, 'sample': 1370, 'avg_loss': 4.930257251713069, 'loss': 4.223362445831299}
+{'epoch': 0, 'sample': 1380, 'avg_loss': 4.928726762036842, 'loss': 4.6874847412109375}
+{'epoch': 0, 'sample': 1390, 'avg_loss': 4.927940232045868, 'loss': 4.756533622741699}
+{'epoch': 0, 'sample': 1400, 'avg_loss': 4.927811336211015, 'loss': 4.926149845123291}
+{'epoch': 0, 'sample': 1410, 'avg_loss': 4.925823969168498, 'loss': 4.3749847412109375}
+{'epoch': 0, 'sample': 1420, 'avg_loss': 4.924620359737549, 'loss': 4.745978832244873}
+{'epoch': 0, 'sample': 1430, 'avg_loss': 4.923016965847428, 'loss': 4.202415466308594}
+{'epoch': 0, 'sample': 1440, 'avg_loss': 4.921911995250429, 'loss': 4.780955791473389}
+{'epoch': 0, 'sample': 1450, 'avg_loss': 4.921623553841957, 'loss': 4.903860092163086}
+{'epoch': 0, 'sample': 1460, 'avg_loss': 4.919947900158506, 'loss': 4.695870399475098}
+{'epoch': 0, 'sample': 1470, 'avg_loss': 4.919468873702774, 'loss': 4.9348530769348145}
+{'epoch': 0, 'sample': 1480, 'avg_loss': 4.918503814899463, 'loss': 5.166339874267578}
+{'epoch': 0, 'sample': 1490, 'avg_loss': 4.917931396316795, 'loss': 5.032116413116455}
+{'epoch': 0, 'sample': 1500, 'avg_loss': 4.917117533566236, 'loss': 4.694389343261719}
+{'epoch': 0, 'sample': 1510, 'avg_loss': 4.916499563749857, 'loss': 4.719906330108643}
+{'epoch': 0, 'sample': 1520, 'avg_loss': 4.91591204051357, 'loss': 4.751590728759766}
+Traceback (most recent call last):
+  File "/home/yichuan/HKU/EBM/ire_reasoning/main.py", line 393, in <module>
+    main()
+  File "/home/yichuan/miniconda3/envs/ire_reasoning/lib/python3.9/site-packages/hydra/main.py", line 94, in decorated_main
+    _run_hydra(
+  File "/home/yichuan/miniconda3/envs/ire_reasoning/lib/python3.9/site-packages/hydra/_internal/utils.py", line 394, in _run_hydra
+    _run_app(
+  File "/home/yichuan/miniconda3/envs/ire_reasoning/lib/python3.9/site-packages/hydra/_internal/utils.py", line 457, in _run_app
+    run_and_report(
+  File "/home/yichuan/miniconda3/envs/ire_reasoning/lib/python3.9/site-packages/hydra/_internal/utils.py", line 220, in run_and_report
+    return func()
+  File "/home/yichuan/miniconda3/envs/ire_reasoning/lib/python3.9/site-packages/hydra/_internal/utils.py", line 458, in <lambda>
+    lambda: hydra.run(
+  File "/home/yichuan/miniconda3/envs/ire_reasoning/lib/python3.9/site-packages/hydra/_internal/hydra.py", line 119, in run
+    ret = run_job(
+  File "/home/yichuan/miniconda3/envs/ire_reasoning/lib/python3.9/site-packages/hydra/core/utils.py", line 186, in run_job
+    ret.return_value = task_function(task_cfg)
+  File "/home/yichuan/HKU/EBM/ire_reasoning/main.py", line 377, in main
+    sebm_trainer.train(epoch, config.train.stage)
+  File "/home/yichuan/HKU/EBM/ire_reasoning/main.py", line 112, in train
+    self.iteration(epoch, self.train_data, stage)
+  File "/home/yichuan/HKU/EBM/ire_reasoning/main.py", line 243, in iteration
+    loss.backward()
+  File "/home/yichuan/miniconda3/envs/ire_reasoning/lib/python3.9/site-packages/torch/_tensor.py", line 626, in backward
+    torch.autograd.backward(
+  File "/home/yichuan/miniconda3/envs/ire_reasoning/lib/python3.9/site-packages/torch/autograd/__init__.py", line 347, in backward
+    _engine_run_backward(
+  File "/home/yichuan/miniconda3/envs/ire_reasoning/lib/python3.9/site-packages/torch/autograd/graph.py", line 823, in _engine_run_backward
+    return Variable._execution_engine.run_backward(  # Calls into the C++ engine to run the backward pass
+KeyboardInterrupt
+Traceback (most recent call last):
+  File "/home/yichuan/HKU/EBM/ire_reasoning/main.py", line 393, in <module>
+    main()
+  File "/home/yichuan/miniconda3/envs/ire_reasoning/lib/python3.9/site-packages/hydra/main.py", line 94, in decorated_main
+    _run_hydra(
+  File "/home/yichuan/miniconda3/envs/ire_reasoning/lib/python3.9/site-packages/hydra/_internal/utils.py", line 394, in _run_hydra
+    _run_app(
+  File "/home/yichuan/miniconda3/envs/ire_reasoning/lib/python3.9/site-packages/hydra/_internal/utils.py", line 457, in _run_app
+    run_and_report(
+  File "/home/yichuan/miniconda3/envs/ire_reasoning/lib/python3.9/site-packages/hydra/_internal/utils.py", line 220, in run_and_report
+    return func()
+  File "/home/yichuan/miniconda3/envs/ire_reasoning/lib/python3.9/site-packages/hydra/_internal/utils.py", line 458, in <lambda>
+    lambda: hydra.run(
+  File "/home/yichuan/miniconda3/envs/ire_reasoning/lib/python3.9/site-packages/hydra/_internal/hydra.py", line 119, in run
+    ret = run_job(
+  File "/home/yichuan/miniconda3/envs/ire_reasoning/lib/python3.9/site-packages/hydra/core/utils.py", line 186, in run_job
+    ret.return_value = task_function(task_cfg)
+  File "/home/yichuan/HKU/EBM/ire_reasoning/main.py", line 377, in main
+    sebm_trainer.train(epoch, config.train.stage)
+  File "/home/yichuan/HKU/EBM/ire_reasoning/main.py", line 112, in train
+    self.iteration(epoch, self.train_data, stage)
+  File "/home/yichuan/HKU/EBM/ire_reasoning/main.py", line 243, in iteration
+    loss.backward()
+  File "/home/yichuan/miniconda3/envs/ire_reasoning/lib/python3.9/site-packages/torch/_tensor.py", line 626, in backward
+    torch.autograd.backward(
+  File "/home/yichuan/miniconda3/envs/ire_reasoning/lib/python3.9/site-packages/torch/autograd/__init__.py", line 347, in backward
+    _engine_run_backward(
+  File "/home/yichuan/miniconda3/envs/ire_reasoning/lib/python3.9/site-packages/torch/autograd/graph.py", line 823, in _engine_run_backward
+    return Variable._execution_engine.run_backward(  # Calls into the C++ engine to run the backward pass
+KeyboardInterrupt

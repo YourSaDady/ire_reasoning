@@ -1,0 +1,15 @@
+EP_train_pretrain:0:  40%|| 10/25 [00:01<00:02,  6.68it/s]
+{'epoch': 0, 'sample': 0, 'avg_loss': 8.18135929107666, 'loss': 8.18135929107666}
+Error executing job with overrides: []
+Traceback (most recent call last):
+  File "/home/yichuan/HKU/EBM/ire_reasoning/main.py", line 367, in main
+    sebm_trainer.train(epoch, config.train.stage)
+  File "/home/yichuan/HKU/EBM/ire_reasoning/main.py", line 112, in train
+    self.iteration(epoch, self.train_data, stage)
+  File "/home/yichuan/HKU/EBM/ire_reasoning/main.py", line 219, in iteration
+    logp_xu = self.sebm.pseudolikelihood(gamma[r], xu[r]) #Size(|u'|, num_classes)
+  File "/home/yichuan/HKU/EBM/ire_reasoning/sequential_ebms.py", line 764, in pseudolikelihood
+    ei_dist = self.energy(idx=pi[i], val=False, rest_idx=condition_vals, latent=condition_latent)
+TypeError: 'int' object is not subscriptable
+
+Set the environment variable HYDRA_FULL_ERROR=1 for a complete stack trace.

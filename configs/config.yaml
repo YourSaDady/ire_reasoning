@@ -1,8 +1,8 @@
 # arguments
-task_name: binary-inversion  # binary-addition
+task_name: binary-addition  # binary-addition
 param_type: bert # mlp, transformer
-max_len: 128
-special_tokens: ['<mask>']
+# max_len: 128
+# special_tokens: ['<mask>']
 load_ebm_ckpts: False
 
 
@@ -18,9 +18,9 @@ models:
 tasks:
   binary-addition:
     name: binary-addition
-    inp_len: 12
-    out_len: 10 #k
-    num_classes: 2 #d #binary (exclude special tokens, eg. <mask>)
+    inp_len: 28
+    out_len: 14 #k
+    num_classes: 6 #vocab_size = binary + 4 special tokens for BERT
     train_size: 1800
     val_size: 200
     metrics: ['acc']
@@ -62,9 +62,9 @@ train:
   epochs: 1
   lr: 1e-4
   early_stop_threshold: 0.5
-  batch_size:  100 #100 #sudoku must be 1
+  batch_size:  4 #100 #sudoku must be 1
   visualize: True
-  wandb: True
+  wandb: True #######################
 
 sampling:
   batch_size: 10

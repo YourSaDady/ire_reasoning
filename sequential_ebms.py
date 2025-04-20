@@ -14,8 +14,8 @@ import os.path as osp
 import time
 import random
 import json
-sys.path.append('/home/user/shiqi/yichuan/EBM/ire_reasoning')
-os.chdir('/home/user/shiqi/yichuan/EBM/ire_reasoning')
+sys.path.append('/home/yichuan/HKU/EBM/ire_reasoning')
+os.chdir('/home/yichuan/HKU/EBM/ire_reasoning')
 os.environ['WANDB_API_KEY'] = '3c06642500f1527ecd0328870ff61d36b5c17193'
 # os.environ['CUDA_LAUNCH_BLOCKING']=1
 # os.environ['TORCH_USE_CUDA_DSA']=1
@@ -27,7 +27,8 @@ from utils import convert_time, VisualizeEBMs, check_grad
 from typing import Optional, Union, Callable
 import wandb
 
-from models import MLP, BERTDataset, DiscreteDiffusion
+from models.mlp import MLP
+from models.bert import DiscreteDiffusion
 
 inf = 1000000
 
@@ -537,18 +538,25 @@ class MLPSequentialEBMs():
         
         
 class BERTSequentialEBMs():
-    def __init__(self, task_config):
+    def __init__(self, task_config, device='cpu'):
+        self.param_type = 'bert'
         self.task_config = task_config
+        self.task_name = task_config.name
         self.inp_len = task_config.inp_len
         self.out_len = task_config.out_len
-        self.max_len = self.inp_len + self.out_len #the max length model can take in
+        self.max_len = self.inp_len + self.out_len + 3 #the max length model can take in
         self.vocab_size = task_config.num_classes
-        self.device = 'cpu' ###########for debugging
+        self.d_model = 128
+        self.device = device ###########for debugging
         
-        self.model = self._build_model()
+        self._build_model()
         
     def _build_model(self): #initialize a bert
-        self.model = DiscreteDiffusion(vocab_size=self.vocab_size, max_len=self.max_len) #Assume inp_len >= out_len
+        self.model = DiscreteDiffusion(
+            vocab_size=self.vocab_size, 
+            max_len=self.max_len,
+            hidden_size=self.d_model,
+        ) #Assume inp_len >= out_len
         
     def energy(self, idx:int, val: bool, rest_idx: torch.Tensor, latent: torch.Tensor, \
         batchalize=False) -> torch.Tensor:
@@ -567,7 +575,7 @@ class BERTSequentialEBMs():
             
         return:
                 energy: Size(1), if specified val;
-                energy vector: Size(num_classes), otherwise
+                energy vector: Size(vocab_size), otherwise
         '''
         assert latent.dim() == rest_idx.dim() and latent.size(-2) == rest_idx.size(-2), \
             f"latent.shape = {latent.shape}, rest_idx.shape = {rest_idx.shape}"
@@ -575,19 +583,20 @@ class BERTSequentialEBMs():
             energy = torch.gather(input=latent, dim=-1, index=rest_idx)
         else: #energy dist
             if batchalize:
-                expanded_idx = torch.zeros(rest_idx.size(0), rest_idx.size(1), self.num_classes)
+                expanded_idx = torch.zeros(rest_idx.size(0), rest_idx.size(1), self.vocab_size)
                 for pos in range(expanded_idx.size(1)):
                     if pos == idx: #enumerate all vals on ui
-                        expanded_idx[:, pos, :] = torch.arange(self.num_classes) 
+                        expanded_idx[:, pos, :] = torch.arange(self.vocab_size) 
                     else: #fill the original val on other positions for each class
-                        expanded_idx[:, pos, :] = rest_idx[:, pos, :].expand(-1, self.num_classes) 
+                        expanded_idx[:, pos, :] = rest_idx[:, pos, :].expand(-1, self.vocab_size) 
             else:   
-                expanded_idx = torch.zeros(rest_idx.size(0), self.num_classes)
+                expanded_idx = torch.zeros(rest_idx.size(0), self.vocab_size)
                 for pos in range(expanded_idx.size(0)): #|u'i|
                     if pos == idx: #enumerate all vals on ui
-                        expanded_idx[pos, :] = torch.arange(self.num_classes) 
+                        expanded_idx[pos, :] = torch.arange(self.vocab_size) 
                     else: #fill the original val on other positions for each class
-                        expanded_idx[pos, :] = rest_idx[pos, :].expand(-1, self.num_classes) 
+                        expanded_idx[pos, :] = rest_idx[pos, :].expand(self.vocab_size) 
+                # print(f'\nrest_idx: \n{rest_idx}, \nexpanded_idx: \n{expanded_idx}')
             expanded_idx = expanded_idx.to(torch.long).to(self.device)
             energy = torch.gather(input=latent, dim=-1, index=expanded_idx) #Size(out_len, num_classes)
                 
@@ -620,6 +629,9 @@ class BERTSequentialEBMs():
             order_label: k (1-indexed)
             partial_pred: Size(bacth_size, seq_len)
             sample_batch:dict
+        return:
+            updated_partial_pred: Size(batch_size, seq_len)
+            sth: loss_list or visual_ebms.log 
         '''
         model_input = sample_batch['bert_input'] + partial_pred
         # 1. update segment_label
@@ -705,7 +717,8 @@ class BERTSequentialEBMs():
                                 energy_landscape,
                                 torch.mean(losses.cpu()).item() 
                             )
-                        loss_list.append(torch.mean(losses.cpu()).item() )
+                        else:
+                            loss_list.append(torch.mean(losses.cpu()).item() )
                 #end of t iter
                 updated_partial_pred = partial_pred.clone()
                 updated_partial_pred[unmask_idx] = yo.squeeze()
@@ -724,29 +737,41 @@ class BERTSequentialEBMs():
         
         estimte the logp using the model output logits and the MLM labels 
         params: 
-            - latent: model output logits, Size(out_len, num_classes)
-            - mlm_label: input_ids for the masked tokens, Size(out_len)
+            - latent: model output logits, Size(seq_len, num_classes)
+            - mlm_label: input_ids for the masked tokens, Size(seq_len)
         return:
-            - lop_xu: the conditional logprob distribution, Size(out_len, num_classes)
+            - lop_xu: the conditional logprob distribution, Size(seq_len, num_classes)
         '''
         assert latent.size(0) == mlm_label.size(0), f'latent.shape: {latent.shape}, ' \
             f'mlm_label({mlm_label.shape}): {mlm_label}'
-        u = torch.nonzero(latent).squeeze() #Size(|u|)
-        pi = torch.randperm(u.size(0)) #a random estimating order
-        u_prime = u[pi]
+        # print(f'Inside pseudolikelihood: latent.shape: {latent.shape}, mlm_label.shape: {mlm_label.shape}')
+        u = torch.nonzero(mlm_label).squeeze() #Size(|u|)
+        if u.dim():
+            pi = torch.randperm(u.size(0)) #a random estimating order
+            u_prime = u[pi]
+        else: # u is a single value
+            pi = torch.tensor([0])
+            u, u_prime = torch.tensor([u]), torch.tensor([u])
+        # except:
+        #     raise IndexError(f'u: {u}. Dimension specified as 0 but tensor has no dimensions')
         logp_xu = []
-        mlm_label = mlm_label.unsqueeze(-1)
+        mlm_label = mlm_label.unsqueeze(-1) #Size(45,1)
+        assert len(u_prime), f'u_prime is empty!! mlm_label: {mlm_label}, u: {u}, pi: {pi}'
         for i in range(len(u_prime)): #iter through |u'| EBMs
-            condition_vals = mlm_label[u_prime[:i+1], :] #inclusive x_{u'_i}
+            condition_vals = mlm_label[u_prime[:i+1], :] #inclusive x_{u'_i} 121??
             condition_latent = latent[u_prime[:i+1], :]
-            print(f'\ni: {i}, rest_idx({condition_vals.shape}): \n{condition_vals}\ncondition_latent.shape: {condition_latent.shape}')
-            ei_dist = self.energy(idx=i, val=False, rest_idx=condition_vals, latent=condition_latent)
-            ei = self.energy(idx=i, val=True, rest_idx=condition_vals, latent=condition_latent)
-            print(f'\nei_dist.shape: {ei_dist.shape}, ei: {ei}')
+            # print(f'\ni: {i}, rest_idx({condition_vals.shape}): \n{condition_vals}\ncondition_latent.shape: {condition_latent.shape}')
+            ei_dist = self.energy(idx=pi[i], val=False, rest_idx=condition_vals, latent=condition_latent)
+            ei = self.energy(idx=pi[i], val=True, rest_idx=condition_vals, latent=condition_latent)
+            # perform logits normalization to avoid nan z_ui
+            max_energy = ei_dist.max() 
+            ei_dist = ei_dist - max_energy
+            # print(f'\nei_dist.shape: {ei_dist.shape}, ei: {ei}')
             z_ui = torch.sum(torch.exp(-1*ei_dist), dim=-1) #Size(1)
             expanded_z_ui = z_ui.unsqueeze(0).expand_as(ei_dist) #Size(num_classes)?
             logp_xui = torch.log(torch.exp(-1*ei_dist) / expanded_z_ui)
-            print(f'\nlogp_xui.shape: {logp_xui.shape}') #Size(num_classes)
+            assert torch.isnan(logp_xui).any() == False, f'logp_xui is NaN!! ei_dist: \n{ei_dist}, \nexpanded_z_ui: \n{expanded_z_ui}'
+            # print(f'\nlogp_xui.shape: {logp_xui.shape}') #Size(num_classes)
             logp_xu.append(logp_xui.unsqueeze(0)) #Eq.(0), with sum replaced by concatenation
         #end of EBM iter
         logp_xu = torch.cat(logp_xu, dim=0) #Size(|u'|, num_classes)

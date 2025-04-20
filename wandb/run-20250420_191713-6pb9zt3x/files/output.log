@@ -1,0 +1,133 @@
+EP_train_pretrain:0:   0%|| 305/15099495 [00:46<635:56:02,  6.60it/s]
+{'epoch': 0, 'sample': 0, 'avg_loss': 7.425942420959473, 'loss': 7.425942420959473}
+{'epoch': 0, 'sample': 10, 'avg_loss': 7.501158194108442, 'loss': 7.287422180175781}
+{'epoch': 0, 'sample': 20, 'avg_loss': 7.462003480820429, 'loss': 7.476339340209961}
+{'epoch': 0, 'sample': 30, 'avg_loss': 7.3775716904670965, 'loss': 6.994282245635986}
+{'epoch': 0, 'sample': 40, 'avg_loss': 7.289130257397163, 'loss': 6.937743186950684}
+{'epoch': 0, 'sample': 50, 'avg_loss': 7.199217833724677, 'loss': 6.482065200805664}
+{'epoch': 0, 'sample': 60, 'avg_loss': 7.075994053825003, 'loss': 6.36619234085083}
+{'epoch': 0, 'sample': 70, 'avg_loss': 6.9480396055839435, 'loss': 6.035946846008301}
+{'epoch': 0, 'sample': 80, 'avg_loss': 6.824136386682958, 'loss': 5.935616493225098}
+{'epoch': 0, 'sample': 90, 'avg_loss': 6.70065949513362, 'loss': 5.476795673370361}
+{'epoch': 0, 'sample': 100, 'avg_loss': 6.5825695424976916, 'loss': 5.57257080078125}
+{'epoch': 0, 'sample': 110, 'avg_loss': 6.479200805629696, 'loss': 5.117038249969482}
+{'epoch': 0, 'sample': 120, 'avg_loss': 6.38202541918794, 'loss': 5.184517860412598}
+{'epoch': 0, 'sample': 130, 'avg_loss': 6.299664479175597, 'loss': 5.331019401550293}
+{'epoch': 0, 'sample': 140, 'avg_loss': 6.218365145067796, 'loss': 5.191333770751953}
+{'epoch': 0, 'sample': 150, 'avg_loss': 6.153047893221015, 'loss': 5.438119888305664}
+{'epoch': 0, 'sample': 160, 'avg_loss': 6.078892479772153, 'loss': 5.16161584854126}
+{'epoch': 0, 'sample': 170, 'avg_loss': 6.020690282185872, 'loss': 5.021908760070801}
+{'epoch': 0, 'sample': 180, 'avg_loss': nan, 'loss': nan}
+{'epoch': 0, 'sample': 190, 'avg_loss': nan, 'loss': nan}
+{'epoch': 0, 'sample': 200, 'avg_loss': nan, 'loss': nan}
+{'epoch': 0, 'sample': 210, 'avg_loss': nan, 'loss': nan}
+{'epoch': 0, 'sample': 220, 'avg_loss': nan, 'loss': nan}
+{'epoch': 0, 'sample': 230, 'avg_loss': nan, 'loss': nan}
+{'epoch': 0, 'sample': 240, 'avg_loss': nan, 'loss': nan}
+{'epoch': 0, 'sample': 250, 'avg_loss': nan, 'loss': nan}
+{'epoch': 0, 'sample': 260, 'avg_loss': nan, 'loss': nan}
+{'epoch': 0, 'sample': 270, 'avg_loss': nan, 'loss': nan}
+{'epoch': 0, 'sample': 280, 'avg_loss': nan, 'loss': nan}
+{'epoch': 0, 'sample': 290, 'avg_loss': nan, 'loss': nan}
+{'epoch': 0, 'sample': 300, 'avg_loss': nan, 'loss': nan}
+Traceback (most recent call last):
+  File "/home/yichuan/HKU/EBM/ire_reasoning/main.py", line 386, in <module>
+    main()
+  File "/home/yichuan/miniconda3/envs/ire_reasoning/lib/python3.9/site-packages/hydra/main.py", line 94, in decorated_main
+    _run_hydra(
+  File "/home/yichuan/miniconda3/envs/ire_reasoning/lib/python3.9/site-packages/hydra/_internal/utils.py", line 394, in _run_hydra
+    _run_app(
+  File "/home/yichuan/miniconda3/envs/ire_reasoning/lib/python3.9/site-packages/hydra/_internal/utils.py", line 457, in _run_app
+    run_and_report(
+  File "/home/yichuan/miniconda3/envs/ire_reasoning/lib/python3.9/site-packages/hydra/_internal/utils.py", line 220, in run_and_report
+    return func()
+  File "/home/yichuan/miniconda3/envs/ire_reasoning/lib/python3.9/site-packages/hydra/_internal/utils.py", line 458, in <lambda>
+    lambda: hydra.run(
+  File "/home/yichuan/miniconda3/envs/ire_reasoning/lib/python3.9/site-packages/hydra/_internal/hydra.py", line 119, in run
+    ret = run_job(
+  File "/home/yichuan/miniconda3/envs/ire_reasoning/lib/python3.9/site-packages/hydra/core/utils.py", line 186, in run_job
+    ret.return_value = task_function(task_cfg)
+  File "/home/yichuan/HKU/EBM/ire_reasoning/main.py", line 370, in main
+    sebm_trainer.train(epoch, config.train.stage)
+  File "/home/yichuan/HKU/EBM/ire_reasoning/main.py", line 112, in train
+    self.iteration(epoch, self.train_data, stage)
+  File "/home/yichuan/HKU/EBM/ire_reasoning/main.py", line 213, in iteration
+    gamma = self.sebm.model.forward(xo, data['segment_label'], is_ebm=True)
+  File "/home/yichuan/HKU/EBM/ire_reasoning/models/bert.py", line 371, in forward
+    return self.decoder(self.bert(x, segment_label), is_ebm)
+  File "/home/yichuan/miniconda3/envs/ire_reasoning/lib/python3.9/site-packages/torch/nn/modules/module.py", line 1739, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+  File "/home/yichuan/miniconda3/envs/ire_reasoning/lib/python3.9/site-packages/torch/nn/modules/module.py", line 1750, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/home/yichuan/HKU/EBM/ire_reasoning/models/bert.py", line 328, in forward
+    x = encoder.forward(x, mask)
+  File "/home/yichuan/HKU/EBM/ire_reasoning/models/bert.py", line 281, in forward
+    interacted = self.dropout(self.self_multihead(embeddings, embeddings, embeddings, mask))
+  File "/home/yichuan/miniconda3/envs/ire_reasoning/lib/python3.9/site-packages/torch/nn/modules/module.py", line 1739, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+  File "/home/yichuan/miniconda3/envs/ire_reasoning/lib/python3.9/site-packages/torch/nn/modules/module.py", line 1750, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/home/yichuan/HKU/EBM/ire_reasoning/models/bert.py", line 233, in forward
+    weights = self.dropout(weights)
+  File "/home/yichuan/miniconda3/envs/ire_reasoning/lib/python3.9/site-packages/torch/nn/modules/module.py", line 1739, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+  File "/home/yichuan/miniconda3/envs/ire_reasoning/lib/python3.9/site-packages/torch/nn/modules/module.py", line 1750, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/home/yichuan/miniconda3/envs/ire_reasoning/lib/python3.9/site-packages/torch/nn/modules/dropout.py", line 70, in forward
+    return F.dropout(input, self.p, self.training, self.inplace)
+  File "/home/yichuan/miniconda3/envs/ire_reasoning/lib/python3.9/site-packages/torch/nn/functional.py", line 1425, in dropout
+    _VF.dropout_(input, p, training) if inplace else _VF.dropout(input, p, training)
+KeyboardInterrupt
+Traceback (most recent call last):
+  File "/home/yichuan/HKU/EBM/ire_reasoning/main.py", line 386, in <module>
+    main()
+  File "/home/yichuan/miniconda3/envs/ire_reasoning/lib/python3.9/site-packages/hydra/main.py", line 94, in decorated_main
+    _run_hydra(
+  File "/home/yichuan/miniconda3/envs/ire_reasoning/lib/python3.9/site-packages/hydra/_internal/utils.py", line 394, in _run_hydra
+    _run_app(
+  File "/home/yichuan/miniconda3/envs/ire_reasoning/lib/python3.9/site-packages/hydra/_internal/utils.py", line 457, in _run_app
+    run_and_report(
+  File "/home/yichuan/miniconda3/envs/ire_reasoning/lib/python3.9/site-packages/hydra/_internal/utils.py", line 220, in run_and_report
+    return func()
+  File "/home/yichuan/miniconda3/envs/ire_reasoning/lib/python3.9/site-packages/hydra/_internal/utils.py", line 458, in <lambda>
+    lambda: hydra.run(
+  File "/home/yichuan/miniconda3/envs/ire_reasoning/lib/python3.9/site-packages/hydra/_internal/hydra.py", line 119, in run
+    ret = run_job(
+  File "/home/yichuan/miniconda3/envs/ire_reasoning/lib/python3.9/site-packages/hydra/core/utils.py", line 186, in run_job
+    ret.return_value = task_function(task_cfg)
+  File "/home/yichuan/HKU/EBM/ire_reasoning/main.py", line 370, in main
+    sebm_trainer.train(epoch, config.train.stage)
+  File "/home/yichuan/HKU/EBM/ire_reasoning/main.py", line 112, in train
+    self.iteration(epoch, self.train_data, stage)
+  File "/home/yichuan/HKU/EBM/ire_reasoning/main.py", line 213, in iteration
+    gamma = self.sebm.model.forward(xo, data['segment_label'], is_ebm=True)
+  File "/home/yichuan/HKU/EBM/ire_reasoning/models/bert.py", line 371, in forward
+    return self.decoder(self.bert(x, segment_label), is_ebm)
+  File "/home/yichuan/miniconda3/envs/ire_reasoning/lib/python3.9/site-packages/torch/nn/modules/module.py", line 1739, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+  File "/home/yichuan/miniconda3/envs/ire_reasoning/lib/python3.9/site-packages/torch/nn/modules/module.py", line 1750, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/home/yichuan/HKU/EBM/ire_reasoning/models/bert.py", line 328, in forward
+    x = encoder.forward(x, mask)
+  File "/home/yichuan/HKU/EBM/ire_reasoning/models/bert.py", line 281, in forward
+    interacted = self.dropout(self.self_multihead(embeddings, embeddings, embeddings, mask))
+  File "/home/yichuan/miniconda3/envs/ire_reasoning/lib/python3.9/site-packages/torch/nn/modules/module.py", line 1739, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+  File "/home/yichuan/miniconda3/envs/ire_reasoning/lib/python3.9/site-packages/torch/nn/modules/module.py", line 1750, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/home/yichuan/HKU/EBM/ire_reasoning/models/bert.py", line 233, in forward
+    weights = self.dropout(weights)
+  File "/home/yichuan/miniconda3/envs/ire_reasoning/lib/python3.9/site-packages/torch/nn/modules/module.py", line 1739, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+  File "/home/yichuan/miniconda3/envs/ire_reasoning/lib/python3.9/site-packages/torch/nn/modules/module.py", line 1750, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/home/yichuan/miniconda3/envs/ire_reasoning/lib/python3.9/site-packages/torch/nn/modules/dropout.py", line 70, in forward
+    return F.dropout(input, self.p, self.training, self.inplace)
+  File "/home/yichuan/miniconda3/envs/ire_reasoning/lib/python3.9/site-packages/torch/nn/functional.py", line 1425, in dropout
+    _VF.dropout_(input, p, training) if inplace else _VF.dropout(input, p, training)
+KeyboardInterrupt
+Error in atexit._run_exitfuncs:
+Traceback (most recent call last):
+  File "/home/yichuan/miniconda3/envs/ire_reasoning/lib/python3.9/threading.py", line 1080, in _wait_for_tstate_lock
+    if lock.acquire(block, timeout):
+KeyboardInterrupt

@@ -1,0 +1,9 @@
+EP_train_pretrain:0: 100%|| 25/25 [00:03<00:00,  8.19it/s]
+{'epoch': 0, 'sample': 0, 'avg_loss': 7.478229522705078, 'loss': 7.478229522705078}
+{'epoch': 0, 'sample': 10, 'avg_loss': 7.391792644153941, 'loss': 7.526556968688965}
+{'epoch': 0, 'sample': 20, 'avg_loss': 7.4081863675798685, 'loss': 7.258964538574219}
+
+
+Finished training.
+
+model saved to ./ebm_ckpts/binary-addition_bert.pth

@@ -1,0 +1,18 @@
+EP_train_pretrain:0:   0%|| 35/15099495 [00:11<1357:55:13,  3.09it/s]
+{'epoch': 0, 'sample': 0, 'avg_loss': 6.368891716003418, 'loss': 6.368891716003418}
+{'epoch': 0, 'sample': 10, 'avg_loss': 6.410324963656339, 'loss': 6.4123640060424805}
+{'epoch': 0, 'sample': 20, 'avg_loss': 6.4081657727559405, 'loss': 6.407808303833008}
+{'epoch': 0, 'sample': 30, 'avg_loss': 6.350472204146847, 'loss': 6.299502372741699}
+Error executing job with overrides: []
+Traceback (most recent call last):
+  File "/home/yichuan/HKU/EBM/ire_reasoning/main.py", line 368, in main
+    sebm_trainer.train(epoch, config.train.stage)
+  File "/home/yichuan/HKU/EBM/ire_reasoning/main.py", line 112, in train
+    self.iteration(epoch, self.train_data, stage)
+  File "/home/yichuan/HKU/EBM/ire_reasoning/main.py", line 219, in iteration
+    assert torch.nonzero(xu[r]).squeeze().dim(), f"xu[r] is all zero: \n{xu[r]}"
+AssertionError: xu[r] is all zero:
+tensor([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0])
+
+Set the environment variable HYDRA_FULL_ERROR=1 for a complete stack trace.

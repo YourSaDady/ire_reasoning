@@ -1,0 +1,15 @@
+{"time":"2025-04-20T22:07:14.683452534+08:00","level":"INFO","msg":"stream: starting","core version":"0.19.9","symlink path":"/home/yichuan/HKU/EBM/ire_reasoning/wandb/run-20250420_220714-jzndriep/logs/debug-core.log"}
+{"time":"2025-04-20T22:07:15.036387749+08:00","level":"INFO","msg":"created new stream","id":"jzndriep"}
+{"time":"2025-04-20T22:07:15.036573912+08:00","level":"INFO","msg":"stream: started","id":"jzndriep"}
+{"time":"2025-04-20T22:07:15.036577445+08:00","level":"INFO","msg":"handler: started","stream_id":"jzndriep"}
+{"time":"2025-04-20T22:07:15.036691221+08:00","level":"INFO","msg":"sender: started","stream_id":"jzndriep"}
+{"time":"2025-04-20T22:07:15.036700695+08:00","level":"INFO","msg":"writer: Do: started","stream_id":"jzndriep"}
+{"time":"2025-04-20T22:07:15.420176031+08:00","level":"INFO","msg":"Starting system monitor"}
+{"time":"2025-04-20T22:07:40.659386053+08:00","level":"INFO","msg":"stream: closing","id":"jzndriep"}
+{"time":"2025-04-20T22:07:40.659483474+08:00","level":"INFO","msg":"Stopping system monitor"}
+{"time":"2025-04-20T22:07:40.659641269+08:00","level":"INFO","msg":"Stopped system monitor"}
+{"time":"2025-04-20T22:07:41.38320135+08:00","level":"INFO","msg":"fileTransfer: Close: file transfer manager closed"}
+{"time":"2025-04-20T22:07:41.919441156+08:00","level":"INFO","msg":"handler: closed","stream_id":"jzndriep"}
+{"time":"2025-04-20T22:07:41.919516887+08:00","level":"INFO","msg":"sender: closed","stream_id":"jzndriep"}
+{"time":"2025-04-20T22:07:41.919500929+08:00","level":"INFO","msg":"writer: Close: closed","stream_id":"jzndriep"}
+{"time":"2025-04-20T22:07:41.919743958+08:00","level":"INFO","msg":"stream: closed","id":"jzndriep"}

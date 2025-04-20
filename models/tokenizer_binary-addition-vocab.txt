@@ -1,0 +1,6 @@
+[PAD]
+[CLS]
+[SEP]
+[MASK]
+0
+1

@@ -1,0 +1,85 @@
+EP_train_pretrain:0:   0%|| 185/15099495 [00:31<718:50:11,  5.83it/s]
+{'epoch': 0, 'sample': 0, 'avg_loss': 6.875467300415039, 'loss': 6.875467300415039}
+{'epoch': 0, 'sample': 10, 'avg_loss': 6.910060709173029, 'loss': 6.935762882232666}
+{'epoch': 0, 'sample': 20, 'avg_loss': 6.954935210091727, 'loss': 6.795262336730957}
+{'epoch': 0, 'sample': 30, 'avg_loss': 6.910639378332323, 'loss': 6.58314847946167}
+{'epoch': 0, 'sample': 40, 'avg_loss': 6.819695868143222, 'loss': 6.391260623931885}
+{'epoch': 0, 'sample': 50, 'avg_loss': 6.7053545222562905, 'loss': 5.9535980224609375}
+{'epoch': 0, 'sample': 60, 'avg_loss': 6.590834703601774, 'loss': 5.993997573852539}
+{'epoch': 0, 'sample': 70, 'avg_loss': 6.468306326530349, 'loss': 5.406402587890625}
+{'epoch': 0, 'sample': 80, 'avg_loss': 6.34161929142328, 'loss': 5.317588806152344}
+{'epoch': 0, 'sample': 90, 'avg_loss': 6.223415421915578, 'loss': 5.232570171356201}
+{'epoch': 0, 'sample': 100, 'avg_loss': 6.1157221746916814, 'loss': 4.918864727020264}
+{'epoch': 0, 'sample': 110, 'avg_loss': 6.0256692353669585, 'loss': 5.0442304611206055}
+{'epoch': 0, 'sample': 120, 'avg_loss': 5.9240368141615685, 'loss': 4.952309608459473}
+{'epoch': 0, 'sample': 130, 'avg_loss': nan, 'loss': nan}
+{'epoch': 0, 'sample': 140, 'avg_loss': nan, 'loss': nan}
+{'epoch': 0, 'sample': 150, 'avg_loss': nan, 'loss': nan}
+{'epoch': 0, 'sample': 160, 'avg_loss': nan, 'loss': nan}
+{'epoch': 0, 'sample': 170, 'avg_loss': nan, 'loss': nan}
+{'epoch': 0, 'sample': 180, 'avg_loss': nan, 'loss': nan}
+Traceback (most recent call last):
+  File "/home/yichuan/HKU/EBM/ire_reasoning/main.py", line 389, in <module>
+    main()
+  File "/home/yichuan/miniconda3/envs/ire_reasoning/lib/python3.9/site-packages/hydra/main.py", line 94, in decorated_main
+    _run_hydra(
+  File "/home/yichuan/miniconda3/envs/ire_reasoning/lib/python3.9/site-packages/hydra/_internal/utils.py", line 394, in _run_hydra
+    _run_app(
+  File "/home/yichuan/miniconda3/envs/ire_reasoning/lib/python3.9/site-packages/hydra/_internal/utils.py", line 457, in _run_app
+    run_and_report(
+  File "/home/yichuan/miniconda3/envs/ire_reasoning/lib/python3.9/site-packages/hydra/_internal/utils.py", line 220, in run_and_report
+    return func()
+  File "/home/yichuan/miniconda3/envs/ire_reasoning/lib/python3.9/site-packages/hydra/_internal/utils.py", line 458, in <lambda>
+    lambda: hydra.run(
+  File "/home/yichuan/miniconda3/envs/ire_reasoning/lib/python3.9/site-packages/hydra/_internal/hydra.py", line 119, in run
+    ret = run_job(
+  File "/home/yichuan/miniconda3/envs/ire_reasoning/lib/python3.9/site-packages/hydra/core/utils.py", line 186, in run_job
+    ret.return_value = task_function(task_cfg)
+  File "/home/yichuan/HKU/EBM/ire_reasoning/main.py", line 373, in main
+    sebm_trainer.train(epoch, config.train.stage)
+  File "/home/yichuan/HKU/EBM/ire_reasoning/main.py", line 112, in train
+    self.iteration(epoch, self.train_data, stage)
+  File "/home/yichuan/HKU/EBM/ire_reasoning/main.py", line 239, in iteration
+    loss.backward()
+  File "/home/yichuan/miniconda3/envs/ire_reasoning/lib/python3.9/site-packages/torch/_tensor.py", line 626, in backward
+    torch.autograd.backward(
+  File "/home/yichuan/miniconda3/envs/ire_reasoning/lib/python3.9/site-packages/torch/autograd/__init__.py", line 347, in backward
+    _engine_run_backward(
+  File "/home/yichuan/miniconda3/envs/ire_reasoning/lib/python3.9/site-packages/torch/autograd/graph.py", line 823, in _engine_run_backward
+    return Variable._execution_engine.run_backward(  # Calls into the C++ engine to run the backward pass
+KeyboardInterrupt
+Traceback (most recent call last):
+  File "/home/yichuan/HKU/EBM/ire_reasoning/main.py", line 389, in <module>
+    main()
+  File "/home/yichuan/miniconda3/envs/ire_reasoning/lib/python3.9/site-packages/hydra/main.py", line 94, in decorated_main
+    _run_hydra(
+  File "/home/yichuan/miniconda3/envs/ire_reasoning/lib/python3.9/site-packages/hydra/_internal/utils.py", line 394, in _run_hydra
+    _run_app(
+  File "/home/yichuan/miniconda3/envs/ire_reasoning/lib/python3.9/site-packages/hydra/_internal/utils.py", line 457, in _run_app
+    run_and_report(
+  File "/home/yichuan/miniconda3/envs/ire_reasoning/lib/python3.9/site-packages/hydra/_internal/utils.py", line 220, in run_and_report
+    return func()
+  File "/home/yichuan/miniconda3/envs/ire_reasoning/lib/python3.9/site-packages/hydra/_internal/utils.py", line 458, in <lambda>
+    lambda: hydra.run(
+  File "/home/yichuan/miniconda3/envs/ire_reasoning/lib/python3.9/site-packages/hydra/_internal/hydra.py", line 119, in run
+    ret = run_job(
+  File "/home/yichuan/miniconda3/envs/ire_reasoning/lib/python3.9/site-packages/hydra/core/utils.py", line 186, in run_job
+    ret.return_value = task_function(task_cfg)
+  File "/home/yichuan/HKU/EBM/ire_reasoning/main.py", line 373, in main
+    sebm_trainer.train(epoch, config.train.stage)
+  File "/home/yichuan/HKU/EBM/ire_reasoning/main.py", line 112, in train
+    self.iteration(epoch, self.train_data, stage)
+  File "/home/yichuan/HKU/EBM/ire_reasoning/main.py", line 239, in iteration
+    loss.backward()
+  File "/home/yichuan/miniconda3/envs/ire_reasoning/lib/python3.9/site-packages/torch/_tensor.py", line 626, in backward
+    torch.autograd.backward(
+  File "/home/yichuan/miniconda3/envs/ire_reasoning/lib/python3.9/site-packages/torch/autograd/__init__.py", line 347, in backward
+    _engine_run_backward(
+  File "/home/yichuan/miniconda3/envs/ire_reasoning/lib/python3.9/site-packages/torch/autograd/graph.py", line 823, in _engine_run_backward
+    return Variable._execution_engine.run_backward(  # Calls into the C++ engine to run the backward pass
+KeyboardInterrupt
+Error in atexit._run_exitfuncs:
+Traceback (most recent call last):
+  File "/home/yichuan/miniconda3/envs/ire_reasoning/lib/python3.9/threading.py", line 1080, in _wait_for_tstate_lock
+    if lock.acquire(block, timeout):
+KeyboardInterrupt

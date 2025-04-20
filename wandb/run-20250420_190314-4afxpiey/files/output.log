@@ -1,0 +1,16 @@
+EP_train_pretrain:0:   0%|| 31/15099495 [00:10<1449:45:47,  2.89it/s]
+{'epoch': 0, 'sample': 0, 'avg_loss': 8.056453704833984, 'loss': 8.056453704833984}
+{'epoch': 0, 'sample': 10, 'avg_loss': 7.933074344288219, 'loss': 7.740705966949463}
+{'epoch': 0, 'sample': 20, 'avg_loss': 7.994068463643392, 'loss': 8.043340682983398}
+{'epoch': 0, 'sample': 30, 'avg_loss': 7.869443770377867, 'loss': 7.7623443603515625}
+Error executing job with overrides: []
+Traceback (most recent call last):
+  File "/home/yichuan/HKU/EBM/ire_reasoning/main.py", line 367, in main
+    sebm_trainer.train(epoch, config.train.stage)
+  File "/home/yichuan/HKU/EBM/ire_reasoning/main.py", line 112, in train
+    self.iteration(epoch, self.train_data, stage)
+  File "/home/yichuan/HKU/EBM/ire_reasoning/main.py", line 222, in iteration
+    assert logp_xu.size(0) == xu_label.size(0), \
+IndexError: Dimension specified as 0 but tensor has no dimensions
+
+Set the environment variable HYDRA_FULL_ERROR=1 for a complete stack trace.
