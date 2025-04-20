@@ -1,0 +1,14 @@
+EP_train_pretrain:0:   0%|| 0/14746 [00:00<?, ?it/s]
+Error executing job with overrides: []
+Traceback (most recent call last):
+  File "/home/yichuan/HKU/EBM/ire_reasoning/main.py", line 403, in main
+    sebm_trainer.train(epoch, config.train.stage)
+  File "/home/yichuan/HKU/EBM/ire_reasoning/main.py", line 118, in train
+    self.iteration(epoch, self.train_data, stage)
+  File "/home/yichuan/HKU/EBM/ire_reasoning/main.py", line 240, in iteration
+    contrast_loss = contrast_loss + self.sebm.calculate_contrast_loss(
+  File "/home/yichuan/HKU/EBM/ire_reasoning/sequential_ebms.py", line 765, in calculate_contrast_loss
+    ei = self.energy(idx=self.inp_len+2+pi[i], val=True, \
+IndexError: index 13 is out of bounds for dimension 0 with size 13
+
+Set the environment variable HYDRA_FULL_ERROR=1 for a complete stack trace.

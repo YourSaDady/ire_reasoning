@@ -1,0 +1,7 @@
+2025-04-20 23:34:36,572 INFO    MainThread:533461 [wandb_init.py:setup_run_log_directory():662] Logging user logs to /home/yichuan/HKU/EBM/ire_reasoning/wandb/run-20250420_233436-1f6b2i9y/logs/debug.log
+2025-04-20 23:34:36,572 INFO    MainThread:533461 [wandb_init.py:setup_run_log_directory():663] Logging internal logs to /home/yichuan/HKU/EBM/ire_reasoning/wandb/run-20250420_233436-1f6b2i9y/logs/debug-internal.log
+2025-04-20 23:34:36,573 INFO    MainThread:533461 [wandb_init.py:init():781] calling init triggers
+2025-04-20 23:34:36,573 INFO    MainThread:533461 [wandb_init.py:init():786] wandb.init called with sweep_config: {}
+config: {'k': 10, 'batch_size': 4, '_wandb': {}}
+2025-04-20 23:34:36,573 INFO    MainThread:533461 [wandb_init.py:init():801] wandb.init() called while a run is active
+2025-04-20 23:34:36,732 INFO    MsgRouterThr:533461 [mailbox.py:close():129] [no run ID] Closing mailbox, abandoning 1 handles.

@@ -538,7 +538,7 @@ class MLPSequentialEBMs():
         
         
 class BERTSequentialEBMs():
-    def __init__(self, task_config, device='cpu'):
+    def __init__(self, task_config, d_model, device='cpu'):
         self.param_type = 'bert'
         self.task_config = task_config
         self.task_name = task_config.name
@@ -546,7 +546,7 @@ class BERTSequentialEBMs():
         self.out_len = task_config.out_len
         self.max_len = self.inp_len + self.out_len + 3 #the max length model can take in
         self.vocab_size = task_config.num_classes
-        self.d_model = 128
+        self.d_model = d_model
         self.device = device ###########for debugging
         
         self._build_model()
@@ -729,9 +729,63 @@ class BERTSequentialEBMs():
         else:
             return updated_partial_pred, loss_list
         
+    def calculate_contrast_loss(self, pos_latent, neg_latent, pos_label, neg_label, \
+        pos_input, neg_input):
+        '''
+        Non-batchalized, calcualte the contrast loss based on Eq.(2), take sum from all classes
+        '''
+        # print(f'pos_input: \n{pos_input}, \npos_label:\n{pos_label}')
+        # basically the same implementation as pseudolikelihood
+        os_ = []
+        u_primes = []
+        pis = []
+        for is_neg, (label, input) in enumerate(zip([pos_label, neg_label], \
+            [pos_input, neg_input])):
+            u = torch.nonzero(label).squeeze() #Size(|u|)
+            o = torch.nonzero(input != 3).squeeze()
+            if u.dim():
+                pi = torch.randperm(u.size(0)) #a random estimating order
+                u_prime = u[pi]
+            else: # u is a single value
+                pi = torch.tensor([0])
+                u, u_prime = torch.tensor([u]), torch.tensor([u])
+            if o.dim() == 0:
+                o = torch.tensor([o])
+            os_.append(o), u_primes.append(u_prime), pis.append(pi)
+        # print(f'pos_input: \n{pos_input}, \nneg_input: \n{neg_input}')
+        # print(f'pos_label: \n{pos_label}, \nneg_label: \n{neg_label}')
+        # print(f'pos_pi: \n{pis[0]}, \nneg_pi: \n{pis[1]}')
+        pos_eis, neg_eis = [], []
+        pos_label, neg_label, pos_input, neg_input = pos_label.unsqueeze(-1), \
+            neg_label.unsqueeze(-1), pos_input.unsqueeze(-1), neg_input.unsqueeze(-1)
+        for i in range(len(u_primes[1])):
+            for is_neg, (o, u_prime, pi, input, label, latent) in enumerate(zip(os_, u_primes, pis, \
+                [pos_input, neg_input], [pos_label, neg_label], [pos_latent, neg_latent])):
+                # print(f'\ninput({input.shape}): \n{input}, \no({o.shape}): \n{o}')
+                full_vals = torch.cat([input[o, :], label[u_prime[:i+1], :]], dim=0)
+                full_latent = torch.cat([latent[o, :], latent[u_prime[:i+1], :]], dim=0)
+            
+                ei = self.energy(idx=self.inp_len+2+pi[i], val=True, \
+                    rest_idx=full_vals, latent=full_latent)
+                if is_neg:
+                    neg_eis.append(ei)
+                else:
+                    pos_eis.append(ei)
+        assert len(pos_eis) != 0 and len(neg_eis) != 0, f'u_prime: {u_prime}\npos_label: {pos_label}, \nneg_label: {neg_label}'
+        all_eis = torch.cat(pos_eis+neg_eis, dim=0) #Size(|u'i|)
+        max_ei = all_eis.max()
+        contrast_loss = torch.tensor(0., requires_grad=True).to(self.device)
+        for pos_ei, neg_ei in zip(pos_eis, neg_eis):
+            pos_ei, neg_ei = pos_ei-max_ei, neg_ei-max_ei
+            contrast_loss = contrast_loss - torch.log(torch.exp(-1*pos_ei) / \
+                (torch.exp(-1*pos_ei) + torch.exp(-1*neg_ei)))
         
+        return contrast_loss
+
+            
+
     
-    def pseudolikelihood(self, latent, mlm_label):
+    def pseudolikelihood(self, latent, mlm_label, mlm_input):
         '''
         Non-batchalized! (single sample)
         
@@ -739,30 +793,42 @@ class BERTSequentialEBMs():
         params: 
             - latent: model output logits, Size(seq_len, num_classes)
             - mlm_label: input_ids for the masked tokens, Size(seq_len)
+            - mlm_input: input_ids for the observed tokens, Size(seq_len), fully used their latents
         return:
             - lop_xu: the conditional logprob distribution, Size(seq_len, num_classes)
         '''
-        assert latent.size(0) == mlm_label.size(0), f'latent.shape: {latent.shape}, ' \
-            f'mlm_label({mlm_label.shape}): {mlm_label}'
+        assert latent.size(0) == mlm_label.size(0) == mlm_input.size(0), \
+            f'latent.shape: {latent.shape}, ' \
+            f'mlm_label({mlm_label.shape}): {mlm_label}, ' \
+            f'mlm_input({mlm_input.shape}): {mlm_input}'
         # print(f'Inside pseudolikelihood: latent.shape: {latent.shape}, mlm_label.shape: {mlm_label.shape}')
         u = torch.nonzero(mlm_label).squeeze() #Size(|u|)
+        o = torch.nonzero(mlm_input != 3).squeeze() #3 is MASK id (count 0 in mlm_label is incorrect, since 0 can be pad)
         if u.dim():
             pi = torch.randperm(u.size(0)) #a random estimating order
             u_prime = u[pi]
         else: # u is a single value
             pi = torch.tensor([0])
             u, u_prime = torch.tensor([u]), torch.tensor([u])
+        if o.dim() == 0:
+            o = torch.tensor([o])
         # except:
         #     raise IndexError(f'u: {u}. Dimension specified as 0 but tensor has no dimensions')
         logp_xu = []
         mlm_label = mlm_label.unsqueeze(-1) #Size(45,1)
+        mlm_input = mlm_input.unsqueeze(-1)
         assert len(u_prime), f'u_prime is empty!! mlm_label: {mlm_label}, u: {u}, pi: {pi}'
         for i in range(len(u_prime)): #iter through |u'| EBMs
             condition_vals = mlm_label[u_prime[:i+1], :] #inclusive x_{u'_i} 121??
             condition_latent = latent[u_prime[:i+1], :]
+            full_vals = torch.cat([mlm_input[o, :], condition_vals], dim=0)
+            full_latent = torch.cat([latent[o, :], condition_latent], dim=0)
             # print(f'\ni: {i}, rest_idx({condition_vals.shape}): \n{condition_vals}\ncondition_latent.shape: {condition_latent.shape}')
-            ei_dist = self.energy(idx=pi[i], val=False, rest_idx=condition_vals, latent=condition_latent)
-            ei = self.energy(idx=pi[i], val=True, rest_idx=condition_vals, latent=condition_latent)
+            
+            # ei_dist = self.energy(idx=pi[i], val=False, rest_idx=condition_vals, latent=condition_latent)
+            ei_dist = self.energy(idx=self.inp_len+2+pi[i], val=False, rest_idx=full_vals, latent=full_latent)
+            
+            # ei = self.energy(idx=pi[i], val=True, rest_idx=condition_vals, latent=condition_latent)
             # perform logits normalization to avoid nan z_ui
             max_energy = ei_dist.max() 
             ei_dist = ei_dist - max_energy

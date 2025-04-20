@@ -1,0 +1,87 @@
+EP_train_pretrain:0:   0%|| 0/14746 [00:00<?, ?it/s]/home/yichuan/HKU/EBM/ire_reasoning/main.py:227: UserWarning: To copy construct from a tensor, it is recommended to use sourceTensor.clone().detach() or sourceTensor.clone().detach().requires_grad_(True), rather than torch.tensor(sourceTensor).
+  loss_is_nan = torch.isnan(torch.tensor(ce_loss)).any()
+EP_train_pretrain:0:   2%|| 261/14746 [00:23<21:21, 11.30it/s]
+{'epoch': 0, 'sample': 0, 'avg_loss': 7.165527820587158, 'loss': 7.165527820587158}
+{'epoch': 0, 'sample': 10, 'avg_loss': 7.1749444441361865, 'loss': 7.227955341339111}
+{'epoch': 0, 'sample': 20, 'avg_loss': 7.176143192109608, 'loss': 7.1670379638671875}
+{'epoch': 0, 'sample': 30, 'avg_loss': 7.175047859068839, 'loss': 7.1670379638671875}
+{'epoch': 0, 'sample': 40, 'avg_loss': 7.174502930990079, 'loss': 7.160890579223633}
+{'epoch': 0, 'sample': 50, 'avg_loss': 7.17389710744222, 'loss': 7.1670379638671875}
+{'epoch': 0, 'sample': 60, 'avg_loss': 7.172613847451132, 'loss': 7.1670379638671875}
+{'epoch': 0, 'sample': 70, 'avg_loss': 7.171448909061056, 'loss': 7.1670379638671875}
+{'epoch': 0, 'sample': 80, 'avg_loss': 7.170774966110418, 'loss': 7.1670379638671875}
+{'epoch': 0, 'sample': 90, 'avg_loss': 7.171344594641046, 'loss': 7.187154769897461}
+{'epoch': 0, 'sample': 100, 'avg_loss': 7.170779893894006, 'loss': 7.181475639343262}
+{'epoch': 0, 'sample': 110, 'avg_loss': 7.170301871256785, 'loss': 7.1670379638671875}
+{'epoch': 0, 'sample': 120, 'avg_loss': 7.170050652559138, 'loss': 7.1670379638671875}
+{'epoch': 0, 'sample': 130, 'avg_loss': 7.169440607988197, 'loss': 7.1670379638671875}
+{'epoch': 0, 'sample': 140, 'avg_loss': 7.168704922317613, 'loss': 7.165985584259033}
+{'epoch': 0, 'sample': 150, 'avg_loss': 7.1684094801643825, 'loss': 7.1670379638671875}
+{'epoch': 0, 'sample': 160, 'avg_loss': 7.168110231435077, 'loss': 7.1670379638671875}
+{'epoch': 0, 'sample': 170, 'avg_loss': 7.1680475285178735, 'loss': 7.1670379638671875}
+{'epoch': 0, 'sample': 180, 'avg_loss': 7.167671042911255, 'loss': 7.16748571395874}
+{'epoch': 0, 'sample': 190, 'avg_loss': 7.167554887801565, 'loss': 7.1670379638671875}
+{'epoch': 0, 'sample': 200, 'avg_loss': 7.167230881268705, 'loss': 7.1670379638671875}
+{'epoch': 0, 'sample': 210, 'avg_loss': 7.1668017938803725, 'loss': 7.147790908813477}
+{'epoch': 0, 'sample': 220, 'avg_loss': 7.166143909298996, 'loss': 7.167037487030029}
+{'epoch': 0, 'sample': 230, 'avg_loss': 7.165734866996864, 'loss': 7.167037010192871}
+{'epoch': 0, 'sample': 240, 'avg_loss': 7.165473558101417, 'loss': 7.167037010192871}
+{'epoch': 0, 'sample': 250, 'avg_loss': 7.164446340614106, 'loss': 7.167038917541504}
+{'epoch': 0, 'sample': 260, 'avg_loss': 7.163239040593991, 'loss': 7.137085437774658}
+Traceback (most recent call last):
+  File "/home/yichuan/HKU/EBM/ire_reasoning/main.py", line 410, in <module>
+    main()
+  File "/home/yichuan/miniconda3/envs/ire_reasoning/lib/python3.9/site-packages/hydra/main.py", line 94, in decorated_main
+    _run_hydra(
+  File "/home/yichuan/miniconda3/envs/ire_reasoning/lib/python3.9/site-packages/hydra/_internal/utils.py", line 394, in _run_hydra
+    _run_app(
+  File "/home/yichuan/miniconda3/envs/ire_reasoning/lib/python3.9/site-packages/hydra/_internal/utils.py", line 457, in _run_app
+    run_and_report(
+  File "/home/yichuan/miniconda3/envs/ire_reasoning/lib/python3.9/site-packages/hydra/_internal/utils.py", line 220, in run_and_report
+    return func()
+  File "/home/yichuan/miniconda3/envs/ire_reasoning/lib/python3.9/site-packages/hydra/_internal/utils.py", line 458, in <lambda>
+    lambda: hydra.run(
+  File "/home/yichuan/miniconda3/envs/ire_reasoning/lib/python3.9/site-packages/hydra/_internal/hydra.py", line 119, in run
+    ret = run_job(
+  File "/home/yichuan/miniconda3/envs/ire_reasoning/lib/python3.9/site-packages/hydra/core/utils.py", line 186, in run_job
+    ret.return_value = task_function(task_cfg)
+  File "/home/yichuan/HKU/EBM/ire_reasoning/main.py", line 382, in main
+    sebm_trainer.train(epoch, config.train.stage)
+  File "/home/yichuan/HKU/EBM/ire_reasoning/main.py", line 118, in train
+    self.iteration(epoch, self.train_data, stage)
+  File "/home/yichuan/HKU/EBM/ire_reasoning/main.py", line 218, in iteration
+    logp_xu = self.sebm.pseudolikelihood(gamma[r], xu[r], xo[r]) #Size(|u'|, num_classes)
+  File "/home/yichuan/HKU/EBM/ire_reasoning/sequential_ebms.py", line 785, in pseudolikelihood
+    assert torch.isnan(logp_xui).any() == False, f'logp_xui is NaN!! ei_dist: \n{ei_dist}, \nexpanded_z_ui: \n{expanded_z_ui}'
+KeyboardInterrupt
+Traceback (most recent call last):
+  File "/home/yichuan/HKU/EBM/ire_reasoning/main.py", line 410, in <module>
+    main()
+  File "/home/yichuan/miniconda3/envs/ire_reasoning/lib/python3.9/site-packages/hydra/main.py", line 94, in decorated_main
+    _run_hydra(
+  File "/home/yichuan/miniconda3/envs/ire_reasoning/lib/python3.9/site-packages/hydra/_internal/utils.py", line 394, in _run_hydra
+    _run_app(
+  File "/home/yichuan/miniconda3/envs/ire_reasoning/lib/python3.9/site-packages/hydra/_internal/utils.py", line 457, in _run_app
+    run_and_report(
+  File "/home/yichuan/miniconda3/envs/ire_reasoning/lib/python3.9/site-packages/hydra/_internal/utils.py", line 220, in run_and_report
+    return func()
+  File "/home/yichuan/miniconda3/envs/ire_reasoning/lib/python3.9/site-packages/hydra/_internal/utils.py", line 458, in <lambda>
+    lambda: hydra.run(
+  File "/home/yichuan/miniconda3/envs/ire_reasoning/lib/python3.9/site-packages/hydra/_internal/hydra.py", line 119, in run
+    ret = run_job(
+  File "/home/yichuan/miniconda3/envs/ire_reasoning/lib/python3.9/site-packages/hydra/core/utils.py", line 186, in run_job
+    ret.return_value = task_function(task_cfg)
+  File "/home/yichuan/HKU/EBM/ire_reasoning/main.py", line 382, in main
+    sebm_trainer.train(epoch, config.train.stage)
+  File "/home/yichuan/HKU/EBM/ire_reasoning/main.py", line 118, in train
+    self.iteration(epoch, self.train_data, stage)
+  File "/home/yichuan/HKU/EBM/ire_reasoning/main.py", line 218, in iteration
+    logp_xu = self.sebm.pseudolikelihood(gamma[r], xu[r], xo[r]) #Size(|u'|, num_classes)
+  File "/home/yichuan/HKU/EBM/ire_reasoning/sequential_ebms.py", line 785, in pseudolikelihood
+    assert torch.isnan(logp_xui).any() == False, f'logp_xui is NaN!! ei_dist: \n{ei_dist}, \nexpanded_z_ui: \n{expanded_z_ui}'
+KeyboardInterrupt
+Error in atexit._run_exitfuncs:
+Traceback (most recent call last):
+  File "/home/yichuan/miniconda3/envs/ire_reasoning/lib/python3.9/threading.py", line 1080, in _wait_for_tstate_lock
+    if lock.acquire(block, timeout):
+KeyboardInterrupt

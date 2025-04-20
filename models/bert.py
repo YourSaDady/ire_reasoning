@@ -89,9 +89,9 @@ class BERTDataset(Dataset):
     def __len__(self):
         return self.corpus_lines
 
-    def __getitem__(self, item):
+    def __getitem__pos(self, item):
         '''
-        Select a sample pair from the data_pair, and preprocess.  
+        Select a positive sample pair from the data_pair, and preprocess.  
         
         params:
             - item: line index
@@ -153,6 +153,82 @@ class BERTDataset(Dataset):
         output['is_positive'] = self.is_pos
         
         return output
+    
+    def __getitem__(self, item):
+        '''
+        Select positive and negative sample pairs from the data_pair, and preprocess.  
+        
+        params:
+            - item: line index
+            - t: a random masking rate from a specific schedule
+            - is_pos: positive means x and y from the same line pair; otherwise negative
+            
+        output_dict:
+            - bert_input: masked context tensor of Size(max_len)
+            - bert_label: padded label tensor of Size(max_len)
+            - segment_label: 1s and 2s tensor of Size(max_len)
+            - is_positive: bool, indicating whether is positive or not 
+        '''
+        t2_all_zero = True
+        while t2_all_zero: #randomly mask at least one position in t2
+            # uniformly sample unmasking rate t
+            t = random.random()
+            if t == 0:
+                t = 0.05
+            # get pos / neg sentence pair
+            t1, pos_t2, neg_t2 = self.get_sents(item)
+            # print(f'Inside __getitem__(), original t1: \n{t1}, \nt2: \n{t2}')
+            # randomly mask t1 and t2 with a uniformly sampled masking rate t
+            if self.stage == 'pretrain':
+                (t1_processed, t1_label), (pos_t2_processed, pos_t2_label, \
+                    neg_t2_processed, neg_t2_label) = self.mask(t1, t), \
+                        self.mask_pn(pos_t2, neg_t2, t) # pos_t2 and neg_t2 should take the same masks
+                t2_all_zero = (all(x == 0 for x in pos_t2_label) or all(x==0 for x in neg_t2_label))
+            # mask t2 with random t while keep t1 unmasked
+            elif self.stage == 'sft':
+                (t1_processed, t1_label), (pos_t2_processed, pos_t2_label, \
+                    neg_t2_processed, neg_t2_label) = self.mask(t1, 0), self.mask_pn(pos_t2, neg_t2, t)
+                t2_all_zero = (all(x == 0 for x in pos_t2_label) or all(x==0 for x in neg_t2_label))
+            # keep t1 unmasked and t2 fully masked as the initial sequence 
+            elif self.stage == 'inference':
+                t1_processed, t1_label, pos_t2_processed, pos_t2_label = self.mask(t1, 0), self.mask(t2, 1)
+                t2_all_zero = False
+            else:
+                raise NotImplementedError
+            
+        pos_neg_outputs = []
+        for is_neg, (t2_processed, t2_label) in enumerate(zip([pos_t2_processed, neg_t2_processed], \
+            [pos_t2_label, neg_t2_label])):
+            # complete the start and end of sequences and their labels with special tokens
+            t1 = [self.tokenizer.vocab['[CLS]']] + t1_processed + [self.tokenizer.vocab['[SEP]']]
+            t2 = t2_processed + [self.tokenizer.vocab['[SEP]']]
+            t1_label = [self.tokenizer.vocab['[PAD]']] + t1_label + [self.tokenizer.vocab['[PAD]']]
+            t2_label = t2_label + [self.tokenizer.vocab['[PAD]']]
+            # print(f'After added special tokens, t1({len(t1)}): \n{t1}, \nt1_label: \n{t1_label}, \nt2({len(t2)}): {t2}, \nt2_label: {t2_label}')
+            # concatenate t1 and t2 and add padding to max_len
+            # print(f'\nself.max_len: {self.max_len}')
+            segment_label = ([1 for _ in range(len(t1))] + [2 for _ in range(len(t2))])[:self.max_len]
+            bert_input = (t1 + t2)[:self.max_len]
+            bert_label = (t1_label + t2_label)[:self.max_len]
+            padding = [self.tokenzier.vocab['[PAD]'] for _ in range(self.max_len - len(bert_input))]
+            bert_input.extend(padding), bert_label.extend(padding), segment_label.extend(padding)
+        
+            output = {
+                'bert_input': bert_input,
+                'bert_label': bert_label,
+                'segment_label': segment_label,
+            }
+            # print(f'final:\nbert_input: \n{bert_input}, \nbert_label: \n{bert_label},\nsegment_label: \n{segment_label}')
+            output = {k: torch.tensor(v) for k, v in output.items()}
+            output['is_positive'] = (1-is_neg)
+            pos_neg_outputs.append(output)
+        
+        return pos_neg_outputs
+    
+    def get_sents(self, idx):
+        t1, pos_t2, neg_t2 = self.lines[idx][0], self.lines[idx][1], \
+            self.lines[rand.randrange(len(self.lines))][1]
+        return t1, pos_t2, neg_t2
         
         
     def get_sent(self, idx, is_pos):
@@ -186,6 +262,39 @@ class BERTDataset(Dataset):
         output_label = list(itertools.chain(*[[x] if not isinstance(x, list) else x for x in output_label]))
         assert len(output) == len(output_label)
         return output, output_label
+    
+    def mask_pn(self, pos_seq, neg_seq, t):
+        pos_tokens, neg_tokens = pos_seq.split(), neg_seq.split() #only useful for textual sentences
+        pos_output_label, pos_output, neg_output_label, neg_output = [], [], [], []
+        # t% of the tokens will be masked
+        for i, (pos_token, neg_token) in enumerate(zip(pos_tokens, neg_tokens)): # iter through words
+            prob = rand.random()
+            # remove cls and sep token
+            pos_token_id, neg_token_id = self.tokenizer(pos_token)['input_ids'][1:-1], \
+                self.tokenizer(neg_token)['input_ids'][1:-1]# token list
+            # mask tokens of a word with t%
+            if prob < t:
+                for i in range(len(pos_token_id)):
+                    pos_output.append(self.tokenizer.vocab['[MASK]'])
+                for i in range(len(neg_token_id)):
+                    neg_output.append(self.tokenizer.vocab['[MASK]'])
+                pos_output_label.append(pos_token_id)
+                neg_output_label.append(neg_token_id)
+            else:
+                pos_output.append(pos_token_id)
+                neg_output.append(neg_token_id)
+                for i in range(len(pos_token_id)):
+                    pos_output_label.append(0)
+                for i in range(len(neg_token_id)):
+                    neg_output_label.append(0)
+        # flattening
+        pos_output = list(itertools.chain(*[[x] if not isinstance(x, list) else x for x in pos_output]))
+        pos_output_label = list(itertools.chain(*[[x] if not isinstance(x, list) else x for x in pos_output_label]))
+        neg_output = list(itertools.chain(*[[x] if not isinstance(x, list) else x for x in neg_output]))
+        neg_output_label = list(itertools.chain(*[[x] if not isinstance(x, list) else x for x in neg_output_label]))
+        assert len(pos_output) == len(pos_output_label) == len(neg_output) == len(neg_output_label)
+        assert pos_output.count(self.tokenizer.vocab['[MASK]']) == neg_output.count(self.tokenizer.vocab['[MASK]'])
+        return pos_output, pos_output_label, neg_output, neg_output_label
         
     
 ### attention layers

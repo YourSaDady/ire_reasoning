@@ -3,7 +3,8 @@ task_name: binary-addition  # binary-addition
 param_type: bert # mlp, transformer
 # max_len: 128
 # special_tokens: ['<mask>']
-load_ebm_ckpts: False
+load_ebm_ckpts: False ###########
+d_model: 32
 
 
 # 这个参数暂时无用
@@ -18,8 +19,8 @@ models:
 tasks:
   binary-addition:
     name: binary-addition
-    inp_len: 28
-    out_len: 14 #k
+    inp_len: 18
+    out_len: 9 #k
     num_classes: 6 #vocab_size = binary + 4 special tokens for BERT
     train_size: 1800
     val_size: 200
@@ -67,7 +68,7 @@ train:
   wandb: True #######################
 
 sampling:
-  batch_size: 10
+  batch_size: 4
   steps: 10
   temperature: 1.0
 

@@ -1,0 +1,32 @@
+EP_train_pretrain:0:   0%|| 0/14746 [00:00<?, ?it/s]/home/yichuan/HKU/EBM/ire_reasoning/main.py:248: UserWarning: To copy construct from a tensor, it is recommended to use sourceTensor.clone().detach() or sourceTensor.clone().detach().requires_grad_(True), rather than torch.tensor(sourceTensor).
+  loss_is_nan = torch.isnan(torch.tensor(ce_loss)).any()
+EP_train_pretrain:0:   1%|| 155/14746 [00:24<37:57,  6.41it/s]
+{'epoch': 0, 'sample': 0, 'avg_loss': 94.05145263671875, 'loss': 94.05145263671875}
+{'epoch': 0, 'sample': 10, 'avg_loss': 74.38926696777344, 'loss': 89.94438934326172}
+{'epoch': 0, 'sample': 20, 'avg_loss': 81.40732756115142, 'loss': 82.82728576660156}
+{'epoch': 0, 'sample': 30, 'avg_loss': 76.61091835268083, 'loss': 72.82369232177734}
+{'epoch': 0, 'sample': 40, 'avg_loss': 73.33015646585604, 'loss': 38.34748077392578}
+{'epoch': 0, 'sample': 50, 'avg_loss': 72.9378926894244, 'loss': 60.61682891845703}
+{'epoch': 0, 'sample': 60, 'avg_loss': 71.82298654024719, 'loss': 72.62411499023438}
+{'epoch': 0, 'sample': 70, 'avg_loss': 68.72340602606116, 'loss': 51.061439514160156}
+{'epoch': 0, 'sample': 80, 'avg_loss': 70.4233602358971, 'loss': 64.51242065429688}
+{'epoch': 0, 'sample': 90, 'avg_loss': 69.62364871685321, 'loss': 85.71859741210938}
+{'epoch': 0, 'sample': 100, 'avg_loss': 67.35585518638686, 'loss': 27.292753219604492}
+{'epoch': 0, 'sample': 110, 'avg_loss': 66.81070487563674, 'loss': 39.859588623046875}
+{'epoch': 0, 'sample': 120, 'avg_loss': 66.02892922961023, 'loss': 60.078948974609375}
+{'epoch': 0, 'sample': 130, 'avg_loss': 65.07340658348025, 'loss': 82.03962707519531}
+{'epoch': 0, 'sample': 140, 'avg_loss': 63.369346158724305, 'loss': 39.480079650878906}
+{'epoch': 0, 'sample': 150, 'avg_loss': 62.740643911803794, 'loss': 13.179702758789062}
+Error executing job with overrides: []
+Traceback (most recent call last):
+  File "/home/yichuan/HKU/EBM/ire_reasoning/main.py", line 403, in main
+    sebm_trainer.train(epoch, config.train.stage)
+  File "/home/yichuan/HKU/EBM/ire_reasoning/main.py", line 118, in train
+    self.iteration(epoch, self.train_data, stage)
+  File "/home/yichuan/HKU/EBM/ire_reasoning/main.py", line 240, in iteration
+    contrast_loss = contrast_loss + self.sebm.calculate_contrast_loss(
+  File "/home/yichuan/HKU/EBM/ire_reasoning/sequential_ebms.py", line 772, in calculate_contrast_loss
+    all_eis = torch.cat(pos_eis+neg_eis, dim=0) #Size(|u'i|)
+RuntimeError: torch.cat(): expected a non-empty list of Tensors
+
+Set the environment variable HYDRA_FULL_ERROR=1 for a complete stack trace.

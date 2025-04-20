@@ -1,0 +1,10 @@
+{"time":"2025-04-21T04:12:50.054055485+08:00","level":"INFO","msg":"stream: starting","core version":"0.19.9","symlink path":"/home/yichuan/HKU/EBM/ire_reasoning/wandb/run-20250421_041250-ysgf5nmh/logs/debug-core.log"}
+{"time":"2025-04-21T04:12:50.408466651+08:00","level":"INFO","msg":"created new stream","id":"ysgf5nmh"}
+{"time":"2025-04-21T04:12:50.408581044+08:00","level":"INFO","msg":"stream: started","id":"ysgf5nmh"}
+{"time":"2025-04-21T04:12:50.408611274+08:00","level":"INFO","msg":"writer: Do: started","stream_id":"ysgf5nmh"}
+{"time":"2025-04-21T04:12:50.408725524+08:00","level":"INFO","msg":"handler: started","stream_id":"ysgf5nmh"}
+{"time":"2025-04-21T04:12:50.408627181+08:00","level":"INFO","msg":"sender: started","stream_id":"ysgf5nmh"}
+{"time":"2025-04-21T04:12:50.704144838+08:00","level":"INFO","msg":"Starting system monitor"}
+{"time":"2025-04-21T04:12:50.994546753+08:00","level":"INFO","msg":"stream: closing","id":"ysgf5nmh"}
+{"time":"2025-04-21T04:12:50.994596801+08:00","level":"INFO","msg":"Stopping system monitor"}
+{"time":"2025-04-21T04:12:50.994726969+08:00","level":"INFO","msg":"Stopped system monitor"}

@@ -1,0 +1,15 @@
+{"time":"2025-04-21T03:13:38.695555497+08:00","level":"INFO","msg":"stream: starting","core version":"0.19.9","symlink path":"/home/yichuan/HKU/EBM/ire_reasoning/wandb/run-20250421_031338-u45ivnxd/logs/debug-core.log"}
+{"time":"2025-04-21T03:13:39.031127156+08:00","level":"INFO","msg":"created new stream","id":"u45ivnxd"}
+{"time":"2025-04-21T03:13:39.03124765+08:00","level":"INFO","msg":"stream: started","id":"u45ivnxd"}
+{"time":"2025-04-21T03:13:39.031265012+08:00","level":"INFO","msg":"handler: started","stream_id":"u45ivnxd"}
+{"time":"2025-04-21T03:13:39.031273005+08:00","level":"INFO","msg":"sender: started","stream_id":"u45ivnxd"}
+{"time":"2025-04-21T03:13:39.031326606+08:00","level":"INFO","msg":"writer: Do: started","stream_id":"u45ivnxd"}
+{"time":"2025-04-21T03:13:39.304380201+08:00","level":"INFO","msg":"Starting system monitor"}
+{"time":"2025-04-21T03:13:39.828802288+08:00","level":"INFO","msg":"stream: closing","id":"u45ivnxd"}
+{"time":"2025-04-21T03:13:39.828894362+08:00","level":"INFO","msg":"Stopping system monitor"}
+{"time":"2025-04-21T03:13:39.828995326+08:00","level":"INFO","msg":"Stopped system monitor"}
+{"time":"2025-04-21T03:13:41.266594225+08:00","level":"INFO","msg":"fileTransfer: Close: file transfer manager closed"}
+{"time":"2025-04-21T03:13:41.611069294+08:00","level":"INFO","msg":"handler: closed","stream_id":"u45ivnxd"}
+{"time":"2025-04-21T03:13:41.611178893+08:00","level":"INFO","msg":"writer: Close: closed","stream_id":"u45ivnxd"}
+{"time":"2025-04-21T03:13:41.611195002+08:00","level":"INFO","msg":"sender: closed","stream_id":"u45ivnxd"}
+{"time":"2025-04-21T03:13:41.61139371+08:00","level":"INFO","msg":"stream: closed","id":"u45ivnxd"}

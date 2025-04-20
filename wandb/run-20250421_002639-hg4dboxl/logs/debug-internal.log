@@ -1,0 +1,15 @@
+{"time":"2025-04-21T00:26:39.573295269+08:00","level":"INFO","msg":"stream: starting","core version":"0.19.9","symlink path":"/home/yichuan/HKU/EBM/ire_reasoning/wandb/run-20250421_002639-hg4dboxl/logs/debug-core.log"}
+{"time":"2025-04-21T00:26:39.988952332+08:00","level":"INFO","msg":"created new stream","id":"hg4dboxl"}
+{"time":"2025-04-21T00:26:39.989102057+08:00","level":"INFO","msg":"stream: started","id":"hg4dboxl"}
+{"time":"2025-04-21T00:26:39.989142457+08:00","level":"INFO","msg":"writer: Do: started","stream_id":"hg4dboxl"}
+{"time":"2025-04-21T00:26:39.989239017+08:00","level":"INFO","msg":"sender: started","stream_id":"hg4dboxl"}
+{"time":"2025-04-21T00:26:39.989344629+08:00","level":"INFO","msg":"handler: started","stream_id":"hg4dboxl"}
+{"time":"2025-04-21T00:26:40.282829114+08:00","level":"INFO","msg":"Starting system monitor"}
+{"time":"2025-04-21T00:26:40.815291032+08:00","level":"INFO","msg":"stream: closing","id":"hg4dboxl"}
+{"time":"2025-04-21T00:26:40.815385949+08:00","level":"INFO","msg":"Stopping system monitor"}
+{"time":"2025-04-21T00:26:40.815550001+08:00","level":"INFO","msg":"Stopped system monitor"}
+{"time":"2025-04-21T00:26:42.199297896+08:00","level":"INFO","msg":"fileTransfer: Close: file transfer manager closed"}
+{"time":"2025-04-21T00:26:42.474375442+08:00","level":"INFO","msg":"handler: closed","stream_id":"hg4dboxl"}
+{"time":"2025-04-21T00:26:42.474476541+08:00","level":"INFO","msg":"writer: Close: closed","stream_id":"hg4dboxl"}
+{"time":"2025-04-21T00:26:42.474506849+08:00","level":"INFO","msg":"sender: closed","stream_id":"hg4dboxl"}
+{"time":"2025-04-21T00:26:42.474670022+08:00","level":"INFO","msg":"stream: closed","id":"hg4dboxl"}

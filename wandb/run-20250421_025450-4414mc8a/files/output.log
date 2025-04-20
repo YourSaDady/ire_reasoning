@@ -1,0 +1,14 @@
+EP_train_pretrain:0:   0%|| 0/14746 [00:00<?, ?it/s]
+Error executing job with overrides: []
+Traceback (most recent call last):
+  File "/home/yichuan/HKU/EBM/ire_reasoning/main.py", line 403, in main
+    sebm_trainer.train(epoch, config.train.stage)
+  File "/home/yichuan/HKU/EBM/ire_reasoning/main.py", line 118, in train
+    self.iteration(epoch, self.train_data, stage)
+  File "/home/yichuan/HKU/EBM/ire_reasoning/main.py", line 240, in iteration
+    contrast_loss = contrast_loss + self.sebm.calculate_contrast_loss(
+  File "/home/yichuan/HKU/EBM/ire_reasoning/sequential_ebms.py", line 756, in calculate_contrast_loss
+    pos_full_vals = torch.cat([pos_input[os_[0], :], pos_label[u_primes[0][:i+1], :]], dim=0)
+IndexError: too many indices for tensor of dimension 1
+
+Set the environment variable HYDRA_FULL_ERROR=1 for a complete stack trace.

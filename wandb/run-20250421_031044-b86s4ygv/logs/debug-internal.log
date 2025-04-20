@@ -1,0 +1,15 @@
+{"time":"2025-04-21T03:10:44.45151788+08:00","level":"INFO","msg":"stream: starting","core version":"0.19.9","symlink path":"/home/yichuan/HKU/EBM/ire_reasoning/wandb/run-20250421_031044-b86s4ygv/logs/debug-core.log"}
+{"time":"2025-04-21T03:10:44.804033905+08:00","level":"INFO","msg":"created new stream","id":"b86s4ygv"}
+{"time":"2025-04-21T03:10:44.804155046+08:00","level":"INFO","msg":"stream: started","id":"b86s4ygv"}
+{"time":"2025-04-21T03:10:44.804216971+08:00","level":"INFO","msg":"sender: started","stream_id":"b86s4ygv"}
+{"time":"2025-04-21T03:10:44.804318168+08:00","level":"INFO","msg":"handler: started","stream_id":"b86s4ygv"}
+{"time":"2025-04-21T03:10:44.804193842+08:00","level":"INFO","msg":"writer: Do: started","stream_id":"b86s4ygv"}
+{"time":"2025-04-21T03:10:45.13155645+08:00","level":"INFO","msg":"Starting system monitor"}
+{"time":"2025-04-21T03:10:45.625770444+08:00","level":"INFO","msg":"stream: closing","id":"b86s4ygv"}
+{"time":"2025-04-21T03:10:45.625812432+08:00","level":"INFO","msg":"Stopping system monitor"}
+{"time":"2025-04-21T03:10:45.62590821+08:00","level":"INFO","msg":"Stopped system monitor"}
+{"time":"2025-04-21T03:10:47.036805311+08:00","level":"INFO","msg":"fileTransfer: Close: file transfer manager closed"}
+{"time":"2025-04-21T03:10:47.276719049+08:00","level":"INFO","msg":"handler: closed","stream_id":"b86s4ygv"}
+{"time":"2025-04-21T03:10:47.276771212+08:00","level":"INFO","msg":"writer: Close: closed","stream_id":"b86s4ygv"}
+{"time":"2025-04-21T03:10:47.276808662+08:00","level":"INFO","msg":"sender: closed","stream_id":"b86s4ygv"}
+{"time":"2025-04-21T03:10:47.276937526+08:00","level":"INFO","msg":"stream: closed","id":"b86s4ygv"}

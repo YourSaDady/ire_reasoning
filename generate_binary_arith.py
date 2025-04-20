@@ -90,34 +90,34 @@ def generate_inversion_samples():
     return torch.tensor(features, dtype=torch.int8), torch.tensor(labels, dtype=torch.int8)
 
 '''
-Larger Binary-arithmetics, overall sequence length is 42-bits.
+Larger Binary-arithmetics, overall sequence length is 26-bits.
 Save in txt format, separate string x and y with " +++$+++ "
 Each sample pair: ('0 1 0 ...' + " +++$+++ " + '1 0 0 ...')
 
 Addition: x1 + x2 = y
     - flag: '00'
-    - x1: 13-bits
-    - x2: 13-bits
-    - y: 14-bits
+    - x1: 8-bits
+    - x2: 8-bits
+    - y: 9-bits
 
 Subtraction: x1 - x2 = y
     - flag: '01'
-    - x1: 14-bits
-    - x2: 13-bits
-    - y: 13-bits
+    - x1: 9-bits
+    - x2: 8-bits
+    - y: 8-bits
 
 Inversion: !x = y
     - flag: '10'
-    - x: 20-bits
-    - y: 20-bits
+    - x: 12-bits
+    - y: 12-bits
 '''
 def generate_addition_samples_txt(save_in_txt=True): 
     features, labels = [], []
-    for x1 in tqdm(range(2**13), desc='addition'): # 0 to 2^13
-        for x2 in range(2**13): # 0 to 2^13
+    for x1 in tqdm(range(2**8), desc='addition'): # 0 to 2^8
+        for x2 in range(2**8): # 0 to 2^8
             y = x1 + x2
-            x_bin = '00' + format(x1, '013b') + format(x2, '013b')
-            y_bin = format(y, '014b')
+            x_bin = '00' + format(x1, '08b') + format(x2, '08b')
+            y_bin = format(y, '09b')
             if save_in_txt:
                 features.append(' '.join(x_bin))
                 labels.append(' '.join(y_bin))
@@ -131,11 +131,11 @@ def generate_addition_samples_txt(save_in_txt=True):
     
 def generate_subtraction_samples_txt(save_in_txt=True): 
     features, labels = [], []
-    for x2 in tqdm(range(2**13), desc='subtraction'): # 0 to 2^13
-        for y in range(2**13): # 0 to 2^13
+    for x2 in tqdm(range(2**8), desc='subtraction'): # 0 to 2^8
+        for y in range(2**8): # 0 to 2^8
             x1 = x2 + y #y = x1 - x2
-            x_bin = '01' + format(x1, '014b') + format(x2, '013b')
-            y_bin = format(y, '013b')
+            x_bin = '01' + format(x1, '09b') + format(x2, '08b')
+            y_bin = format(y, '08b')
             if save_in_txt:
                 features.append(' '.join(x_bin))
                 labels.append(' '.join(y_bin))
@@ -149,8 +149,8 @@ def generate_subtraction_samples_txt(save_in_txt=True):
     
 def generate_inversion_samples_txt(save_in_txt=True):
     features, labels = [], []
-    for num in tqdm(range(2**20), desc='inversion'):  # 2^20 possible values
-        x_bits_str = bin(num)[2:].zfill(20)
+    for num in tqdm(range(2**12), desc='inversion'):  # 2^12 possible values
+        x_bits_str = bin(num)[2:].zfill(12)
         x_bits = ' '.join('10' + x_bits_str) 
         y_bits = ' '.join('1' if bit == '0' else '0' for bit in x_bits_str)
         if save_in_txt:

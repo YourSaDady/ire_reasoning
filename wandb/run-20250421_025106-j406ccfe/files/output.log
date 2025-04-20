@@ -1,0 +1,24 @@
+EP_train_pretrain:0:   0%|| 0/14746 [00:00<?, ?it/s]
+Error executing job with overrides: []
+Traceback (most recent call last):
+  File "/home/yichuan/HKU/EBM/ire_reasoning/main.py", line 403, in main
+    sebm_trainer.train(epoch, config.train.stage)
+  File "/home/yichuan/HKU/EBM/ire_reasoning/main.py", line 118, in train
+    self.iteration(epoch, self.train_data, stage)
+  File "/home/yichuan/HKU/EBM/ire_reasoning/main.py", line 203, in iteration
+    for i, (pos_data, neg_data) in data_iter: #batch
+  File "/home/yichuan/miniconda3/envs/ire_reasoning/lib/python3.9/site-packages/tqdm/std.py", line 1181, in __iter__
+    for obj in iterable:
+  File "/home/yichuan/miniconda3/envs/ire_reasoning/lib/python3.9/site-packages/torch/utils/data/dataloader.py", line 708, in __next__
+    data = self._next_data()
+  File "/home/yichuan/miniconda3/envs/ire_reasoning/lib/python3.9/site-packages/torch/utils/data/dataloader.py", line 764, in _next_data
+    data = self._dataset_fetcher.fetch(index)  # may raise StopIteration
+  File "/home/yichuan/miniconda3/envs/ire_reasoning/lib/python3.9/site-packages/torch/utils/data/_utils/fetch.py", line 52, in fetch
+    data = [self.dataset[idx] for idx in possibly_batched_index]
+  File "/home/yichuan/miniconda3/envs/ire_reasoning/lib/python3.9/site-packages/torch/utils/data/_utils/fetch.py", line 52, in <listcomp>
+    data = [self.dataset[idx] for idx in possibly_batched_index]
+  File "/home/yichuan/HKU/EBM/ire_reasoning/models/bert.py", line 179, in __getitem__
+    t1, pos_t2, neg_t2 = self.get_sents(item, self.is_pos)
+TypeError: get_sents() takes 2 positional arguments but 3 were given
+
+Set the environment variable HYDRA_FULL_ERROR=1 for a complete stack trace.
