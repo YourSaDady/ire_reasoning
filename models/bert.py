@@ -89,7 +89,7 @@ class BERTDataset(Dataset):
     def __len__(self):
         return self.corpus_lines
 
-    def __getitem__pos(self, item):
+    def __getitem__(self, item):
         '''
         Select a positive sample pair from the data_pair, and preprocess.  
         
@@ -154,7 +154,7 @@ class BERTDataset(Dataset):
         
         return output
     
-    def __getitem__(self, item):
+    def __getitem__pn(self, item):
         '''
         Select positive and negative sample pairs from the data_pair, and preprocess.  
         
@@ -212,6 +212,8 @@ class BERTDataset(Dataset):
             bert_label = (t1_label + t2_label)[:self.max_len]
             padding = [self.tokenzier.vocab['[PAD]'] for _ in range(self.max_len - len(bert_input))]
             bert_input.extend(padding), bert_label.extend(padding), segment_label.extend(padding)
+            
+            assert bert_label.count(0) != 0, f'Inside iter(), bert_label: \n{bert_label}, \npos_t2_label: \n{pos_t2_label}, \nneg_t2_label: \n{neg_t2_label}'
         
             output = {
                 'bert_input': bert_input,

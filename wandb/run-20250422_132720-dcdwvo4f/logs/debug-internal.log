@@ -1,0 +1,7 @@
+{"time":"2025-04-22T13:27:20.574913407+08:00","level":"INFO","msg":"stream: starting","core version":"0.19.9","symlink path":"/home/yichuan/HKU/EBM/ire_reasoning/wandb/run-20250422_132720-dcdwvo4f/logs/debug-core.log"}
+{"time":"2025-04-22T13:27:20.927464659+08:00","level":"INFO","msg":"created new stream","id":"dcdwvo4f"}
+{"time":"2025-04-22T13:27:20.92758881+08:00","level":"INFO","msg":"stream: started","id":"dcdwvo4f"}
+{"time":"2025-04-22T13:27:20.92762547+08:00","level":"INFO","msg":"writer: Do: started","stream_id":"dcdwvo4f"}
+{"time":"2025-04-22T13:27:20.92764905+08:00","level":"INFO","msg":"sender: started","stream_id":"dcdwvo4f"}
+{"time":"2025-04-22T13:27:20.927789416+08:00","level":"INFO","msg":"handler: started","stream_id":"dcdwvo4f"}
+{"time":"2025-04-22T13:27:21.257216296+08:00","level":"INFO","msg":"Starting system monitor"}

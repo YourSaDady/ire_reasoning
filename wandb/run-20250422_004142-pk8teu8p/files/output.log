@@ -1,0 +1,12 @@
+EP_train_pretrain:0:   0%|| 0/14746 [00:00<?, ?it/s]
+Error executing job with overrides: []
+Traceback (most recent call last):
+  File "/home/yichuan/HKU/EBM/ire_reasoning/main.py", line 405, in main
+    sebm_trainer.train(epoch, config.train.stage)
+  File "/home/yichuan/HKU/EBM/ire_reasoning/main.py", line 118, in train
+    self.iteration(epoch, self.train_data, stage)
+  File "/home/yichuan/HKU/EBM/ire_reasoning/main.py", line 208, in iteration
+    data = {key: value.to(self.device) for key, value in pos_data.items()}
+NameError: name 'pos_data' is not defined
+
+Set the environment variable HYDRA_FULL_ERROR=1 for a complete stack trace.

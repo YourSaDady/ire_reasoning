@@ -1,0 +1,84 @@
+EP_train_pretrain:0:   0%|| 0/14746 [00:00<?, ?it/s]/home/yichuan/HKU/EBM/ire_reasoning/main.py:248: UserWarning: To copy construct from a tensor, it is recommended to use sourceTensor.clone().detach() or sourceTensor.clone().detach().requires_grad_(True), rather than torch.tensor(sourceTensor).
+  loss_is_nan = torch.isnan(torch.tensor(ce_loss)).any()
+EP_train_pretrain:0:   0%|| 71/14746 [00:10<36:32,  6.69it/s]
+{'epoch': 0, 'sample': 0, 'avg_loss': 63.93705749511719, 'loss': 63.93705749511719}
+{'epoch': 0, 'sample': 10, 'avg_loss': 46.482627695257015, 'loss': 26.87005043029785}
+{'epoch': 0, 'sample': 20, 'avg_loss': 50.69946007501511, 'loss': 99.28517150878906}
+{'epoch': 0, 'sample': 30, 'avg_loss': 58.65778756910755, 'loss': 106.76832580566406}
+{'epoch': 0, 'sample': 40, 'avg_loss': 57.30463204732755, 'loss': 51.563316345214844}
+{'epoch': 0, 'sample': 50, 'avg_loss': 55.854320638320026, 'loss': 107.99114990234375}
+{'epoch': 0, 'sample': 60, 'avg_loss': 54.596129120373334, 'loss': 125.02884674072266}
+{'epoch': 0, 'sample': 70, 'avg_loss': 52.99663543701172, 'loss': 46.967430114746094}
+Error executing job with overrides: []
+Traceback (most recent call last):
+  File "/home/yichuan/HKU/EBM/ire_reasoning/main.py", line 403, in main
+    sebm_trainer.train(epoch, config.train.stage)
+  File "/home/yichuan/HKU/EBM/ire_reasoning/main.py", line 118, in train
+    self.iteration(epoch, self.train_data, stage)
+  File "/home/yichuan/HKU/EBM/ire_reasoning/main.py", line 240, in iteration
+    contrast_loss = contrast_loss + self.sebm.calculate_contrast_loss(
+  File "/home/yichuan/HKU/EBM/ire_reasoning/sequential_ebms.py", line 774, in calculate_contrast_loss
+    assert len(pos_eis) != 0 and len(neg_eis) != 0, f'u_prime: {u_prime}\npos_label: {pos_label}, \nneg_label: {neg_label}'
+AssertionError: u_prime: tensor([], dtype=torch.int64)
+pos_label: tensor([[0],
+        [0],
+        [0],
+        [0],
+        [0],
+        [0],
+        [0],
+        [0],
+        [0],
+        [0],
+        [0],
+        [0],
+        [0],
+        [0],
+        [0],
+        [0],
+        [0],
+        [0],
+        [0],
+        [0],
+        [0],
+        [0],
+        [0],
+        [0],
+        [0],
+        [0],
+        [0],
+        [0],
+        [5],
+        [0]]),
+neg_label: tensor([[0],
+        [0],
+        [0],
+        [0],
+        [0],
+        [0],
+        [0],
+        [0],
+        [0],
+        [0],
+        [0],
+        [0],
+        [0],
+        [0],
+        [0],
+        [0],
+        [0],
+        [0],
+        [0],
+        [0],
+        [0],
+        [0],
+        [0],
+        [0],
+        [0],
+        [0],
+        [0],
+        [0],
+        [0],
+        [0]])
+
+Set the environment variable HYDRA_FULL_ERROR=1 for a complete stack trace.

@@ -1,0 +1,89 @@
+EP_train_pretrain:0:   0%|| 0/14746 [00:00<?, ?it/s]/home/yichuan/HKU/EBM/ire_reasoning/main.py:248: UserWarning: To copy construct from a tensor, it is recommended to use sourceTensor.clone().detach() or sourceTensor.clone().detach().requires_grad_(True), rather than torch.tensor(sourceTensor).
+  loss_is_nan = torch.isnan(torch.tensor(ce_loss)).any()
+EP_train_pretrain:0:   1%|| 123/14746 [00:19<37:56,  6.42it/s]
+{'epoch': 0, 'sample': 0, 'avg_loss': 82.81886291503906, 'loss': 82.81886291503906}
+{'epoch': 0, 'sample': 10, 'avg_loss': 56.190440611405805, 'loss': 114.78638458251953}
+{'epoch': 0, 'sample': 20, 'avg_loss': 45.38421703520275, 'loss': 24.595745086669922}
+{'epoch': 0, 'sample': 30, 'avg_loss': 52.80051483646516, 'loss': 96.05564880371094}
+{'epoch': 0, 'sample': 40, 'avg_loss': 51.39631120170035, 'loss': 41.48828125}
+{'epoch': 0, 'sample': 50, 'avg_loss': 49.51807859832165, 'loss': 15.878223419189453}
+{'epoch': 0, 'sample': 60, 'avg_loss': 51.59142869417785, 'loss': 12.09444808959961}
+{'epoch': 0, 'sample': 70, 'avg_loss': 51.51367135115073, 'loss': 37.95262908935547}
+{'epoch': 0, 'sample': 80, 'avg_loss': 49.964606449927814, 'loss': 35.95313262939453}
+{'epoch': 0, 'sample': 90, 'avg_loss': 49.33392464983594, 'loss': 32.02842330932617}
+{'epoch': 0, 'sample': 100, 'avg_loss': 48.647603459877544, 'loss': 44.3082160949707}
+{'epoch': 0, 'sample': 110, 'avg_loss': 48.62071549355447, 'loss': 68.55726623535156}
+{'epoch': 0, 'sample': 120, 'avg_loss': 49.23588007146662, 'loss': 72.77769470214844}
+Error executing job with overrides: []
+Traceback (most recent call last):
+  File "/home/yichuan/HKU/EBM/ire_reasoning/main.py", line 403, in main
+    sebm_trainer.train(epoch, config.train.stage)
+  File "/home/yichuan/HKU/EBM/ire_reasoning/main.py", line 118, in train
+    self.iteration(epoch, self.train_data, stage)
+  File "/home/yichuan/HKU/EBM/ire_reasoning/main.py", line 240, in iteration
+    contrast_loss = contrast_loss + self.sebm.calculate_contrast_loss(
+  File "/home/yichuan/HKU/EBM/ire_reasoning/sequential_ebms.py", line 774, in calculate_contrast_loss
+    assert len(pos_eis) != 0 and len(neg_eis) != 0, f'u_prime: {u_prime}\npos_label: {pos_label}, \nneg_label: {neg_label}'
+AssertionError: u_prime: tensor([], dtype=torch.int64)
+pos_label: tensor([[0],
+        [0],
+        [0],
+        [0],
+        [0],
+        [0],
+        [0],
+        [0],
+        [0],
+        [0],
+        [0],
+        [0],
+        [0],
+        [0],
+        [0],
+        [0],
+        [0],
+        [0],
+        [0],
+        [0],
+        [0],
+        [0],
+        [0],
+        [0],
+        [0],
+        [0],
+        [0],
+        [0],
+        [5],
+        [0]]),
+neg_label: tensor([[0],
+        [0],
+        [0],
+        [0],
+        [0],
+        [0],
+        [0],
+        [0],
+        [0],
+        [0],
+        [0],
+        [0],
+        [0],
+        [0],
+        [0],
+        [0],
+        [0],
+        [0],
+        [0],
+        [0],
+        [0],
+        [0],
+        [0],
+        [0],
+        [0],
+        [0],
+        [0],
+        [0],
+        [0],
+        [0]])
+
+Set the environment variable HYDRA_FULL_ERROR=1 for a complete stack trace.

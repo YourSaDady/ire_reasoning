@@ -200,19 +200,20 @@ class SequentialEBMsTrainer:
         if (not train) and (schedule is not None):
             total_correct = 0
 
-        for i, (pos_data, neg_data) in data_iter: #batch
+        # for i, (pos_data, neg_data) in data_iter: #batch
+        for i, data in data_iter: #batch
             if train:
                 '''MLM training pradigm with varying t'''
                 # 0. batch_data will be sent into the device(GPU or cpu)
-                data = {key: value.to(self.device) for key, value in pos_data.items()}
-                neg_data = {key: value.to(self.device) for key, value in neg_data.items()}
+                data = {key: value.to(self.device) for key, value in data.items()}
+                # neg_data = {key: value.to(self.device) for key, value in neg_data.items()}
                 
                 xo, xu = data['bert_input'], data['bert_label'] #already masked with rate t
-                neg_xo, neg_xu = neg_data['bert_input'], neg_data['bert_label']
+                # neg_xo, neg_xu = neg_data['bert_input'], neg_data['bert_label']
                 # print(f'\nxo({xo.shape}): \n{xo}\nxu({xu.shape}): \n{xu}\n') # both Size([4, 45])
                 # 1. Forward MLM to generate the gamma for calculating the energy landscapes
                 gamma = self.sebm.model.forward(xo, data['segment_label'], is_ebm=True) 
-                neg_gamma = self.sebm.model.forward(xo, neg_data['segment_label'], is_ebm=True) 
+                # neg_gamma = self.sebm.model.forward(xo, neg_data['segment_label'], is_ebm=True) 
                 
                 # #_________________test: BERT mlm_loss___________________
                 # mlm_output = self.sebm.model.forward(xo, data['segment_label'], is_ebm=False) #test, softmaxed
@@ -236,13 +237,14 @@ class SequentialEBMsTrainer:
                         f'\nlogp_xu.shape: {logp_xu.shape}, xu_label.shape: {xu_label.shape}'
                     # print(f'logp_xu.shape: {logp_xu.shape}, xu_label.shape({xu_label.shape}): {xu_label}')
                     
-                    #___________sum over batch: contrast loss_______________
-                    contrast_loss = contrast_loss + self.sebm.calculate_contrast_loss(
-                        gamma[r], neg_gamma[r], 
-                        xu[r], neg_xu[r],
-                        xo[r], neg_xo[r]
-                    )
-                    #_____________________________
+                    
+                    # #___________sum over batch: contrast loss_______________
+                    # contrast_loss = contrast_loss + self.sebm.calculate_contrast_loss(
+                    #     gamma[r], gamma[r], #use the same latent
+                    #     xu[r], neg_xu[r],
+                    #     xo[r], neg_xo[r]
+                    # )
+                    # #_____________________________
                     
                     ce_loss = ce_loss + self.criterion(logp_xu, xu_label)
                     loss_is_nan = torch.isnan(torch.tensor(ce_loss)).any()

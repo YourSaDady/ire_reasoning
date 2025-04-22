@@ -771,7 +771,7 @@ class BERTSequentialEBMs():
                     neg_eis.append(ei)
                 else:
                     pos_eis.append(ei)
-        assert len(pos_eis) != 0 and len(neg_eis) != 0, f'u_prime: {u_prime}\npos_label: {pos_label}, \nneg_label: {neg_label}'
+        assert len(pos_eis) != 0 and len(neg_eis) != 0, f'u_prime: {u_prime}\npos_label({pos_label.shape}): {pos_label}, \nneg_label({neg_label.shape}): {neg_label}'
         all_eis = torch.cat(pos_eis+neg_eis, dim=0) #Size(|u'i|)
         max_ei = all_eis.max()
         contrast_loss = torch.tensor(0., requires_grad=True).to(self.device)
@@ -803,7 +803,8 @@ class BERTSequentialEBMs():
             f'mlm_input({mlm_input.shape}): {mlm_input}'
         # print(f'Inside pseudolikelihood: latent.shape: {latent.shape}, mlm_label.shape: {mlm_label.shape}')
         u = torch.nonzero(mlm_label).squeeze() #Size(|u|)
-        o = torch.nonzero(mlm_input != 3).squeeze() #3 is MASK id (count 0 in mlm_label is incorrect, since 0 can be pad)
+        o = torch.nonzero(mlm_input != 3).squeeze() #include MASK state (3)
+        o_len = o.size(0)
         if u.dim():
             pi = torch.randperm(u.size(0)) #a random estimating order
             u_prime = u[pi]
@@ -821,12 +822,15 @@ class BERTSequentialEBMs():
         for i in range(len(u_prime)): #iter through |u'| EBMs
             condition_vals = mlm_label[u_prime[:i+1], :] #inclusive x_{u'_i} 121??
             condition_latent = latent[u_prime[:i+1], :]
+            #note that MASK state is also included in the full_latent, the original tokens order is not maintained, but still matched
+            #we found that including MASK state can give better performance? 
             full_vals = torch.cat([mlm_input[o, :], condition_vals], dim=0)
             full_latent = torch.cat([latent[o, :], condition_latent], dim=0)
             # print(f'\ni: {i}, rest_idx({condition_vals.shape}): \n{condition_vals}\ncondition_latent.shape: {condition_latent.shape}')
             
             # ei_dist = self.energy(idx=pi[i], val=False, rest_idx=condition_vals, latent=condition_latent)
-            ei_dist = self.energy(idx=self.inp_len+2+pi[i], val=False, rest_idx=full_vals, latent=full_latent)
+            # ei_dist = self.energy(idx=self.inp_len+2+pi[i], val=False, rest_idx=full_vals, latent=full_latent)
+            ei_dist = self.energy(idx=o_len+pi[i], val=False, rest_idx=full_vals, latent=full_latent)
             
             # ei = self.energy(idx=pi[i], val=True, rest_idx=condition_vals, latent=condition_latent)
             # perform logits normalization to avoid nan z_ui
