@@ -1,0 +1,21 @@
+
+
+
+4. Start evaluation...
+EP_test_inference:1:   0%|| 0/1639 [00:00<?, ?it/s]
+bert_label.shape: torch.Size([4, 30])
+Error executing job with overrides: []
+Traceback (most recent call last):
+  File "/home/yichuan/HKU/EBM/ire_reasoning/main.py", line 441, in main
+    sebm_trainer.evaluate(k, visualize=False)
+  File "/home/yichuan/HKU/EBM/ire_reasoning/main.py", line 132, in evaluate
+    self.iteration(1, self.test_data, stage='inference', train=False, \
+  File "/home/yichuan/HKU/EBM/ire_reasoning/main.py", line 296, in iteration
+    scheduled_data = self.add_schedule(data, schedule)
+  File "/home/yichuan/HKU/EBM/ire_reasoning/main.py", line 162, in add_schedule
+    unmask_pos = rand.sample(unlabeled_pos, unmask_num)
+  File "/home/yichuan/miniconda3/envs/ire_reasoning/lib/python3.9/random.py", line 449, in sample
+    raise ValueError("Sample larger than population or is negative")
+ValueError: Sample larger than population or is negative
+
+Set the environment variable HYDRA_FULL_ERROR=1 for a complete stack trace.

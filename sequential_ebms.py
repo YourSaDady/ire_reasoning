@@ -628,102 +628,128 @@ class BERTSequentialEBMs():
         params: 
             order_label: k (1-indexed)
             partial_pred: Size(bacth_size, seq_len)
-            sample_batch:dict
+            sample_batch: dict
         return:
             updated_partial_pred: Size(batch_size, seq_len)
             sth: loss_list or visual_ebms.log 
         '''
+        batch_size = sample_batch['bert_input'].size(0)
         model_input = sample_batch['bert_input'] + partial_pred
-        # 1. update segment_label
-        segment_label = sample_batch['segment_label'].clone()
-        mask1 = (partial_pred > 0)
-        mask2 = (sample_batch['schedule_label'] == order_label)
-        mask0 = (sample_batch['bert_label'] > 0 and sample_batch['schedule_label'] > order_label)
-        segment_label[mask1] = 1 # set t1 and previously unmasked t2 positions as 1
-        segment_label[mask2] = 2 # set t2 positions to be unmasked at the k-th time step as 2
-        segment_label[mask0] = 0 # set the rest as 0 (pad)
-        # 2. send to device
-        model_input.to(self.device), segment_label.to(self.device)
-        print(f'model_input({model_input.shape}): \n{model_input}\n' \
-            f'segment_label({segment_label.shape}): \n{segment_label}')
-        log_step = 1
+        model_input[model_input > self.vocab_size] -= 3 #subtract the MASK value (3), since added by the unmasked value
+        print(f"model_input: \n{model_input},\npartial_pred: \n{partial_pred}")
+        log_step = 1 #TODO
         if visual_ebms:
             log_step=visual_ebms.time_step #1
         loss_list = []
         criterion = nn.CrossEntropyLoss()
-        with torch.no_grad():
-            if sampler == 'gibbs':
-                unmask_idx = torch.nonzero(sample_batch['schedule_label'] == order_label) #之前unmasked tokens不再变化
-                print(f'\nunmask_idx.shape: {unmask_idx.shape}')
-                yo = torch.randint(low=0, high=self.vocab_size, \
-                    size=unmask_idx.size()).to(self.device) #randomly initialize yo
-                yo = torch.unsqueeze(yo, 2)
-                for t in range(sampling_times): 
-                    gamma = self.model.forward(model_input, segment_label, is_ebm=True)
-                    print(f'gamma.shape: {gamma.shape}') # Size(batch_size, out_len, vocab_size) TODO 不知道包不包含前后special tokens
-                    yo_energy = self.energy(
-                        idx=0, 
-                        val=True, 
-                        rest_idx=yo, 
-                        latent=gamma[unmask_idx],
-                        batchalize=True    
-                    )
-                    yo_prime = yo.clone()
-                    if visual_ebms:
-                        energy_landscape = torch.zeros((yo_prime.size(1), self.num_classes), \
-                            device=self.device) # first sample in each batch!
-                    losses = torch.zeros(yo_prime.size(1)).to(self.device)
-                    for i in range(yo_prime.size(1)):
-                        ei_dist = self.energy( #Size(batch_size, num_classes)
-                            idx=i,
-                            val=False,
-                            rest_idx=yo,
-                            latent=gamma[unmask_idx],
-                            batchalize=True
-                        ) 
-                        p_oi = self.gibbs_dist(ei_dist) #Size(batch_size, num_classes)
-                        try:
-                            y_oi_prime = torch.multinomial(p_oi, num_samples=1) #Size(batch_size, 1)
-                        except: #gradient explode / vanish
-                            raise RuntimeError(f'multinomial() input: p_oi seems contains nan.\n' \
-                                f'p_oi({p_oi.shape}): \n{p_oi}\n' \
-                                f'ei_dist({ei_dist.shape}): \n{ei_dist}\ngamma[unmask_idx]'\
-                                f'({gamma[unmask_idx].shape}): \n{gamma[unmask_idx]}\n'\
-                                f'gamma({gamma.shape}): \n{gamma}\n'\
-                                f'model_input({model_input.shape}): \n{model_input}')
-                        yo_prime[:, i, :] = y_oi_prime
-                        if t % log_step == 0:
-                            if visual_ebms:
-                                energy_landscape[i, :] = ei_dist[0, :]
-                            yi = sample_batch[0, unmask_idx[0,i]].view(-1).to(torch.long)
-                            losses[i] = criterion(p_oi[0:1, :], yi)
-                    #end of pos iter
-                    yo_prime_energy = self.energy(
-                        idx=0, 
-                        val=True, 
-                        rest_idx=yo_prime, 
-                        latent=gamma[unmask_idx],
-                        batchalize=True    
-                    ) #Size(batch_size, 1)
-                    '''Check if the energy decreases after a single Gibbs step'''
-                    mask = yo_prime_energy < yo_energy
-                    expanded_mask = mask.unsqueeze(1).expand_as(yo) #Size(batch_size, k, 1)
-                    yo[expanded_mask] = yo_prime[expanded_mask]
+        if sampler == 'gibbs':
+            '''1. generate latent'''
+            with torch.no_grad():
+                gamma = self.model.forward(model_input, sample_batch['segment_label'], is_ebm=True)
+                # print(f'gamma.shape: {gamma.shape}') # Size(batch_size, seq_len, vocab_size) #includes special tokens
+            # print(f'\norder_label: {order_label}')
+            full_val = [] #x_ou, dim=2
+            unmask_idx = [] # x_u's indeices, dim=2
+            full_idx = [] # x_ou's indices, dim=2
+            for bid in range(batch_size):
+                unmask = (sample_batch['schedule_label'][bid] == order_label).nonzero(as_tuple=True)[0]
+                full = (sample_batch['schedule_label'][bid] <= order_label).nonzero(as_tuple=True)[0]
+                context = sample_batch['bert_input'][bid][full]
+                if bid == 0:
+                    yo_idx = (context == 3).nonzero(as_tuple=True)[0]#.tolist()
+                full_val.append(context.view(1, -1))
+                full_idx.append(full.view(1, -1))
+                unmask_idx.append(unmask.view(1, -1))
+            full_val = torch.cat(full_val, dim=0)
+            full_idx = torch.cat(full_idx, dim=0)
+            unmask_idx = torch.cat(unmask_idx, dim=0)
+            #randomly initialize yo (exclide 4 special tokens, 4-indexed)
+            yo = torch.randint(low=4, high=self.vocab_size, \
+                size=unmask_idx.size()).to(self.device) 
+            # print(f'\nbefore fillng yo, full_val: \n{full_val}\nyo_idx: ({yo_idx.shape})\n{yo_idx}')
+            full_val[:, yo_idx] = yo #random initialize
+            # print(f'\nafter fillng yo, full_val: \n{full_val}')
+            full_val = torch.unsqueeze(full_val, -1)
+            # print(f'full_idx({full_idx.shape}): \n{full_idx}')
+            full_latent = torch.cat([gamma[r, full_idx[r], :].unsqueeze(0) for r in range(batch_size)],dim=0)
+            # print(f'energy inputs: rest_idx({full_val.shape}), full_latent.shape: \n{full_latent.shape}')
+            '''2. t steps of sampling'''
+            for t in range(sampling_times): 
+                yo_energy = self.energy(
+                    idx=0, 
+                    val=True, 
+                    rest_idx=full_val,  #4,22,1
+                    latent=full_latent, #4,22,6
+                    batchalize=True    
+                )
+                yo_prime = yo.clone() #4,|u|
+                if visual_ebms:
+                    energy_landscape = torch.zeros((yo_prime.size(1), self.num_classes), \
+                        device=self.device) # first sample in each batch!
+                for i in range(yo_prime.size(1)): # iter through |u'|
+                    ei_dist = self.energy( #Size(batch_size, num_classes) 4,6
+                        idx=i,
+                        val=False,
+                        rest_idx=full_val,
+                        latent=full_latent,
+                        batchalize=True
+                    ) 
+                    p_oi = self.gibbs_dist(ei_dist) #Size(batch_size, num_classes) 4,6
+                    try:
+                        y_oi_prime = torch.multinomial(p_oi, num_samples=1) #Size(batch_size, 1) 4,1
+                    except: #gradient explode / vanish
+                        raise RuntimeError(f'multinomial() input: p_oi seems contains nan.\n' \
+                            f'p_oi({p_oi.shape}): \n{p_oi}\n' \
+                            f'ei_dist({ei_dist.shape}): \n{ei_dist}\ngamma[unmask_idx]'\
+                            f'({gamma[unmask_idx].shape}): \n{gamma[unmask_idx]}\n'\
+                            f'gamma({gamma.shape}): \n{gamma}\n'\
+                            f'model_input({model_input.shape}): \n{model_input}')
+                    # print(f'y_oi_prime({y_oi_prime.shape}): \n{y_oi_prime}')
+                    # print(f'before update at i({i}), yo\': \n{yo_prime}')
+                    yo_prime[:, i] = y_oi_prime.squeeze()
+                    # print(f'after update at i({i}), yo\': \n{yo_prime}')
                     if t % log_step == 0:
                         if visual_ebms:
-                            visual_ebms.screenshot(
-                                unmask_idx.size(1), 
-                                t+1, 
-                                energy_landscape,
-                                torch.mean(losses.cpu()).item() 
-                            )
-                        else:
-                            loss_list.append(torch.mean(losses.cpu()).item() )
-                #end of t iter
-                updated_partial_pred = partial_pred.clone()
-                updated_partial_pred[unmask_idx] = yo.squeeze()
-            else:
-                raise NotImplementedError
+                            energy_landscape[i, :] = ei_dist[0, :]
+                        yi = sample_batch['bert_label'][0, unmask_idx[0,i]].view(-1).to(torch.long)
+                #end of pos iter
+                # print(f'\n\nafter all updates, yo\': \n{yo_prime}') #4,2
+                full_val = full_val.squeeze(-1)
+                # print(f'before update, full_val: \n{full_val}')
+                full_val[:, yo_idx] = yo_prime
+                # print(f'after update, full_val: \n{full_val}')
+                full_val = full_val.unsqueeze(-1)
+                yo_prime_energy = self.energy(
+                    idx=0, 
+                    val=True, 
+                    rest_idx=full_val, 
+                    latent=full_latent,
+                    batchalize=True    
+                ) #Size(batch_size, 1)
+                '''Check if the energy decreases after a single Gibbs step'''
+                mask = yo_prime_energy < yo_energy
+                # print(f'yo_energy: \n{yo_energy}, \nyo_prime_energy: \n{yo_prime_energy}\nmask({mask.shape}): \n{mask}')
+                expanded_mask = mask.expand_as(yo) #Size(batch_size, k, 1)
+                yo[expanded_mask] = yo_prime[expanded_mask]
+                if t % log_step == 0:
+                    if visual_ebms:
+                        visual_ebms.screenshot(
+                            unmask_idx.size(1), 
+                            t+1, 
+                            energy_landscape,
+                            torch.mean(losses.cpu()).item() 
+                        )
+                    else:
+                        True
+            #end of t iter
+            updated_partial_pred = partial_pred.clone()
+            # print(f'\npartial_pred({partial_pred.shape}): \n{partial_pred}\nunmask_idx.shape: {unmask_idx.shape},\nyo.shape: {yo.shape}')
+            for b in range(batch_size):
+                updated_partial_pred[b][unmask_idx[b]] = yo[b]
+            # print(f'after t-times sampling, updated_partial_pred: \n{updated_partial_pred}')
+        #end gibbs
+        else:
+            raise NotImplementedError
         if visual_ebms:
             return updated_partial_pred, visual_ebms.ebm_log
         else:

@@ -117,7 +117,7 @@ class SequentialEBMsTrainer:
     def train(self, epoch, stage):
         self.iteration(epoch, self.train_data, stage)
 
-    def test(self, epoch, stage):
+    def test(self, epoch, stage): #暂时无用
         self.iteration(epoch, self.test_data, stage, train=False)
         
     def evaluate(self, k, scheduler='cosine', visualize=False): #Inference
@@ -138,32 +138,48 @@ class SequentialEBMsTrainer:
         
         params:
             data: batchalized data dict with bert_inputs, bert_labels, segment_labels and is_positive
-            schedule: a list of decreasing unmasking rate t
+            schedule: a list of decreasing masking rate t (fully masked to fully unmasked)
         return:
             scheduled_data: batchalized data dict extended with schedule_label k-v pair
         '''
         scheduled_data = data
         batch_size, io_len = data['bert_label'].size()
-        print(f"bert_label.shape: {data['bert_label'].shape}")
-        schedule_label = [[0]*io_len]*batch_size #initialize a 2D batchalized schedule label
-        special_ids = {0,1,2,3}
+        print(f"bert_label({data['bert_label'].shape}): {data['bert_label']}")
+        schedule_label = [[0 for c in range(io_len)] for r in range(batch_size)] #initialize a 2D batchalized schedule label (4,30)
+        special_ids = {0,1,2,3} #pad, cls, sep, mask
         full_label = data['bert_label'].tolist()
         assert len(full_label)==batch_size and len(full_label[0])==io_len, \
             f'bert_label: Size({len(full_label)}, {len(full_label[0])})'
         for k, t in enumerate(schedule):
-            unmask_num = int(t * torch.count_nonzero(data['bert_label'][0]))
-            assert unmask_num > 0, f'unmasking number should be positive! Got {unmask_num}'
-            print(f'k: {k}, t: {t}, unmask_num: {unmask_num}')
-            for bid in range(batch_size):
-                for pos, label in enumerate(full_label[bid]):
-                    #pick the remaining t2 tokens as unmasking candidate
-                    if label not in special_ids and schedule_label[bid][pos]==0: 
-                        prob = rand.random()
-                        if prob < t:
-                            schedule_label[bid][pos] = k+1 #1-indexed
-                    if torch.count_nonzero(schedule_label[bid]) == unmask_num:
-                        break
+            unmask_num = int((1-t) * torch.count_nonzero(data['bert_label'][0]))
+            if unmask_num == 0:
+                unmask_num = 1
+            # print(f'k: {k}, t: {t}, unmask_num: {unmask_num}')
+            for bid in range(batch_size): #each row inside the batch shares the same sequence of umask num
+                labeled_num = len([x for x in schedule_label[bid] if x != 0])
+                unlabeled_pos = [pos for pos in range(len(schedule_label[bid])) \
+                    if (schedule_label[bid][pos] == 0 and full_label[bid][pos]>0)]
+                sample_num = unmask_num # - labeled_num
+                unmask_pos = rand.sample(unlabeled_pos, min(len(unlabeled_pos), sample_num))
+                for pos in unmask_pos:
+                    schedule_label[bid][pos] = (k+1) #add order label (1-indexed)
+            # print(f'after k-{k+1}th schedule, scheudle_label: \n{schedule_label}')
+            if len(unlabeled_pos) <= sample_num: #complete labeling
+                break
+            # assert unmask_num > 0, f'unmasking number should be positive! Got {unmask_num}'
+            # for bid in range(batch_size):
+            #     for pos, label in enumerate(full_label[bid]):
+            #         #pick the remaining t2 tokens as unmasking candidate
+            #         if label not in special_ids and schedule_label[bid][pos]==0: 
+            #             prob = rand.random()
+            #             if prob < t:
+            #                 schedule_label[bid][pos] = k+1 #1-indexed
+            #         if torch.count_nonzero(schedule_label[bid]) == unmask_num:
+            #             break
         schedule_label = torch.tensor(schedule_label)
+        # for pos in data['bert_input'].size(1): #add CLS and SEP tokens
+        #     if data['bert_input'][:, pos][0] == 1 or data['bert_input'][:, pos][0] == 2:
+        #         schedule_label[:, pos] = data['bert_input'][:, pos]
         print(f'\nschedule_label: \n{schedule_label}')
         scheduled_data['schedule_label'] = schedule_label
         assert torch.count_nonzero(schedule_label) == torch.count_nonzero(data['bert_label']), \
@@ -284,12 +300,13 @@ class SequentialEBMsTrainer:
                 '''inference with scheduled t and sequential EBMs sampling'''
                 # 1. break down the sequence tokens according to the schedule
                 scheduled_data = self.add_schedule(data, schedule)
-                print(f'scheduled_data: \n{scheduled_data}')
+                # print(f'scheduled_data: \n{scheduled_data}')
                 # 2. iterate through k EBMs, send input to device, and each EBM performs gibbs sampling
                 partial_pred = torch.zeros_like(scheduled_data['bert_input']) #init
                 k_losses = {}
                 for k, t in enumerate(schedule):
-                    partial_pred, sth = self.sebm.sampling(
+                    print(f'\n\nk-{k}, t-{t}\n')
+                    partial_pred, sth = self.sebm.sampling( #sth: loss_list
                         k+1, #1-indexed unmasking order label
                         partial_pred,
                         scheduled_data, 
@@ -297,7 +314,7 @@ class SequentialEBMsTrainer:
                         self.sampling_times,
                         visual_ebms=visual_ebms
                     )
-                    print(f'{k}-th partial_pred: \n{partial_pred}')
+                    print(f'{k}-th partial_pred: \n{partial_pred},\nloss_list: {sth}')
                     if visual_ebms == None:
                         k_losses[k] = sth
                 pred = partial_pred
@@ -323,7 +340,7 @@ class SequentialEBMsTrainer:
             if i % self.log_freq == 0:
                 data_iter.write(str(post_fix))
                 
-            # break ###############test
+            break ###############test
         #end of batch iter
         
         # print(
@@ -347,7 +364,7 @@ def main(config):
         max_len = config.tasks[config.task_name].inp_len + config.tasks[config.task_name].out_len + 3
         train_loader, test_loader, train_size, test_size = load_bert_data(
             config.task_name, 
-            config.train.stage, #这里声明了stage: pretrain / sft
+            config.sampling.stage, #这里声明了stage: pretrain / sft
             max_len,
             config.train.batch_size, 
             config.sampling.batch_size
@@ -366,9 +383,10 @@ def main(config):
     task_config = config.tasks[config.task_name]
     print(f'inp_len: {task_config.inp_len}, out_len: {task_config.out_len}, num_classes: {task_config.num_classes}')
     if config.param_type == 'bert':
+        d_model = config.models[config.param_type].d_model
         sebm = BERTSequentialEBMs(
             task_config=task_config,
-            d_model=config.d_model, #######32 hidden_size
+            d_model=d_model, #######32 hidden_size
             device='cpu'
             )
     else:
@@ -378,7 +396,8 @@ def main(config):
         train_loader,
         test_loader,
         config.train.lr,
-        wandb=config.train.wandb
+        wandb=config.train.wandb,
+        sampling_times=config.sampling.times
     )
 
     # return ##############
@@ -406,16 +425,17 @@ def main(config):
         
         # return##############
     else:
-        print(f'\n3. Loading checkpoints...')
-        ckpts_path = f'./ebm_ckpts/{task_config.name}_{config.param_type}.pth'
+        ckpts_path = f'./ebm_ckpts/{task_config.name}_{config.param_type}' \
+            f'{config.models[config.param_type].d_model}_w_mask.pth'
+        print(f'\n3. Loading checkpoints from {ckpts_path}...')
         sebm_trainer.load_model(ckpts_path)
         
 
-    return ###############
+    # return ###############
 
     '''3. Evaluate'''
     k = 10
-    if config.train.wandb:
+    if config.sampling.wandb:
         wandb.login()
         run = wandb.init(
             project=f'EBM_eval-{task_config.name}_{config.param_type}',  # Specify your project

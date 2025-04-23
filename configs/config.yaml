@@ -3,8 +3,7 @@ task_name: binary-addition  # binary-addition
 param_type: bert # mlp, transformer
 # max_len: 128
 # special_tokens: ['<mask>']
-load_ebm_ckpts: False ###########
-d_model: 32
+load_ebm_ckpts: True ###########
 
 
 # 这个参数暂时无用
@@ -14,6 +13,8 @@ models:
     # special indices: [128000, 128009]
     # special_tokens_map: {'bos_token': '<|begin_of_text|>', 'eos_token': '<|eot_id|>'}
     name: meta-llama/Llama-3.1-8B-Instruct
+  bert:
+    d_model: 32
 
 #all tasks
 tasks:
@@ -68,9 +69,12 @@ train:
   wandb: True #######################
 
 sampling:
+  stage: inference
   batch_size: 4
-  steps: 10
-  temperature: 1.0
+  times: 10
+  steps: 1
+  wandb: False
+  # temperature: 1.0cd
 
 visualize:
   batch_step: 10 #visualize per <batch_step> number of batches
