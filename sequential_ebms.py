@@ -636,7 +636,7 @@ class BERTSequentialEBMs():
         batch_size = sample_batch['bert_input'].size(0)
         model_input = sample_batch['bert_input'] + partial_pred
         model_input[model_input > self.vocab_size] -= 3 #subtract the MASK value (3), since added by the unmasked value
-        print(f"model_input: \n{model_input},\npartial_pred: \n{partial_pred}")
+        # print(f"\nmodel_input: \n{model_input},\nprevious partial_pred: \n{partial_pred}")
         log_step = 1 #TODO
         if visual_ebms:
             log_step=visual_ebms.time_step #1
@@ -649,10 +649,11 @@ class BERTSequentialEBMs():
                 # print(f'gamma.shape: {gamma.shape}') # Size(batch_size, seq_len, vocab_size) #includes special tokens
             # print(f'\norder_label: {order_label}')
             full_val = [] #x_ou, dim=2
-            unmask_idx = [] # x_u's indeices, dim=2
+            unmask_idx = [] # new x_u's indeices, dim=2
             full_idx = [] # x_ou's indices, dim=2
             for bid in range(batch_size):
-                unmask = (sample_batch['schedule_label'][bid] == order_label).nonzero(as_tuple=True)[0]
+                unmask = ((sample_batch['schedule_label'][bid] >=1) & \
+                    (sample_batch['schedule_label'][bid] <= order_label)).nonzero(as_tuple=True)[0]
                 full = (sample_batch['schedule_label'][bid] <= order_label).nonzero(as_tuple=True)[0]
                 context = sample_batch['bert_input'][bid][full]
                 if bid == 0:
@@ -665,9 +666,12 @@ class BERTSequentialEBMs():
             unmask_idx = torch.cat(unmask_idx, dim=0)
             #randomly initialize yo (exclide 4 special tokens, 4-indexed)
             yo = torch.randint(low=4, high=self.vocab_size, \
-                size=unmask_idx.size()).to(self.device) 
+                size=unmask_idx.size()).to(self.device) #unmask_idx
             # print(f'\nbefore fillng yo, full_val: \n{full_val}\nyo_idx: ({yo_idx.shape})\n{yo_idx}')
-            full_val[:, yo_idx] = yo #random initialize
+            try:
+                full_val[:, yo_idx] = yo #random initialize
+            except:
+                print(f"IndexError: sample_batch['bert_input']: \n{sample_batch['bert_input']}\nfull: \n{full}, context: \n{context},\nyo_idx: \n{yo_idx}, \nxu_idx: \n{xu_idx}")
             # print(f'\nafter fillng yo, full_val: \n{full_val}')
             full_val = torch.unsqueeze(full_val, -1)
             # print(f'full_idx({full_idx.shape}): \n{full_idx}')
@@ -686,6 +690,7 @@ class BERTSequentialEBMs():
                 if visual_ebms:
                     energy_landscape = torch.zeros((yo_prime.size(1), self.num_classes), \
                         device=self.device) # first sample in each batch!
+                loss = torch.zeros(yo_prime.size(1))
                 for i in range(yo_prime.size(1)): # iter through |u'|
                     ei_dist = self.energy( #Size(batch_size, num_classes) 4,6
                         idx=i,
@@ -712,6 +717,7 @@ class BERTSequentialEBMs():
                         if visual_ebms:
                             energy_landscape[i, :] = ei_dist[0, :]
                         yi = sample_batch['bert_label'][0, unmask_idx[0,i]].view(-1).to(torch.long)
+                        loss[i] = criterion(p_oi[0:1, :], yi)
                 #end of pos iter
                 # print(f'\n\nafter all updates, yo\': \n{yo_prime}') #4,2
                 full_val = full_val.squeeze(-1)
@@ -740,7 +746,7 @@ class BERTSequentialEBMs():
                             torch.mean(losses.cpu()).item() 
                         )
                     else:
-                        True
+                        loss_list.append(round(torch.mean(loss).item(), 2))
             #end of t iter
             updated_partial_pred = partial_pred.clone()
             # print(f'\npartial_pred({partial_pred.shape}): \n{partial_pred}\nunmask_idx.shape: {unmask_idx.shape},\nyo.shape: {yo.shape}')

@@ -90,7 +90,8 @@ class SequentialEBMsTrainer:
         sampler='gibbs',
         sampling_times=10,
         log_freq=10, #log every 10 batches
-        wandb=True,
+        train_wandb=True,
+        test_wandb=False,
         device='cpu' ########debugging
     ):
         self.device = device
@@ -107,7 +108,8 @@ class SequentialEBMsTrainer:
         # sampling configs:
         self.sampler = sampler
         self.sampling_times = sampling_times
-        self.wandb = wandb
+        self.train_wandb = train_wandb
+        self.test_wandb = test_wandb
         print("Total Parameters:", sum([p.nelement() for p in self.sebm.model.parameters()]))
     
     def load_model(self, ckpts_path):
@@ -144,13 +146,15 @@ class SequentialEBMsTrainer:
         '''
         scheduled_data = data
         batch_size, io_len = data['bert_label'].size()
-        print(f"bert_label({data['bert_label'].shape}): {data['bert_label']}")
+        # print(f"bert_label({data['bert_label'].shape}): {data['bert_label']}")
         schedule_label = [[0 for c in range(io_len)] for r in range(batch_size)] #initialize a 2D batchalized schedule label (4,30)
         special_ids = {0,1,2,3} #pad, cls, sep, mask
         full_label = data['bert_label'].tolist()
         assert len(full_label)==batch_size and len(full_label[0])==io_len, \
             f'bert_label: Size({len(full_label)}, {len(full_label[0])})'
+        iters_count = 0 #early stop, can be lesser than k
         for k, t in enumerate(schedule):
+            iters_count += 1
             unmask_num = int((1-t) * torch.count_nonzero(data['bert_label'][0]))
             if unmask_num == 0:
                 unmask_num = 1
@@ -180,12 +184,12 @@ class SequentialEBMsTrainer:
         # for pos in data['bert_input'].size(1): #add CLS and SEP tokens
         #     if data['bert_input'][:, pos][0] == 1 or data['bert_input'][:, pos][0] == 2:
         #         schedule_label[:, pos] = data['bert_input'][:, pos]
-        print(f'\nschedule_label: \n{schedule_label}')
+        # print(f'\nschedule_label: \n{schedule_label}')
         scheduled_data['schedule_label'] = schedule_label
         assert torch.count_nonzero(schedule_label) == torch.count_nonzero(data['bert_label']), \
             f'nonzero labels count: schedule={torch.count_nonzero(schedule_label)}, ' \
                 f"bert={torch.count_nonzero(data['bert_label'])}"
-        return scheduled_data    
+        return scheduled_data, iters_count
                         
     def eval_metric(self, pred, label, metric="acc"):
         '''Calcualte the evaluation metrics for a batch pair of predictions and labels'''
@@ -272,7 +276,7 @@ class SequentialEBMsTrainer:
                 # TODO
                 loss = ce_loss + contrast_loss
                 # loss = mlm_loss
-                if self.wandb:
+                if self.train_wandb:
                     wandb.log({"l_ce": ce_loss, "l_contrast": contrast_loss, "loss": loss})
 
                 # 3. backward and optimization only in train
@@ -299,13 +303,13 @@ class SequentialEBMsTrainer:
             elif (not train) and (schedule is not None):
                 '''inference with scheduled t and sequential EBMs sampling'''
                 # 1. break down the sequence tokens according to the schedule
-                scheduled_data = self.add_schedule(data, schedule)
+                scheduled_data, early_stop = self.add_schedule(data, schedule)
                 # print(f'scheduled_data: \n{scheduled_data}')
                 # 2. iterate through k EBMs, send input to device, and each EBM performs gibbs sampling
                 partial_pred = torch.zeros_like(scheduled_data['bert_input']) #init
                 k_losses = {}
                 for k, t in enumerate(schedule):
-                    print(f'\n\nk-{k}, t-{t}\n')
+                    # print(f'\n\nk-{k}, t-{t}\n')
                     partial_pred, sth = self.sebm.sampling( #sth: loss_list
                         k+1, #1-indexed unmasking order label
                         partial_pred,
@@ -314,22 +318,28 @@ class SequentialEBMsTrainer:
                         self.sampling_times,
                         visual_ebms=visual_ebms
                     )
-                    print(f'{k}-th partial_pred: \n{partial_pred},\nloss_list: {sth}')
+                    # print(f'{k}-th partial_pred: \n{partial_pred},\nloss_list: {sth}')
                     if visual_ebms == None:
-                        k_losses[k] = sth
+                        k_losses[str(k)] = sth
+                    if k+1 == early_stop: #fully unmasked before reaching k
+                        break
                 pred = partial_pred
                 correct_count = self.eval_metric(pred, scheduled_data['bert_label'])
                 total_correct += correct_count
                 total_samples = (i+1)*scheduled_data['bert_input'].size(0)
-                print(f'\nfinal pred: \n{pred}, \nk_losses: \n{k_losses}')
-                print(f"\nlabels: {scheduled_data['bert_label']}\ncorrect_count: {correct_count}")
+                # print(f'\nfinal pred: \n{pred}, \nk_losses: \n{k_losses}')
+                # print(f"\nlabels: {scheduled_data['bert_label']}\ncorrect_count: {correct_count}")
                 # 3. check correctness (tk-avg and final) and record the energy landscape TODO
                 # TODO 单独记录energy变化
+                flattened_loss = []
+                for k in k_losses:
+                    flattened_loss.extend(k_losses[k])
                 post_fix = {
                     "sample": i,
-                    "acc": round(total_correct*100/total_samples, 2)
+                    "acc": round(total_correct*100/total_samples, 2),
+                    "avg_losses": flattened_loss
                 }
-                if self.wandb:
+                if self.test_wandb:
                     wandb.log({'acc': "acc"})
             
             else:
@@ -337,10 +347,10 @@ class SequentialEBMsTrainer:
                 # TODO 或许没用？
                 raise NotImplementedError
 
-            if i % self.log_freq == 0:
-                data_iter.write(str(post_fix))
+            # if i % self.log_freq == 0: ###############
+            #     data_iter.write(str(post_fix)) ##################
                 
-            break ###############test
+            # break ###############test
         #end of batch iter
         
         # print(
@@ -353,6 +363,9 @@ class SequentialEBMsTrainer:
             ckpts_path = f'./ebm_ckpts/{self.sebm.task_name}_{self.sebm.param_type}{self.sebm.d_model}_mlm.pth'
             torch.save(self.sebm.model.state_dict(), ckpts_path)
             print(f'\nmodel saved to {ckpts_path}')
+        elif (not train) and (schedule is not None):
+            print(f'\nFinished sampling (inference), '\
+                f'final accuracy: {round(total_correct*100/total_samples, 2)}')
     
 
 @hydra.main(version_base=None, config_path='./configs',
@@ -396,7 +409,8 @@ def main(config):
         train_loader,
         test_loader,
         config.train.lr,
-        wandb=config.train.wandb,
+        train_wandb=config.train.wandb,
+        test_wandb=config.sampling.wandb,
         sampling_times=config.sampling.times
     )
 
