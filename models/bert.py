@@ -119,7 +119,7 @@ class BERTDataset(Dataset):
                 t2_all_zero = all(x == 0 for x in t2_label)
             # mask t2 with random t while keep t1 unmasked
             elif self.stage == 'sft':
-                t1_processed, t1_label, t2_processed, t2_label = self.mask(t1, 0), self.mask(t2, t)
+                (t1_processed, t1_label), (t2_processed, t2_label) = self.mask(t1, 0), self.mask(t2, t)
                 t2_all_zero = all(x == 0 for x in t2_label)
             # keep t1 unmasked and t2 fully masked as the initial sequence 
             elif self.stage == 'inference':

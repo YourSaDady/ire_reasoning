@@ -3,7 +3,7 @@ task_name: binary-addition  # binary-addition
 param_type: bert # mlp, transformer
 # max_len: 128
 # special_tokens: ['<mask>']
-load_ebm_ckpts: True ###########
+load_ebm_ckpts: False ###########
 
 
 # 这个参数暂时无用
@@ -60,7 +60,7 @@ tasks:
 
 
 train:
-  stage: pretrain # sampling (inference) should be in the same stage
+  stage: pretrain #pretrain # sampling (inference) should be in the same stage
   epochs: 1
   lr: 1e-4
   early_stop_threshold: 0.5
@@ -69,7 +69,7 @@ train:
   wandb: True #######################
 
 sampling:
-  stage: inference
+  stage: inference #sft
   batch_size: 4
   times: 10
   steps: 1

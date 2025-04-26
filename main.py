@@ -21,6 +21,7 @@ from utils import convert_time, VisualizeEBMs
 from transformers import BertTokenizer
 import random as rand
 import wandb
+import json
 
 def test(model, test_data):
     '''
@@ -122,7 +123,7 @@ class SequentialEBMsTrainer:
     def test(self, epoch, stage): #暂时无用
         self.iteration(epoch, self.test_data, stage, train=False)
         
-    def evaluate(self, k, scheduler='cosine', visualize=False): #Inference
+    def evaluate(self, k, scheduler='cosine', stage='pretrain', visualize=False): #Inference
         '''
         Recover a fully masked sequence using a specified scheduler, with decreasing t
         '''
@@ -131,7 +132,7 @@ class SequentialEBMsTrainer:
         if visualize:
             raise NotImplementedError
         else:
-            self.iteration(1, self.test_data, stage='inference', train=False, \
+            self.iteration(1, self.test_data, stage=stage, train=False, \
                 schedule=t_list)
         
     def add_schedule(self, data, schedule):
@@ -209,6 +210,13 @@ class SequentialEBMsTrainer:
         total_element = 0
         
         mode = "train" if train else "test"
+        # initialize stat file
+        eval_path = f'./stats/evaluate/{self.sebm.task_name}_' \
+                    f'{self.sebm.param_type}_{self.sebm.d_model}_stat.jsonl'
+        # train_path = f'./stats/train/{self.sebm.task_name}_' \
+        #             f'{self.sebm.param_type}_{self.sebm.d_model}_stat.jsonl'
+        with open(eval_path, 'w') as evalfile: #, open(train_path, 'w') as trainfile:
+            evalfile.write('')#, trainfile.write('')
 
         # progress bar
         data_iter = tqdm(
@@ -237,8 +245,10 @@ class SequentialEBMsTrainer:
                 
                 # #_________________test: BERT mlm_loss___________________
                 # mlm_output = self.sebm.model.forward(xo, data['segment_label'], is_ebm=False) #test, softmaxed
-                # mlm_criterion = nn.NLLLoss(ignore_index=0)
-                # mlm_loss = mlm_criterion(mlm_output.transpose(1, 2), xu)
+                # # mlm_criterion = nn.NLLLoss(ignore_index=0)
+                # mlm_criterion = nn.CrossEntropyLoss()
+                # # mlm_loss = mlm_criterion(mlm_output.transpose(1, 2), xu)
+                # mlm_loss = mlm_criterion(mlm_output.view(-1, mlm_output.size(-1)), data['bert_label'].view(-1))
                 # #———————————————————————————————————————————————————————
                 
                 # print(f'\ngamma shape: {gamma.shape}') #Size(batch_size, seq_len, num_classes)
@@ -278,7 +288,22 @@ class SequentialEBMsTrainer:
                 # loss = mlm_loss
                 if self.train_wandb:
                     wandb.log({"l_ce": ce_loss, "l_contrast": contrast_loss, "loss": loss})
-
+                # #_________mlm__________
+                # if i % 100 == 0:
+                #     pred = mlm_output.argmax(dim=-1)
+                #     correct = self.eval_metric(pred, data['bert_label'])
+                #     train_stats = {
+                #         'sample_id': i*4,
+                #         'batch_correct': correct,
+                #         'sample_loss': round(loss.item(), 2), #>10
+                #         'pred': pred.cpu().tolist()[0][self.sebm.inp_len+2:],
+                #         'label': data['bert_label'].cpu().tolist()[0][self.sebm.inp_len+2:],
+                #         'logits': [[round(ele, 2) for ele in row] for row in mlm_output.cpu().tolist()[0][self.sebm.inp_len+2:]]
+                #     }
+                #     with open(train_path, 'a') as f:
+                #         f.write(json.dumps(train_stats)+'\n')
+                # #______________________
+        
                 # 3. backward and optimization only in train
                 self.optim_schedule.zero_grad()
                 loss.backward()
@@ -300,11 +325,11 @@ class SequentialEBMsTrainer:
                     "loss": loss.item()
                 }
                 
-            elif (not train) and (schedule is not None):
+            elif (not train) and stage == 'inference':
                 '''inference with scheduled t and sequential EBMs sampling'''
                 # 1. break down the sequence tokens according to the schedule
                 scheduled_data, early_stop = self.add_schedule(data, schedule)
-                # print(f'scheduled_data: \n{scheduled_data}')
+                print(f'scheduled_data: \n{scheduled_data}')
                 # 2. iterate through k EBMs, send input to device, and each EBM performs gibbs sampling
                 partial_pred = torch.zeros_like(scheduled_data['bert_input']) #init
                 k_losses = {}
@@ -342,6 +367,36 @@ class SequentialEBMsTrainer:
                 if self.test_wandb:
                     wandb.log({'acc': "acc"})
             
+            elif (not train) and stage == 'sft':
+                # print(f'data: \n{data}')
+                logits = self.sebm.model.forward(data['bert_input'], data['segment_label'], is_ebm=False)
+                loss = self.criterion(logits.view(-1, logits.size(-1)), data['bert_label'].view(-1)) #flattened (batch_size * seq_len)
+                # print(f'logits({logits.shape}): \n{logits}')
+                pred = logits.argmax(dim=-1)
+                pred_mask = (data['bert_label'] == 0)
+                pred[pred_mask] = 0
+                # print(f"logits.shape: {logits.shape}, label.shape: {data['bert_label'].shape}")
+                correct = self.eval_metric(pred, data['bert_label'])
+                # print(f"pred: \n{pred}, \nlabel: \n{data['bert_label']},\ncorrrect: {correct}")
+                avg_loss += loss.item()
+                total_correct += correct
+                total_element += data['bert_input'].size(0)
+                if self.test_wandb:
+                    wandb.log({"l_ce": loss, "avg_acc": total_correct/total_element * 100})
+                
+                # save stats to jsonl file
+                stats = {
+                    'sample_id': i*4,
+                    'batch_correct': correct,
+                    'sample_loss': round(loss.item(), 2), #>10
+                    'pred': pred.cpu().tolist()[0][self.sebm.inp_len+2:],
+                    'label': data['bert_label'].cpu().tolist()[0][self.sebm.inp_len+2:],
+                    'logits': [[round(ele, 2) for ele in row] for row in logits.cpu().tolist()[0][self.sebm.inp_len+2:]]
+                }
+                with open(eval_path, 'a') as statsfile:
+                    statsfile.write(json.dumps(stats)+'\n')
+                
+            
             else:
                 '''test the MLM training effectiveness and sampling'''
                 # TODO 或许没用？
@@ -360,13 +415,15 @@ class SequentialEBMsTrainer:
         # ) 
         if train:
             print(f'\n\nFinished training.')
-            ckpts_path = f'./ebm_ckpts/{self.sebm.task_name}_{self.sebm.param_type}{self.sebm.d_model}_mlm.pth'
+            ckpts_path = f'./ebm_ckpts/{self.sebm.task_name}_{self.sebm.param_type}{self.sebm.d_model}_mlm_test.pth'
             torch.save(self.sebm.model.state_dict(), ckpts_path)
             print(f'\nmodel saved to {ckpts_path}')
         elif (not train) and (schedule is not None):
+            final_acc = round(total_correct*100/total_element, 2)
             print(f'\nFinished sampling (inference), '\
-                f'final accuracy: {round(total_correct*100/total_samples, 2)}')
-    
+                f'final accuracy: {final_acc}')
+            with open(eval_path, 'a') as statsfile:
+                statsfile.write(f'\nFinal Accuracy: {final_acc}\n')
 
 @hydra.main(version_base=None, config_path='./configs',
             config_name='config')
@@ -417,10 +474,11 @@ def main(config):
     # return ##############
 
     if not config.load_ebm_ckpts:
-        # print(f'No checkpoints found.')
-        # print(f'\nBefore training...')
-        # # test(sebm, val_data[0]) 
-        # sebm_trainer.evaluate(1, config.train.stage) 
+        print(f'No checkpoints found.')
+        print(f'\nBefore training...')
+        # test(sebm, val_data[0]) 
+        k=10
+        sebm_trainer.evaluate(k, stage=config.sampling.stage, visualize=False)
         
         # return##############
         
@@ -440,7 +498,7 @@ def main(config):
         # return##############
     else:
         ckpts_path = f'./ebm_ckpts/{task_config.name}_{config.param_type}' \
-            f'{config.models[config.param_type].d_model}_w_mask.pth'
+            f'{config.models[config.param_type].d_model}_mlm_test.pth' #_w_mask.pth
         print(f'\n3. Loading checkpoints from {ckpts_path}...')
         sebm_trainer.load_model(ckpts_path)
         
@@ -459,7 +517,7 @@ def main(config):
             },
         )
     print(f'\n\n\n4. Start evaluation...')
-    sebm_trainer.evaluate(k, visualize=False)
+    sebm_trainer.evaluate(k, stage=config.sampling.stage, visualize=False)
 
 
 # Example usage
