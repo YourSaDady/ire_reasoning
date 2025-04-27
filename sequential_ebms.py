@@ -602,7 +602,7 @@ class BERTSequentialEBMs():
             expanded_idx = expanded_idx.to(torch.long).to(self.device)
             energy = torch.gather(input=latent, dim=-1, index=expanded_idx) #Size(out_len, num_classes)
                 
-        return torch.sum(energy, dim=-2) #sum along all ui positions
+        return -1 * torch.sum(energy, dim=-2) #sum along all ui positions #-1 *
         
     def gibbs_dist(self, energy_dist: torch.Tensor):
         '''
@@ -626,7 +626,7 @@ class BERTSequentialEBMs():
     
     '''simplified(corrected?) non-batchalized version'''
     def sampling(self, order_label:int, partial_pred: torch.Tensor, sample_batch:dict, \
-        sampler='gibbs', sampling_times=10, visual_ebms=None):
+        sampler='gibbs', sampling_times=10, visual_ebms=None, compare='argmin_energy'):
         '''
         Sampling on a partially masked sample batch. Gibbs sampling by default.
         
@@ -638,14 +638,14 @@ class BERTSequentialEBMs():
             
         return:
             updated_partial_pred: Size(batch_size, seq_len)
-            sth: loss_list or visual_ebms.log 
+            sth: dict, contains loss_list, energy_list, visual_ebms.log, or testing infos 
         '''
         # 1. Initialize yo and inputs to the model.forward and energy calcualtion
         batch_size = sample_batch['bert_input'].size(0)
         losses = []
         energies = []
+        pred = []
         if sampler == 'gibbs':
-            pred = []
             for b in range(batch_size):
                 previous_pred = partial_pred[b]
                 yo_idx = ((sample_batch['schedule_label'][b] > 0) & \
@@ -656,8 +656,8 @@ class BERTSequentialEBMs():
                 model_input = sample_batch['bert_input'][b].clone()
                 model_input[model_input == 3] = 0 #replace the MASK with 0
                 model_input += previous_pred
-                # print(f"\nbert_input: {sample_batch['bert_input'][b]}\nprevious_pred: {previous_pred}"\
-                #     f"\nmodel_input: {model_input}")
+                print(f"\nbert_input: {sample_batch['bert_input'][b]}\nprevious_pred: {previous_pred}"\
+                    f"\nmodel_input: {model_input}")
                 for t in range(sampling_times):
                     # print(f'\n____\nStart t={t}-th sampling...\n')
                     gamma = self.model.forward(model_input.unsqueeze(0), \
@@ -667,8 +667,10 @@ class BERTSequentialEBMs():
                     yo_energy = self.energy(idx=0, val=True, rest_idx=yo.unsqueeze(-1), \
                         latent=gamma[yo_idx, :], batchalize=False)
                     # print(f'yo_energy: {yo_energy}')
-                    if b == 0 and t == 0:
-                        energies.append(round(yo_energy.item(), 2)) #initial energy
+                    
+                    # if b == 0 and t == 0:
+                    #     energies.append(round(yo_energy.item(), 2)) #initial energy
+                    
                     # 2. gibbs sampling on each masked position
                     yo_prime = yo.clone()
                     for i in range(yo_idx.size(0)): #iter |o|
@@ -709,6 +711,51 @@ class BERTSequentialEBMs():
                 # break ####################test
             #end of inner-batch iter
         #end of 'gibbs'
+        
+        elif sampler == 'argmin_energy': 
+            '''
+            similar to 'sft', but in AR style
+            (due to sequence of k, though history tokens might change) #greedy optimize
+            '''
+            for b in range(batch_size):
+                previous_pred = partial_pred[b]
+                yo_idx = ((sample_batch['schedule_label'][b] > 0) & \
+                    (sample_batch['schedule_label'][b] <= order_label)).nonzero(as_tuple=True)[0]
+                # print(f'yo_idx.shape({yo_idx.shape}): \n{yo_idx}') #Size(|o|)
+                # yo = previous_pred[yo_idx]
+                # print(f'yo({yo.shape}): \n{yo}')
+                model_input = sample_batch['bert_input'][b].clone()
+                # Initialize Method1: fully random initialize (wrong) 
+                # model_input[model_input == 3] = 0 #replace the MASK with 0
+                # model_input += previous_pred
+                
+                # Initialize Method2: keep the history prediction from previous k-1 iterations
+                if order_label != 1:
+                    history_yo_idx = ((sample_batch['schedule_label'][b] > 0) & \
+                        (sample_batch['schedule_label'][b] < order_label)).nonzero(as_tuple=True)[0]
+                    model_input[history_yo_idx] = previous_pred[history_yo_idx]
+                
+                # forward pass with softmax in a single run (gamma.size = (30,6))
+                gamma = self.model.forward(model_input.unsqueeze(0), \
+                        sample_batch['segment_label'][b].unsqueeze(0), is_ebm=False).view(-1, self.vocab_size)
+                # print(f'gamma: {gamma}')
+                yo = gamma[yo_idx, :].argmax(dim=-1) #same as argmin_energy #argmin for '_w_mask.pth'
+                # print(f'b={b}, yo({yo.shape}): {yo}')
+                previous_pred[yo_idx] = yo
+                pred.append(previous_pred.view(1,-1))
+                # record loss and energy (first sample per batch)
+                if b == 0:
+                    # print(f'k={order_label}, gamma: \n{gamma}')
+                    loss = self.criterion(gamma[yo_idx, :], sample_batch['bert_label'][b][yo_idx])
+                    yo_energy = self.energy(idx=0, val=True, rest_idx=yo.unsqueeze(-1), \
+                        latent=gamma[yo_idx, :], batchalize=False)
+                    losses.append(round(loss.item(),2))
+                    energies.append(round(yo_energy.item(),2))
+            # end of inner-batch iter
+        elif sampler == 'argmax_logits':
+            raise
+        else:
+            raise NotImplementedError(f"The sampler: {sampler} is not defined.")
         pred = torch.cat(pred, dim=0)
         # print(f'sampled pred[0] ({pred.shape}): {pred[0]}')
         

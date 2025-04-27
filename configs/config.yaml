@@ -4,6 +4,7 @@ param_type: bert # mlp, transformer
 # max_len: 128
 # special_tokens: ['<mask>']
 load_ebm_ckpts: True ###########
+continue_train: True #######for further training with fully masked t2 (inference) after trained on mlm
 
 
 # 这个参数暂时无用
@@ -73,6 +74,7 @@ sampling:
   batch_size: 4
   times: 10
   steps: 1
+  sampler: argmin_energy #argmin_energy
   wandb: False
   # temperature: 1.0cd
 

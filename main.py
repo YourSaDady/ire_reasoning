@@ -207,7 +207,7 @@ class SequentialEBMsTrainer:
         
         avg_loss = 0.0
         total_correct = 0
-        total_element = 0
+        total_samples = 0
         
         mode = "train" if train else "test"
         # initialize stat file
@@ -316,12 +316,12 @@ class SequentialEBMsTrainer:
                 # correct = next_sent_output.argmax(dim=-1).eq(data["is_next"]).sum().item()
                 avg_loss += loss.cpu().item()
                 # total_correct += correct
-                # total_element += data["is_next"].nelement()
+                # total_samples += data["is_next"].nelement()
                 post_fix = { # TODO: 不同情况k v 不同
                     "epoch": epoch,
                     "sample": i,
                     "avg_loss": avg_loss / (i + 1),
-                    # "avg_acc": total_correct / total_element * 100,
+                    # "avg_acc": total_correct / total_samples * 100,
                     "loss": loss.item()
                 }
                 
@@ -339,6 +339,10 @@ class SequentialEBMsTrainer:
                 # partial_pred = torch.zeros_like(scheduled_data['bert_input']) #init
                 k_losses, k_energies = {}, {}
                 for k, t in enumerate(schedule):
+                    
+                    # if k != len(schedule)-1:
+                    #     continue
+                    
                     # print(f'\n_________\nk = {k}:\n')
                     partial_pred, sth = self.sebm.sampling( #sth: loss_list
                         k+1, #1-indexed unmasking order label
@@ -346,7 +350,7 @@ class SequentialEBMsTrainer:
                         scheduled_data, 
                         self.sampler,
                         self.sampling_times,
-                        visual_ebms=visual_ebms
+                        visual_ebms=visual_ebms,
                     )
                     # print(f'{k}-th partial_pred: \n{partial_pred},\nloss_list: {sth}')
                     if visual_ebms == None:
@@ -357,7 +361,7 @@ class SequentialEBMsTrainer:
                 correct_count = self.eval_metric(pred, scheduled_data['bert_label'])
                 total_correct += correct_count
                 total_samples = (i+1)*scheduled_data['bert_input'].size(0)
-                print(f'\nfinal pred: \n{pred}, \nk_losses: \n{k_losses},\nk_energies: \n{k_energies}')
+                # print(f'\nfinal pred: \n{pred}, \nk_losses: \n{k_losses},\nk_energies: \n{k_energies}')
                 # print(f"\nlabels: {scheduled_data['bert_label']}\ncorrect_count: {correct_count}")
                 # 3. check correctness (tk-avg and final) and record the energy landscape TODO
                 # TODO 单独记录energy变化
@@ -381,7 +385,7 @@ class SequentialEBMsTrainer:
                 logits = self.sebm.model.forward(data['bert_input'], data['segment_label'], is_ebm=False)
                 loss = self.criterion(logits.view(-1, logits.size(-1)), data['bert_label'].view(-1)) #flattened (batch_size * seq_len)
                 # print(f'logits({logits.shape}): \n{logits}')
-                pred = logits.argmax(dim=-1)
+                pred = logits.argmax(dim=-1) #argmin for "_mlm_test.pth"(训反了, energy漏加-); argmax for "_w_mask.pth"?
                 pred_mask = (data['bert_label'] == 0)
                 pred[pred_mask] = 0
                 # print(f"logits.shape: {logits.shape}, label.shape: {data['bert_label'].shape}")
@@ -389,9 +393,9 @@ class SequentialEBMsTrainer:
                 # print(f"pred: \n{pred}, \nlabel: \n{data['bert_label']},\ncorrrect: {correct}")
                 avg_loss += loss.item()
                 total_correct += correct
-                total_element += data['bert_input'].size(0)
+                total_samples += data['bert_input'].size(0)
                 if self.test_wandb:
-                    wandb.log({"l_ce": loss, "avg_acc": total_correct/total_element * 100})
+                    wandb.log({"l_ce": loss, "avg_acc": total_correct/total_samples * 100})
                 
                 # save stats to jsonl file
                 stats = {
@@ -414,17 +418,17 @@ class SequentialEBMsTrainer:
             # if i % self.log_freq == 0: ###############
             #     data_iter.write(str(post_fix)) ##################
                 
-            break ###############test
+            # break ###############test
         #end of batch iter
         
         # print(
         #     f"EP{epoch}, {mode}: \
         #     avg_loss={avg_loss / len(data_iter)}, \
-        #     total_acc={total_correct * 100.0 / total_element}"
+        #     total_acc={total_correct * 100.0 / total_samples}"
         # ) 
         if train:
             print(f'\n\nFinished training.')
-            ckpts_path = f'./ebm_ckpts/{self.sebm.task_name}_{self.sebm.param_type}{self.sebm.d_model}_mlm_test.pth'
+            ckpts_path = f'./ebm_ckpts/{self.sebm.task_name}_{self.sebm.param_type}{self.sebm.d_model}_w_mask_inverse_test.pth'
             torch.save(self.sebm.model.state_dict(), ckpts_path)
             print(f'\nmodel saved to {ckpts_path}')
         elif (not train) and (schedule is not None):
@@ -476,6 +480,7 @@ def main(config):
         test_loader,
         config.train.lr,
         train_wandb=config.train.wandb,
+        sampler=config.sampling.sampler,
         test_wandb=config.sampling.wandb,
         sampling_times=config.sampling.times
     )
@@ -507,7 +512,7 @@ def main(config):
         # return##############
     else:
         ckpts_path = f'./ebm_ckpts/{task_config.name}_{config.param_type}' \
-            f'{config.models[config.param_type].d_model}_w_mask.pth' #_w_mask.pth
+            f'{config.models[config.param_type].d_model}_w_mask.pth' # _w_mask_inverse.pth # _mlm_test
         print(f'\n3. Loading checkpoints from {ckpts_path}...')
         sebm_trainer.load_model(ckpts_path)
         
@@ -526,6 +531,8 @@ def main(config):
             },
         )
     print(f'\n\n\n4. Start evaluation...')
+    if config.sampling.stage == 'inference':
+        print(f'sampler: "{config.sampling.stage}"')
     sebm_trainer.evaluate(k, stage=config.sampling.stage, visualize=False)
 
 
