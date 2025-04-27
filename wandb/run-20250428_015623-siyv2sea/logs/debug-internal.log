@@ -1,0 +1,15 @@
+{"time":"2025-04-28T01:56:23.47187515+08:00","level":"INFO","msg":"stream: starting","core version":"0.19.9","symlink path":"/home/yichuan/HKU/EBM/ire_reasoning/wandb/run-20250428_015623-siyv2sea/logs/debug-core.log"}
+{"time":"2025-04-28T01:56:23.79548567+08:00","level":"INFO","msg":"created new stream","id":"siyv2sea"}
+{"time":"2025-04-28T01:56:23.795621245+08:00","level":"INFO","msg":"stream: started","id":"siyv2sea"}
+{"time":"2025-04-28T01:56:23.795662553+08:00","level":"INFO","msg":"sender: started","stream_id":"siyv2sea"}
+{"time":"2025-04-28T01:56:23.795728697+08:00","level":"INFO","msg":"handler: started","stream_id":"siyv2sea"}
+{"time":"2025-04-28T01:56:23.795746712+08:00","level":"INFO","msg":"writer: Do: started","stream_id":"siyv2sea"}
+{"time":"2025-04-28T01:56:24.068278663+08:00","level":"INFO","msg":"Starting system monitor"}
+{"time":"2025-04-28T02:58:00.601234997+08:00","level":"INFO","msg":"stream: closing","id":"siyv2sea"}
+{"time":"2025-04-28T02:58:00.601324141+08:00","level":"INFO","msg":"Stopping system monitor"}
+{"time":"2025-04-28T02:58:00.601441378+08:00","level":"INFO","msg":"Stopped system monitor"}
+{"time":"2025-04-28T02:58:01.868948531+08:00","level":"INFO","msg":"fileTransfer: Close: file transfer manager closed"}
+{"time":"2025-04-28T02:58:02.279623113+08:00","level":"INFO","msg":"handler: closed","stream_id":"siyv2sea"}
+{"time":"2025-04-28T02:58:02.279748297+08:00","level":"INFO","msg":"sender: closed","stream_id":"siyv2sea"}
+{"time":"2025-04-28T02:58:02.279741706+08:00","level":"INFO","msg":"writer: Close: closed","stream_id":"siyv2sea"}
+{"time":"2025-04-28T02:58:02.279957446+08:00","level":"INFO","msg":"stream: closed","id":"siyv2sea"}

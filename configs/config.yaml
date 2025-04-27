@@ -4,7 +4,7 @@ param_type: bert # mlp, transformer
 # max_len: 128
 # special_tokens: ['<mask>']
 load_ebm_ckpts: True ###########
-continue_train: True #######for further training with fully masked t2 (inference) after trained on mlm
+continue_train: False #######for further training with fully masked t2 (inference) after trained on mlm
 
 
 # 这个参数暂时无用
@@ -61,7 +61,7 @@ tasks:
 
 
 train:
-  stage: pretrain #pretrain # sampling (inference) should be in the same stage
+  stage: sft #pretrain
   epochs: 1
   lr: 1e-4
   early_stop_threshold: 0.5

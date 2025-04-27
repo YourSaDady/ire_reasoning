@@ -197,6 +197,29 @@ class SequentialEBMsTrainer:
         if metric == 'acc':
             matching_rows = (pred == label).all(dim=1)  # Check for equality along the rows
             return matching_rows.sum().item()  # Sum up the True values
+        
+    def prepare_partial_data(self, scheduled_data, order_label):
+        '''
+        for the diffusion-style masking process, prepare the partially masked data according to k
+        '''
+        partial_data = {
+            'bert_input': scheduled_data['bert_input'].clone(),
+            'bert_label': torch.zeros(scheduled_data['bert_label'].size(), dtype=scheduled_data['segment_label'].dtype),
+            'segment_label': scheduled_data['segment_label'].clone().to(scheduled_data['segment_label'].dtype),
+            'is_positive': scheduled_data['is_positive']
+        }
+        for b in range(scheduled_data['schedule_label'].size(0)):
+            history_idx = ((scheduled_data['schedule_label'][b] > 0) & \
+                (scheduled_data['schedule_label'][b] < order_label)).nonzero(as_tuple=True)[0]
+            current_idx = ((scheduled_data['schedule_label'][b] > 0) & \
+                (scheduled_data['schedule_label'][b] == order_label)).nonzero(as_tuple=True)[0]
+            partial_data['bert_input'][b][history_idx] = scheduled_data['bert_label'][b][history_idx]
+            partial_data['bert_label'][b][current_idx] = scheduled_data['bert_label'][b][current_idx]
+            
+        # print(f'\nk={order_label}, partial_data: \n{partial_data}')
+        return partial_data        
+        
+        
     
     def iteration(self, epoch, data_loader, stage, train=True, schedule=None, \
                   visual_ebms=None):
@@ -212,7 +235,7 @@ class SequentialEBMsTrainer:
         mode = "train" if train else "test"
         # initialize stat file
         eval_path = f'./stats/evaluate/{self.sebm.task_name}_' \
-                    f'{self.sebm.param_type}_{self.sebm.d_model}_stat.jsonl'
+                    f'{self.sebm.param_type}_{self.sebm.d_model}_{stage}_stat.jsonl'
         # train_path = f'./stats/train/{self.sebm.task_name}_' \
         #             f'{self.sebm.param_type}_{self.sebm.d_model}_stat.jsonl'
         with open(eval_path, 'w') as evalfile: #, open(train_path, 'w') as trainfile:
@@ -225,105 +248,113 @@ class SequentialEBMsTrainer:
             total=len(data_loader),
             bar_format="{l_bar}{r_bar}"
         )
-        if (not train) and (schedule is not None):
-            total_correct = 0
 
         # for i, (pos_data, neg_data) in data_iter: #batch
         for i, data in data_iter: #batch
             if train:
-                '''MLM training pradigm with varying t'''
-                # 0. batch_data will be sent into the device(GPU or cpu)
-                data = {key: value.to(self.device) for key, value in data.items()}
-                # neg_data = {key: value.to(self.device) for key, value in neg_data.items()}
-                
-                xo, xu = data['bert_input'], data['bert_label'] #already masked with rate t
-                # neg_xo, neg_xu = neg_data['bert_input'], neg_data['bert_label']
-                # print(f'\nxo({xo.shape}): \n{xo}\nxu({xu.shape}): \n{xu}\n') # both Size([4, 45])
-                # 1. Forward MLM to generate the gamma for calculating the energy landscapes
-                gamma = self.sebm.model.forward(xo, data['segment_label'], is_ebm=True) 
-                # neg_gamma = self.sebm.model.forward(xo, neg_data['segment_label'], is_ebm=True) 
-                
-                # #_________________test: BERT mlm_loss___________________
-                # mlm_output = self.sebm.model.forward(xo, data['segment_label'], is_ebm=False) #test, softmaxed
-                # # mlm_criterion = nn.NLLLoss(ignore_index=0)
-                # mlm_criterion = nn.CrossEntropyLoss()
-                # # mlm_loss = mlm_criterion(mlm_output.transpose(1, 2), xu)
-                # mlm_loss = mlm_criterion(mlm_output.view(-1, mlm_output.size(-1)), data['bert_label'].view(-1))
-                # #———————————————————————————————————————————————————————
-                
-                # print(f'\ngamma shape: {gamma.shape}') #Size(batch_size, seq_len, num_classes)
-                
-                # 2-1. Estimate the 1D conditional logp(xu | xo) via pseudolikelihood
-                ce_loss = torch.tensor(0., requires_grad=True).to(self.device)
-                contrast_loss = torch.tensor(0., requires_grad=True).to(self.device)
-                for r in range(xu.size(0)): #iter within batch
-                    # assert torch.nonzero(xu[r]).squeeze().dim(), f"xu[r] is all zero: \n{xu[r]}"
-                    logp_xu = self.sebm.pseudolikelihood(gamma[r], xu[r], xo[r]) #Size(|u'|, num_classes)
-                    xu_token_ids = torch.nonzero(xu[r]).squeeze() #Size(|u'|)
-                    if xu_token_ids.dim()==0 and xu_token_ids:
-                        xu_token_ids = torch.tensor([xu_token_ids])
-                    xu_label = xu[r][xu_token_ids]
-                    assert logp_xu.size(0) == xu_label.size(0), \
-                        f'\nlogp_xu.shape: {logp_xu.shape}, xu_label.shape: {xu_label.shape}'
-                    # print(f'logp_xu.shape: {logp_xu.shape}, xu_label.shape({xu_label.shape}): {xu_label}')
+                if stage == 'inference':
+                    K = 10
+                    t_list = unmasking_schedule(K+2, 'cosine')[1:-1]
+                    scheduled_data, early_stop = self.add_schedule(data, t_list)
+                else:
+                    early_stop = 1
+                for k in range(early_stop):
+                    if stage == 'inference':
+                        data = self.prepare_partial_data(scheduled_data, k+1) #AR-like
+                    '''MLM training pradigm with varying t'''
+                    # 0. batch_data will be sent into the device(GPU or cpu)
+                    data = {key: value.to(self.device) for key, value in data.items()}
+                    # neg_data = {key: value.to(self.device) for key, value in neg_data.items()}
                     
+                    xo, xu = data['bert_input'], data['bert_label'] #already masked with rate t
+                    # neg_xo, neg_xu = neg_data['bert_input'], neg_data['bert_label']
+                    # print(f'\nxo({xo.shape}): \n{xo}\nxu({xu.shape}): \n{xu}\n') # both Size([4, 45])
+                    # 1. Forward MLM to generate the gamma for calculating the energy landscapes
+                    gamma = self.sebm.model.forward(xo, data['segment_label'], is_ebm=True) 
+                    # neg_gamma = self.sebm.model.forward(xo, neg_data['segment_label'], is_ebm=True) 
                     
-                    # #___________sum over batch: contrast loss_______________
-                    # contrast_loss = contrast_loss + self.sebm.calculate_contrast_loss(
-                    #     gamma[r], gamma[r], #use the same latent
-                    #     xu[r], neg_xu[r],
-                    #     xo[r], neg_xo[r]
-                    # )
-                    # #_____________________________
+                    # #_________________test: BERT mlm_loss___________________
+                    # mlm_output = self.sebm.model.forward(xo, data['segment_label'], is_ebm=False) #test, softmaxed
+                    # # mlm_criterion = nn.NLLLoss(ignore_index=0)
+                    # mlm_criterion = nn.CrossEntropyLoss()
+                    # # mlm_loss = mlm_criterion(mlm_output.transpose(1, 2), xu)
+                    # mlm_loss = mlm_criterion(mlm_output.view(-1, mlm_output.size(-1)), data['bert_label'].view(-1))
+                    # #———————————————————————————————————————————————————————
                     
-                    ce_loss = ce_loss + self.criterion(logp_xu, xu_label)
-                    loss_is_nan = torch.isnan(torch.tensor(ce_loss)).any()
-                    assert loss_is_nan == False, f'\nce_loss becomes NaN! '\
-                        f'\nce_loss: {ce_loss}, is_nan: {loss_is_nan}\n' \
-                        f'logp_xu: \n{logp_xu}, \nxu_label: \n{xu_label}, \ngamma[r]: \n{gamma[r]}'
-                
-                # 2-2. Contrast-loss
-                # TODO
-                loss = ce_loss + contrast_loss
-                # loss = mlm_loss
-                if self.train_wandb:
-                    wandb.log({"l_ce": ce_loss, "l_contrast": contrast_loss, "loss": loss})
-                # #_________mlm__________
-                # if i % 100 == 0:
-                #     pred = mlm_output.argmax(dim=-1)
-                #     correct = self.eval_metric(pred, data['bert_label'])
-                #     train_stats = {
-                #         'sample_id': i*4,
-                #         'batch_correct': correct,
-                #         'sample_loss': round(loss.item(), 2), #>10
-                #         'pred': pred.cpu().tolist()[0][self.sebm.inp_len+2:],
-                #         'label': data['bert_label'].cpu().tolist()[0][self.sebm.inp_len+2:],
-                #         'logits': [[round(ele, 2) for ele in row] for row in mlm_output.cpu().tolist()[0][self.sebm.inp_len+2:]]
-                #     }
-                #     with open(train_path, 'a') as f:
-                #         f.write(json.dumps(train_stats)+'\n')
-                # #______________________
-        
-                # 3. backward and optimization only in train
-                self.optim_schedule.zero_grad()
-                loss.backward()
-                # Clip gradients
-                max_norm = 1.0
-                torch.nn.utils.clip_grad_norm_(self.sebm.model.parameters(), max_norm)
-                self.optim_schedule.step_and_update_lr()
+                    # print(f'\ngamma shape: {gamma.shape}') #Size(batch_size, seq_len, num_classes)
+                    
+                    # 2-1. Estimate the 1D conditional logp(xu | xo) via pseudolikelihood
+                    ce_loss = torch.tensor(0., requires_grad=True).to(self.device)
+                    contrast_loss = torch.tensor(0., requires_grad=True).to(self.device)
+                    for r in range(xu.size(0)): #iter within batch
+                        # assert torch.nonzero(xu[r]).squeeze().dim(), f"xu[r] is all zero: \n{xu[r]}"
+                        logp_xu = self.sebm.pseudolikelihood(gamma[r], xu[r], xo[r]) #Size(|u'|, num_classes)
+                        xu_token_ids = torch.nonzero(xu[r]).squeeze() #Size(|u'|)
+                        if xu_token_ids.dim()==0 and xu_token_ids:
+                            xu_token_ids = torch.tensor([xu_token_ids])
+                        xu_label = xu[r][xu_token_ids]
+                        assert logp_xu.size(0) == xu_label.size(0), \
+                            f'\nlogp_xu.shape: {logp_xu.shape}, xu_label.shape: {xu_label.shape}'
+                        # print(f'logp_xu.shape: {logp_xu.shape}, xu_label.shape({xu_label.shape}): {xu_label}')
+                        
+                        
+                        # #___________sum over batch: contrast loss_______________
+                        # contrast_loss = contrast_loss + self.sebm.calculate_contrast_loss(
+                        #     gamma[r], gamma[r], #use the same latent
+                        #     xu[r], neg_xu[r],
+                        #     xo[r], neg_xo[r]
+                        # )
+                        # #_____________________________
+                        
+                        ce_loss = ce_loss + self.criterion(logp_xu, xu_label)
+                        loss_is_nan = torch.isnan(torch.tensor(ce_loss)).any()
+                        assert loss_is_nan == False, f'\nce_loss becomes NaN! '\
+                            f'\nce_loss: {ce_loss}, is_nan: {loss_is_nan}\n' \
+                            f'logp_xu: \n{logp_xu}, \nxu_label: \n{xu_label}, \ngamma[r]: \n{gamma[r]}'
+                    
+                    # 2-2. Contrast-loss
+                    # TODO
+                    loss = ce_loss + contrast_loss
+                    # loss = mlm_loss
+                    if self.train_wandb:
+                        wandb.log({"l_ce": ce_loss, "l_contrast": contrast_loss, "loss": loss})
+                    # #_________mlm__________
+                    # if i % 100 == 0:
+                    #     pred = mlm_output.argmax(dim=-1)
+                    #     correct = self.eval_metric(pred, data['bert_label'])
+                    #     train_stats = {
+                    #         'sample_id': i*4,
+                    #         'batch_correct': correct,
+                    #         'sample_loss': round(loss.item(), 2), #>10
+                    #         'pred': pred.cpu().tolist()[0][self.sebm.inp_len+2:],
+                    #         'label': data['bert_label'].cpu().tolist()[0][self.sebm.inp_len+2:],
+                    #         'logits': [[round(ele, 2) for ele in row] for row in mlm_output.cpu().tolist()[0][self.sebm.inp_len+2:]]
+                    #     }
+                    #     with open(train_path, 'a') as f:
+                    #         f.write(json.dumps(train_stats)+'\n')
+                    # #______________________
+            
+                    # 3. backward and optimization only in train
+                    self.optim_schedule.zero_grad()
+                    loss.backward()
+                    # Clip gradients
+                    max_norm = 1.0
+                    torch.nn.utils.clip_grad_norm_(self.sebm.model.parameters(), max_norm)
+                    self.optim_schedule.step_and_update_lr()
 
-                # next sentence prediction accuracy
-                # correct = next_sent_output.argmax(dim=-1).eq(data["is_next"]).sum().item()
-                avg_loss += loss.cpu().item()
-                # total_correct += correct
-                # total_samples += data["is_next"].nelement()
-                post_fix = { # TODO: 不同情况k v 不同
-                    "epoch": epoch,
-                    "sample": i,
-                    "avg_loss": avg_loss / (i + 1),
-                    # "avg_acc": total_correct / total_samples * 100,
-                    "loss": loss.item()
-                }
+                    # next sentence prediction accuracy
+                    # correct = next_sent_output.argmax(dim=-1).eq(data["is_next"]).sum().item()
+                    avg_loss += loss.cpu().item()
+                    # total_correct += correct
+                    # total_samples += data["is_next"].nelement()
+                    post_fix = { # TODO: 不同情况k v 不同
+                        "epoch": epoch,
+                        "sample": i,
+                        "avg_loss": avg_loss / (i + 1),
+                        # "avg_acc": total_correct / total_samples * 100,
+                        "loss": loss.item()
+                    }
+                #end of k (schedule) iter (if any)
                 
             elif (not train) and stage == 'inference':
                 '''inference with scheduled t and sequential EBMs sampling'''
@@ -428,7 +459,7 @@ class SequentialEBMsTrainer:
         # ) 
         if train:
             print(f'\n\nFinished training.')
-            ckpts_path = f'./ebm_ckpts/{self.sebm.task_name}_{self.sebm.param_type}{self.sebm.d_model}_w_mask_inverse_test.pth'
+            ckpts_path = f'./ebm_ckpts/{self.sebm.task_name}_{self.sebm.param_type}{self.sebm.d_model}_mlm_sft_t.pth' #w_mask_inverse_test
             torch.save(self.sebm.model.state_dict(), ckpts_path)
             print(f'\nmodel saved to {ckpts_path}')
         elif (not train) and (schedule is not None):
@@ -512,9 +543,24 @@ def main(config):
         # return##############
     else:
         ckpts_path = f'./ebm_ckpts/{task_config.name}_{config.param_type}' \
-            f'{config.models[config.param_type].d_model}_w_mask.pth' # _w_mask_inverse.pth # _mlm_test
+            f'{config.models[config.param_type].d_model}_mlm_test.pth' # _w_mask_inverse.pth # _mlm_test # _w_mask #_diffusion
         print(f'\n3. Loading checkpoints from {ckpts_path}...')
         sebm_trainer.load_model(ckpts_path)
+        
+        if config.continue_train: #further tune the mlm model with fully masked t2 ('sft' stage)
+            print(f'Continue train on {config.train.stage}...')
+            if config.train.wandb:
+                wandb.login()
+                run = wandb.init(
+                    project=f'EBM_continue_train-{task_config.name}_{config.param_type}',  # Specify your project
+                    config={                        # Track hyperparameters and metadata
+                        "learning_rate": config.train.lr,
+                        "epochs": config.train.epochs,
+                    },
+                )
+            for epoch in range(config.train.epochs):
+                sebm_trainer.train(epoch, config.train.stage)
+            
         
 
     # return ###############

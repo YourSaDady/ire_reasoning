@@ -1,0 +1,12 @@
+EP_train_inference:0:   0%|| 0/14746 [00:00<?, ?it/s]
+Error executing job with overrides: []
+Traceback (most recent call last):
+  File "/home/yichuan/HKU/EBM/ire_reasoning/main.py", line 541, in main
+    sebm_trainer.train(epoch, config.train.stage)
+  File "/home/yichuan/HKU/EBM/ire_reasoning/main.py", line 121, in train
+    self.iteration(epoch, self.train_data, stage)
+  File "/home/yichuan/HKU/EBM/ire_reasoning/main.py", line 257, in iteration
+    t_list = unmasking_schedule(k+2, 'cosine')[1:-1]
+UnboundLocalError: local variable 'k' referenced before assignment
+
+Set the environment variable HYDRA_FULL_ERROR=1 for a complete stack trace.

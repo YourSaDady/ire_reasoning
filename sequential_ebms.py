@@ -654,10 +654,18 @@ class BERTSequentialEBMs():
                 yo = previous_pred[yo_idx]
                 # print(f'yo({yo.shape}): \n{yo}')
                 model_input = sample_batch['bert_input'][b].clone()
-                model_input[model_input == 3] = 0 #replace the MASK with 0
-                model_input += previous_pred
-                print(f"\nbert_input: {sample_batch['bert_input'][b]}\nprevious_pred: {previous_pred}"\
-                    f"\nmodel_input: {model_input}")
+                
+                # # Initialize Method1: fully random
+                # model_input[model_input == 3] = 0 #replace the MASK with 0
+                # model_input += previous_pred
+                # Initialize Method2: keep the history prediction from previous k-1 iterations
+                if order_label != 1:
+                    history_yo_idx = ((sample_batch['schedule_label'][b] > 0) & \
+                        (sample_batch['schedule_label'][b] < order_label)).nonzero(as_tuple=True)[0]
+                    model_input[history_yo_idx] = previous_pred[history_yo_idx]
+                
+                # print(f"\norder_label={order_label}, bert_input: {sample_batch['bert_input'][b]}\nprevious_pred: {previous_pred}"\
+                #     f"\nmodel_input: {model_input}")
                 for t in range(sampling_times):
                     # print(f'\n____\nStart t={t}-th sampling...\n')
                     gamma = self.model.forward(model_input.unsqueeze(0), \
