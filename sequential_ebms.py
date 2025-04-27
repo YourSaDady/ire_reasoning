@@ -546,8 +546,10 @@ class BERTSequentialEBMs():
         self.out_len = task_config.out_len
         self.max_len = self.inp_len + self.out_len + 3 #the max length model can take in
         self.vocab_size = task_config.num_classes
+        self.special_tok_size = 4
         self.d_model = d_model
         self.device = device ###########for debugging
+        self.criterion = nn.CrossEntropyLoss()
         
         self._build_model()
         
@@ -620,7 +622,101 @@ class BERTSequentialEBMs():
         return p_i
         
     
+    
+    
+    '''simplified(corrected?) non-batchalized version'''
     def sampling(self, order_label:int, partial_pred: torch.Tensor, sample_batch:dict, \
+        sampler='gibbs', sampling_times=10, visual_ebms=None):
+        '''
+        Sampling on a partially masked sample batch. Gibbs sampling by default.
+        
+        params: 
+            order_label: k (1-indexed)
+            partial_pred: Size(bacth_size, seq_len)
+            sample_batch: dict
+            samping_times: T
+            
+        return:
+            updated_partial_pred: Size(batch_size, seq_len)
+            sth: loss_list or visual_ebms.log 
+        '''
+        # 1. Initialize yo and inputs to the model.forward and energy calcualtion
+        batch_size = sample_batch['bert_input'].size(0)
+        losses = []
+        energies = []
+        if sampler == 'gibbs':
+            pred = []
+            for b in range(batch_size):
+                previous_pred = partial_pred[b]
+                yo_idx = ((sample_batch['schedule_label'][b] > 0) & \
+                    (sample_batch['schedule_label'][b] <= order_label)).nonzero(as_tuple=True)[0]
+                # print(f'yo_idx.shape({yo_idx.shape}): \n{yo_idx}') #Size(|o|)
+                yo = previous_pred[yo_idx]
+                # print(f'yo({yo.shape}): \n{yo}')
+                model_input = sample_batch['bert_input'][b].clone()
+                model_input[model_input == 3] = 0 #replace the MASK with 0
+                model_input += previous_pred
+                # print(f"\nbert_input: {sample_batch['bert_input'][b]}\nprevious_pred: {previous_pred}"\
+                #     f"\nmodel_input: {model_input}")
+                for t in range(sampling_times):
+                    # print(f'\n____\nStart t={t}-th sampling...\n')
+                    gamma = self.model.forward(model_input.unsqueeze(0), \
+                        sample_batch['segment_label'][b].unsqueeze(0), is_ebm=True).view(-1, self.vocab_size)
+                    # print(f'after reshape, gamma({gamma.shape})') #30,6
+                    # print(f'\nenergy inputs: rest_idx.shape={yo.unsqueeze(-1)}, latent.shape={gamma[yo_idx, :].shape}')
+                    yo_energy = self.energy(idx=0, val=True, rest_idx=yo.unsqueeze(-1), \
+                        latent=gamma[yo_idx, :], batchalize=False)
+                    # print(f'yo_energy: {yo_energy}')
+                    if b == 0 and t == 0:
+                        energies.append(round(yo_energy.item(), 2)) #initial energy
+                    # 2. gibbs sampling on each masked position
+                    yo_prime = yo.clone()
+                    for i in range(yo_idx.size(0)): #iter |o|
+                        # sample on position i
+                        ei_dist = self.energy(idx=i, val=False, rest_idx=yo_prime.unsqueeze(-1), \
+                            latent=gamma[yo_idx, :], batchalize=False)
+                        p_oi = self.gibbs_dist(ei_dist.unsqueeze(0)) #Size(1,6)
+                        
+                        #_________forcing ignoring/considering the special tokens_______
+                        y_oi_prime = torch.multinomial(p_oi[:,self.special_tok_size:], 1) + self.special_tok_size
+                        # y_oi_prime = torch.multinomial(p_oi, 1)
+                        #___________________________________________________
+                        
+                        # update the sampled  yo'_i to yo'
+                        yo_prime[i] = y_oi_prime.squeeze()
+                        # print(f'i={i}: \n- y_oi\': {y_oi_prime.item()}, \n- ei_dist: {ei_dist}, \n- logits: {gamma[yo_idx[i], :]}')
+                    # 3. update yo with yo' if the energy decreases
+                    yo_prime_energy = self.energy(idx=0, val=True, rest_idx=yo_prime.unsqueeze(-1), \
+                        latent=gamma[yo_idx, :], batchalize=False)
+                    # print(f'yo\' energy: {yo_prime_energy}')
+                    if yo_prime_energy.item() < yo_energy.item():
+                        yo = yo_prime
+                        # update model input as well
+                        # print(f'yo\' energy is smaller, before update, previous_pred: {previous_pred}')
+                        previous_pred[yo_idx] = yo #?
+                        # print(f'after update, previous_pred: {previous_pred}')
+                        model_input = sample_batch['bert_input'][b].clone()
+                        model_input[model_input == 3] = 0
+                        model_input += previous_pred
+                        # print(f'model_input: {model_input}')
+                    # 4. Record partial prediction, losses(using logits) and energies (last sample in the batch)
+                    if b == 0:
+                        loss = self.criterion(gamma[yo_idx, :], sample_batch['bert_label'][b][yo_idx])
+                        losses.append(round(loss.item(),2))
+                        energies.append(round(yo_energy.item(),2))
+                #end of t iter
+                pred.append(previous_pred.view(1,-1))
+                # break ####################test
+            #end of inner-batch iter
+        #end of 'gibbs'
+        pred = torch.cat(pred, dim=0)
+        # print(f'sampled pred[0] ({pred.shape}): {pred[0]}')
+        
+        return pred, {'losses': losses, 'energies': energies}
+    
+    
+    '''Batchalized version of sampling (ineffective: single latent generation; repeated sampling input)'''
+    def sampling_old(self, order_label:int, partial_pred: torch.Tensor, sample_batch:dict, \
         sampler='gibbs', sampling_times=10, visual_ebms=None):
         '''
         Sampling on a partially masked sample batch. Gibbs sampling by default.

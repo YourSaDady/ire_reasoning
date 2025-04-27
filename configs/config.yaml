@@ -3,7 +3,7 @@ task_name: binary-addition  # binary-addition
 param_type: bert # mlp, transformer
 # max_len: 128
 # special_tokens: ['<mask>']
-load_ebm_ckpts: False ###########
+load_ebm_ckpts: True ###########
 
 
 # 这个参数暂时无用

@@ -329,12 +329,17 @@ class SequentialEBMsTrainer:
                 '''inference with scheduled t and sequential EBMs sampling'''
                 # 1. break down the sequence tokens according to the schedule
                 scheduled_data, early_stop = self.add_schedule(data, schedule)
-                print(f'scheduled_data: \n{scheduled_data}')
+                # print(f'scheduled_data: \n{scheduled_data}')
                 # 2. iterate through k EBMs, send input to device, and each EBM performs gibbs sampling
-                partial_pred = torch.zeros_like(scheduled_data['bert_input']) #init
-                k_losses = {}
+                partial_pred = torch.randint(self.sebm.special_tok_size, \
+                        self.sebm.vocab_size, data['bert_label'].size()) #init
+                partial_pred[:, :(self.sebm.inp_len+2)] = 0
+                partial_pred[:, -1] = 0
+                # print(f'initial partial_pred({partial_pred.shape}): \n{partial_pred}')
+                # partial_pred = torch.zeros_like(scheduled_data['bert_input']) #init
+                k_losses, k_energies = {}, {}
                 for k, t in enumerate(schedule):
-                    # print(f'\n\nk-{k}, t-{t}\n')
+                    # print(f'\n_________\nk = {k}:\n')
                     partial_pred, sth = self.sebm.sampling( #sth: loss_list
                         k+1, #1-indexed unmasking order label
                         partial_pred,
@@ -345,27 +350,31 @@ class SequentialEBMsTrainer:
                     )
                     # print(f'{k}-th partial_pred: \n{partial_pred},\nloss_list: {sth}')
                     if visual_ebms == None:
-                        k_losses[str(k)] = sth
+                        k_losses[str(k)], k_energies[str(k)] = sth['losses'], sth['energies']
                     if k+1 == early_stop: #fully unmasked before reaching k
                         break
                 pred = partial_pred
                 correct_count = self.eval_metric(pred, scheduled_data['bert_label'])
                 total_correct += correct_count
                 total_samples = (i+1)*scheduled_data['bert_input'].size(0)
-                # print(f'\nfinal pred: \n{pred}, \nk_losses: \n{k_losses}')
+                print(f'\nfinal pred: \n{pred}, \nk_losses: \n{k_losses},\nk_energies: \n{k_energies}')
                 # print(f"\nlabels: {scheduled_data['bert_label']}\ncorrect_count: {correct_count}")
                 # 3. check correctness (tk-avg and final) and record the energy landscape TODO
                 # TODO 单独记录energy变化
-                flattened_loss = []
+                flattened_loss, flattened_energy = [], []
                 for k in k_losses:
                     flattened_loss.extend(k_losses[k])
+                    flattened_energy.extend(k_energies[k])
                 post_fix = {
                     "sample": i,
                     "acc": round(total_correct*100/total_samples, 2),
-                    "avg_losses": flattened_loss
+                    "avg_losses": flattened_loss,
+                    "avg_energies": flattened_energy,
                 }
                 if self.test_wandb:
                     wandb.log({'acc': "acc"})
+                with open(eval_path, 'a') as statsfile:
+                    statsfile.write(json.dumps(post_fix)+'\n')
             
             elif (not train) and stage == 'sft':
                 # print(f'data: \n{data}')
@@ -405,7 +414,7 @@ class SequentialEBMsTrainer:
             # if i % self.log_freq == 0: ###############
             #     data_iter.write(str(post_fix)) ##################
                 
-            # break ###############test
+            break ###############test
         #end of batch iter
         
         # print(
@@ -419,7 +428,7 @@ class SequentialEBMsTrainer:
             torch.save(self.sebm.model.state_dict(), ckpts_path)
             print(f'\nmodel saved to {ckpts_path}')
         elif (not train) and (schedule is not None):
-            final_acc = round(total_correct*100/total_element, 2)
+            final_acc = round(total_correct*100/total_samples, 2)
             print(f'\nFinished sampling (inference), '\
                 f'final accuracy: {final_acc}')
             with open(eval_path, 'a') as statsfile:
@@ -498,7 +507,7 @@ def main(config):
         # return##############
     else:
         ckpts_path = f'./ebm_ckpts/{task_config.name}_{config.param_type}' \
-            f'{config.models[config.param_type].d_model}_mlm_test.pth' #_w_mask.pth
+            f'{config.models[config.param_type].d_model}_w_mask.pth' #_w_mask.pth
         print(f'\n3. Loading checkpoints from {ckpts_path}...')
         sebm_trainer.load_model(ckpts_path)
         
