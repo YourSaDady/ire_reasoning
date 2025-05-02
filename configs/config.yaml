@@ -3,7 +3,7 @@ task_name: binary-addition  # binary-addition
 param_type: bert # mlp, transformer
 # max_len: 128
 # special_tokens: ['<mask>']
-load_ebm_ckpts: True ###########
+load_ebm_ckpts: False ###########
 continue_train: False #######for further training with fully masked t2 (inference) after trained on mlm
 
 
@@ -15,7 +15,9 @@ models:
     # special_tokens_map: {'bos_token': '<|begin_of_text|>', 'eos_token': '<|eot_id|>'}
     name: meta-llama/Llama-3.1-8B-Instruct
   bert:
-    d_model: 32
+    d_model: 32 # 32
+    n_layers: 6
+    heads: 8
 
 #all tasks
 tasks:
@@ -61,7 +63,7 @@ tasks:
 
 
 train:
-  stage: sft #pretrain
+  stage: pretrain #pretrain (mm_energy), sft (), inference
   epochs: 1
   lr: 1e-4
   early_stop_threshold: 0.5
@@ -70,11 +72,11 @@ train:
   wandb: True #######################
 
 sampling:
-  stage: inference #sft
+  stage: inference #sft(default mask rate is t),inference(fully mask, depend on sampler)
   batch_size: 4
   times: 10
   steps: 1
-  sampler: argmin_energy #argmin_energy
+  sampler: argmin_energy #argmin_energy(traditional loss), gibbs(ebm method)
   wandb: False
   # temperature: 1.0cd
 

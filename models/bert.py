@@ -68,7 +68,7 @@ class BERTEmbedding(nn.Module):
         self.dropout = nn.Dropout(p=drop_out)
        
     def forward(self, sequence, segment_label):
-        x = self.token(sequence) + self.position(sequence) + self.segment(segment_label)
+        x = self.token(sequence) + self.position(sequence) # + self.segment(segment_label)
         return self.dropout(x) 
     
 
@@ -119,7 +119,7 @@ class BERTDataset(Dataset):
                 t2_all_zero = all(x == 0 for x in t2_label)
             # mask t2 with random t while keep t1 unmasked
             elif self.stage == 'sft':
-                (t1_processed, t1_label), (t2_processed, t2_label) = self.mask(t1, 0), self.mask(t2, 1) #t
+                (t1_processed, t1_label), (t2_processed, t2_label) = self.mask(t1, 0), self.mask(t2, t) #t
                 t2_all_zero = all(x == 0 for x in t2_label)
             # keep t1 unmasked and t2 fully masked as the initial sequence 
             elif self.stage == 'inference':

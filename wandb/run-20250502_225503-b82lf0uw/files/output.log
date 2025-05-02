@@ -1,0 +1,16 @@
+EP_train_pretrain:0:   0%|| 0/14746 [00:00<?, ?it/s]/home/yichuan/HKU/EBM/ire_reasoning/main.py:310: UserWarning: To copy construct from a tensor, it is recommended to use sourceTensor.clone().detach() or sourceTensor.clone().detach().requires_grad_(True), rather than torch.tensor(sourceTensor).
+  loss_is_nan = torch.isnan(torch.tensor(ce_loss)).any()
+EP_train_pretrain:0: 100%|| 14746/14746 [18:54<00:00, 13.00it/s]
+
+
+Finished training.
+
+model saved to ./ebm_ckpts/binary-addition_bert16_w_mask_noseg.pth
+
+
+
+4. Start evaluation...
+sampler: "inference"
+EP_test_inference:1: 100%|| 1639/1639 [04:58<00:00,  5.49it/s]
+
+Finished sampling (inference), final accuracy: 0.03

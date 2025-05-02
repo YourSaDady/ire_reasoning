@@ -1,0 +1,7 @@
+{"time":"2025-05-02T23:43:22.371133627+08:00","level":"INFO","msg":"stream: starting","core version":"0.19.9","symlink path":"/home/yichuan/HKU/EBM/ire_reasoning/wandb/run-20250502_234322-huvmikgr/logs/debug-core.log"}
+{"time":"2025-05-02T23:43:22.70376387+08:00","level":"INFO","msg":"created new stream","id":"huvmikgr"}
+{"time":"2025-05-02T23:43:22.703841897+08:00","level":"INFO","msg":"stream: started","id":"huvmikgr"}
+{"time":"2025-05-02T23:43:22.703877402+08:00","level":"INFO","msg":"writer: Do: started","stream_id":"huvmikgr"}
+{"time":"2025-05-02T23:43:22.703977301+08:00","level":"INFO","msg":"handler: started","stream_id":"huvmikgr"}
+{"time":"2025-05-02T23:43:22.703899682+08:00","level":"INFO","msg":"sender: started","stream_id":"huvmikgr"}
+{"time":"2025-05-02T23:43:23.037318072+08:00","level":"INFO","msg":"Starting system monitor"}

@@ -538,7 +538,7 @@ class MLPSequentialEBMs():
         
         
 class BERTSequentialEBMs():
-    def __init__(self, task_config, d_model, device='cpu'):
+    def __init__(self, task_config, d_model, n_layers, heads=8, device='cpu'):
         self.param_type = 'bert'
         self.task_config = task_config
         self.task_name = task_config.name
@@ -548,6 +548,8 @@ class BERTSequentialEBMs():
         self.vocab_size = task_config.num_classes
         self.special_tok_size = 4
         self.d_model = d_model
+        self.n_layers = n_layers
+        self.heads = heads
         self.device = device ###########for debugging
         self.criterion = nn.CrossEntropyLoss()
         
@@ -558,6 +560,8 @@ class BERTSequentialEBMs():
             vocab_size=self.vocab_size, 
             max_len=self.max_len,
             hidden_size=self.d_model,
+            n_layers=self.n_layers,
+            heads=self.heads,
         ) #Assume inp_len >= out_len
         
     def energy(self, idx:int, val: bool, rest_idx: torch.Tensor, latent: torch.Tensor, \

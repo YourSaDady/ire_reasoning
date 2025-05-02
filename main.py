@@ -273,13 +273,13 @@ class SequentialEBMsTrainer:
                     gamma = self.sebm.model.forward(xo, data['segment_label'], is_ebm=True) 
                     # neg_gamma = self.sebm.model.forward(xo, neg_data['segment_label'], is_ebm=True) 
                     
-                    # #_________________test: BERT mlm_loss___________________
-                    # mlm_output = self.sebm.model.forward(xo, data['segment_label'], is_ebm=False) #test, softmaxed
-                    # # mlm_criterion = nn.NLLLoss(ignore_index=0)
-                    # mlm_criterion = nn.CrossEntropyLoss()
-                    # # mlm_loss = mlm_criterion(mlm_output.transpose(1, 2), xu)
-                    # mlm_loss = mlm_criterion(mlm_output.view(-1, mlm_output.size(-1)), data['bert_label'].view(-1))
-                    # #———————————————————————————————————————————————————————
+                    #_________________test: BERT mlm_loss___________________
+                    mlm_output = self.sebm.model.forward(xo, data['segment_label'], is_ebm=False) #test, softmaxed
+                    # mlm_criterion = nn.NLLLoss(ignore_index=0)
+                    mlm_criterion = nn.CrossEntropyLoss()
+                    # mlm_loss = mlm_criterion(mlm_output.transpose(1, 2), xu)
+                    mlm_loss = mlm_criterion(mlm_output.view(-1, mlm_output.size(-1)), data['bert_label'].view(-1))
+                    #———————————————————————————————————————————————————————
                     
                     # print(f'\ngamma shape: {gamma.shape}') #Size(batch_size, seq_len, num_classes)
                     
@@ -317,7 +317,7 @@ class SequentialEBMsTrainer:
                     loss = ce_loss + contrast_loss
                     # loss = mlm_loss
                     if self.train_wandb:
-                        wandb.log({"l_ce": ce_loss, "l_contrast": contrast_loss, "loss": loss})
+                        wandb.log({"l_ce": ce_loss, "l_contrast": contrast_loss, "loss": loss, "mlm_loss": mlm_loss})
                     # #_________mlm__________
                     # if i % 100 == 0:
                     #     pred = mlm_output.argmax(dim=-1)
@@ -459,7 +459,7 @@ class SequentialEBMsTrainer:
         # ) 
         if train:
             print(f'\n\nFinished training.')
-            ckpts_path = f'./ebm_ckpts/{self.sebm.task_name}_{self.sebm.param_type}{self.sebm.d_model}_mlm_sft_t.pth' #w_mask_inverse_test
+            ckpts_path = f'./ebm_ckpts/{self.sebm.task_name}_{self.sebm.param_type}{self.sebm.d_model}_w_mask_noseg.pth' #w_mask_inverse_test
             torch.save(self.sebm.model.state_dict(), ckpts_path)
             print(f'\nmodel saved to {ckpts_path}')
         elif (not train) and (schedule is not None):
@@ -498,9 +498,13 @@ def main(config):
     print(f'inp_len: {task_config.inp_len}, out_len: {task_config.out_len}, num_classes: {task_config.num_classes}')
     if config.param_type == 'bert':
         d_model = config.models[config.param_type].d_model
+        n_layers = config.models[config.param_type].n_layers
+        heads = config.models[config.param_type].heads
         sebm = BERTSequentialEBMs(
             task_config=task_config,
             d_model=d_model, #######32 hidden_size
+            n_layers=n_layers,
+            heads=heads,
             device='cpu'
             )
     else:
@@ -542,10 +546,10 @@ def main(config):
         
         # return##############
     else:
-        ckpts_path = f'./ebm_ckpts/{task_config.name}_{config.param_type}' \
-            f'{config.models[config.param_type].d_model}_mlm_test.pth' # _w_mask_inverse.pth # _mlm_test # _w_mask #_diffusion
-        print(f'\n3. Loading checkpoints from {ckpts_path}...')
-        sebm_trainer.load_model(ckpts_path)
+        # ckpts_path = f'./ebm_ckpts/{task_config.name}_{config.param_type}' \
+        #     f'{config.models[config.param_type].d_model}_diffusion.pth' # _w_mask_inverse.pth # _mlm_test # _w_mask #_diffusion
+        # print(f'\n3. Loading checkpoints from {ckpts_path}...')
+        # sebm_trainer.load_model(ckpts_path)##########################
         
         if config.continue_train: #further tune the mlm model with fully masked t2 ('sft' stage)
             print(f'Continue train on {config.train.stage}...')
