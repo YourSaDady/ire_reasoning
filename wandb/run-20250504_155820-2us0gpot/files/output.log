@@ -1,0 +1,27 @@
+EP_train_pretrain:0:   0%|| 0/14746 [00:00<?, ?it/s]/home/yichuan/HKU/EBM/ire_reasoning/main.py:313: UserWarning: To copy construct from a tensor, it is recommended to use sourceTensor.clone().detach() or sourceTensor.clone().detach().requires_grad_(True), rather than torch.tensor(sourceTensor).
+  loss_is_nan = torch.isnan(torch.tensor(ce_loss)).any()
+EP_train_pretrain:0: 100%|| 14746/14746 [21:16<00:00, 11.55it/s]
+
+
+Finished training.
+
+model saved to ./ebm_ckpts/binary-addition_bert32_w_mask_simp.pth
+
+
+
+4. Start evaluation...
+sampler: "inference"
+EP_test_inference:1:   0%|| 0/1639 [00:00<?, ?it/s]
+Error executing job with overrides: []
+Traceback (most recent call last):
+  File "/home/yichuan/HKU/EBM/ire_reasoning/main.py", line 596, in main
+    sebm_trainer.evaluate(k, stage=config.sampling.stage, visualize=False)
+  File "/home/yichuan/HKU/EBM/ire_reasoning/main.py", line 135, in evaluate
+    self.iteration(1, self.test_data, stage=stage, train=False, \
+  File "/home/yichuan/HKU/EBM/ire_reasoning/main.py", line 381, in iteration
+    partial_pred, sth = self.sebm.sampling( #sth: loss_list
+  File "/home/yichuan/HKU/EBM/ire_reasoning/sequential_ebms.py", line 752, in sampling
+    sample_batch['segment_label'][b].unsqueeze(0), is_ebm=False).view(-1, self.vocab_size)
+KeyError: 'segment_label'
+
+Set the environment variable HYDRA_FULL_ERROR=1 for a complete stack trace.

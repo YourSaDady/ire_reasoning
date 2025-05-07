@@ -17,7 +17,7 @@ print(f'The current working directory: {os.getcwd()}')
 '''
 A simplified version of BERT and its relative classes from scratch.
 
-Train like a f**king LlaDA (Masked Diffusion)
+Train like LlaDA (Masked Diffusion)
 
 Simplified parts (assumptions):
     - no is_next_label flag and random get_item
@@ -63,11 +63,12 @@ class BERTEmbedding(nn.Module):
         # (m, seq_len) --> (m, seq_len, embed_size)
         # padding_idx is not updated during training, remains as fixed pad (0)
         self.token = nn.Embedding(vocab_size, embed_size, padding_idx=0)
-        self.segment = nn.Embedding(3, embed_size, padding_idx=0)
+        # self.segment = nn.Embedding(3, embed_size, padding_idx=0)
         self.position = PositionalEmbedding(d_model=embed_size, max_len=seq_len)
         self.dropout = nn.Dropout(p=drop_out)
        
     def forward(self, sequence, segment_label):
+        # print(f'Inside BERTEmbedding.forward(), input sequence.shape: {sequence.shape}')
         x = self.token(sequence) + self.position(sequence) # + self.segment(segment_label)
         return self.dropout(x) 
     
@@ -88,8 +89,65 @@ class BERTDataset(Dataset):
         
     def __len__(self):
         return self.corpus_lines
+    
+    def __getitem__(self, item): #"0", "1", MASK only, no segment label
+        '''
+        Select a positive sample pair from the data_pair, and preprocess.  
+        
+        params:
+            - item: line index
+            - t: a random masking rate from a specific schedule
+            - is_pos: positive means x and y from the same line pair; otherwise negative
+            
+        output_dict:
+            - bert_input: masked context tensor of Size(max_len)
+            - bert_label: padded label tensor of Size(max_len)
+            - is_positive: bool, indicating whether is positive or not 
+        '''
+        t2_all_zero = True
+        while t2_all_zero: #randomly mask at least one position in t2
+            # uniformly sample unmasking rate t
+            t = random.random()
+            if t == 0:
+                t = 0.05
+            # get pos / neg sentence pair
+            t1, t2 = self.get_sent(item, self.is_pos)
+            # print(f'Inside __getitem__(), original t1: \n{t1}, \nt2: \n{t2}')
+            # randomly mask t1 and t2 with a uniformly sampled masking rate t
+            if self.stage == 'pretrain':
+                (t1, t1_label), (t2, t2_label) = self.mask(t1, t), self.mask(t2, t) #tokenized
+                t2_all_zero = all(x == 0 for x in t2_label)
+            # mask t2 with random t while keep t1 unmasked
+            elif self.stage == 'sft':
+                (t1, t1_label), (t2, t2_label) = self.mask(t1, 0), self.mask(t2, t) #t
+                t2_all_zero = all(x == 0 for x in t2_label)
+            # keep t1 unmasked and t2 fully masked as the initial sequence 
+            elif self.stage == 'inference':
+                (t1, t1_label), (t2, t2_label) = self.mask(t1, 0), self.mask(t2, 1)
+                t2_all_zero = False
+            else:
+                raise NotImplementedError
+        
+        # print(f'After added special tokens, t1({len(t1)}): \n{t1}, \nt1_label: \n{t1_label}, \nt2({len(t2)}): {t2}, \nt2_label: {t2_label}')
+        # concatenate t1 and t2 and add padding to max_len
+        # print(f'\nself.max_len: {self.max_len}')
+        bert_input = (t1 + t2)[:self.max_len]
+        bert_label = (t1_label + t2_label)[:self.max_len]
+        padding = [self.tokenizer.vocab['[MASK]'] for _ in range(self.max_len - len(bert_input))]
+        bert_input.extend(padding), bert_label.extend(padding)
+        
+        
+        output = {
+            'bert_input': bert_input,
+            'bert_label': bert_label,
+        }
+        # print(f'final:\nbert_input: \n{bert_input}, \nbert_label: \n{bert_label},\nsegment_label: \n{segment_label}')
+        output = {k: torch.tensor(v) for k, v in output.items()}
+        output['is_positive'] = self.is_pos
+        
+        return output
 
-    def __getitem__(self, item):
+    def __getitem__complete(self, item): #includes SEP, CLS, PAD tokens
         '''
         Select a positive sample pair from the data_pair, and preprocess.  
         
@@ -415,6 +473,7 @@ class BERT(torch.nn.Module):
         self.d_hidden = d_hidden
         self.n_layers = n_layers
         self.heads = heads
+        # print(f'Init BERT: vocab_size: {vocab_size}, d_hidden: {d_hidden}, max_len: {max_len}, ') #########
 
         # paper noted they used 4 * hidden_size for ff_network_hidden_size
         self.feed_forward_hidden = d_hidden * 4

@@ -10,8 +10,11 @@ os.chdir('/home/yichuan/HKU/EBM/ire_reasoning')
 # print(f'The current working directory: {os.getcwd()}')
 
 from models.bert import BERTDataset, train_tokenizer
+from model.gpt import GPTDataset
+from models.custom_tokenizer import CustomTokenizer
 from tokenizers import BertWordPieceTokenizer
 from transformers import BertTokenizer
+
 '''
 Sudoku Task. Borrowed from IRED
 '''
@@ -283,18 +286,44 @@ def load_data(task, train_batch_size, val_batch_size):
     else:
         raise NotImplementedError(f'The specified task: {task} is not defined')
     
+def load_gpt_data(task, max_len, train_batch_size, test_batch_size):
+    import json
+    # load tokenzier
+    print(f'Now loading gpt tokenzier...')
+    tokenizer = CustomTokenizer.from_pretrained('model_config_tiny') 
+    # reformat data into dataloader
+    print(f'Now start loading train and test data...')
+    if task == 'countdown':
+        train_pairs, test_pairs = [], []
+        for split, pairs in zip(['train', 'test'], [train_pairs, test_pairs]):
+            path = f'../datasets/diffusion_vs_ar-data/cd3_{split}.jsonl'
+            with open(path, 'r') as file:
+                for line in file:
+                    entry = json.loads(line.strip())
+                    pairs.append((entry['input'], entry['output']))
+            print(f'\n{split} set size: {len(pairs)}')
+        # TODO: GTDataset class
+        train_data, test_data = GPTDataset(train_pairs, max_len=max_len, tokenizer=tokenizer), \
+            GPTDataset(test_pairs, max_len=max_len, tokenizer=tokenizer)
+        train_loader, test_loader = DataLoader(train_data, batch_size=train_batch_size, shuffle=True, pin_memory=True), \
+            DataLoader(test_data, batch_size=test_batch_size, shuffle=True, pin_memory=True)
+    else:
+        raise NotImplementedError
+    return train_loader, test_loader, len(train_data), len(test_data)
+
 def load_bert_data(task, stage, max_len, train_batch_size, val_batch_size):
     test_count = 0
     '''
     params:
         max_len: the padding length to the BERTDataset, the same parameter for initializing BERT
     '''
-    tokenizer_path = f'./models/tokenizer_binary-addition-vocab.txt'
+    # tokenizer_path = f'./models/tokenizer_{task}-vocab.txt'
+    tokenizer_path = f'./models/tokenizer_{task}-vocab.txt'
     if osp.exists(tokenizer_path):
         tokenizer = BertTokenizer.from_pretrained(tokenizer_path)
         print(f'\nFound tokenzier at {tokenizer_path}, loaded.')
     else:
-        print(f'Now start training tokenizer...')
+        print(f'No existing tokenzier found, now start training tokenizer...')
         tokenizer = train_tokenizer(task)
     # tokenizer = Tokenizer.from_file('./ire_reasoning/models/tokenizer_{task}.json')
     print(f'\nNow start loading train and test data...')

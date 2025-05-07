@@ -1,0 +1,15 @@
+{"time":"2025-05-04T15:57:49.782993938+08:00","level":"INFO","msg":"stream: starting","core version":"0.19.9","symlink path":"/home/yichuan/HKU/EBM/ire_reasoning/wandb/run-20250504_155749-y3fm8c7j/logs/debug-core.log"}
+{"time":"2025-05-04T15:57:50.134330036+08:00","level":"INFO","msg":"created new stream","id":"y3fm8c7j"}
+{"time":"2025-05-04T15:57:50.134451983+08:00","level":"INFO","msg":"stream: started","id":"y3fm8c7j"}
+{"time":"2025-05-04T15:57:50.134488597+08:00","level":"INFO","msg":"writer: Do: started","stream_id":"y3fm8c7j"}
+{"time":"2025-05-04T15:57:50.134523967+08:00","level":"INFO","msg":"handler: started","stream_id":"y3fm8c7j"}
+{"time":"2025-05-04T15:57:50.134564722+08:00","level":"INFO","msg":"sender: started","stream_id":"y3fm8c7j"}
+{"time":"2025-05-04T15:57:50.33925883+08:00","level":"INFO","msg":"stream: closing","id":"y3fm8c7j"}
+{"time":"2025-05-04T15:57:50.529138386+08:00","level":"ERROR","msg":"sender: upsertConfig: RunRecord is nil"}
+{"time":"2025-05-04T15:57:50.75728101+08:00","level":"ERROR","msg":"HTTP error","status":404,"method":"POST","url":"https://api.wandb.ai/graphql"}
+{"time":"2025-05-04T15:57:50.757765795+08:00","level":"ERROR","msg":"runfiles: CreateRunFiles returned error: returned error 404: {\"data\":{\"createRunFiles\":null},\"errors\":[{\"message\":\"project /EBM_train-binary-addition_bert not found during createRunFiles\",\"path\":[\"createRunFiles\"]}]}"}
+{"time":"2025-05-04T15:57:50.759450849+08:00","level":"INFO","msg":"fileTransfer: Close: file transfer manager closed"}
+{"time":"2025-05-04T15:57:50.759580484+08:00","level":"INFO","msg":"handler: closed","stream_id":"y3fm8c7j"}
+{"time":"2025-05-04T15:57:50.759617124+08:00","level":"INFO","msg":"writer: Close: closed","stream_id":"y3fm8c7j"}
+{"time":"2025-05-04T15:57:50.759655877+08:00","level":"INFO","msg":"sender: closed","stream_id":"y3fm8c7j"}
+{"time":"2025-05-04T15:57:50.759738035+08:00","level":"INFO","msg":"stream: closed","id":"y3fm8c7j"}

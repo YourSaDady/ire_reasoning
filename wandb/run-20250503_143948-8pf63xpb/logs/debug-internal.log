@@ -1,0 +1,16 @@
+{"time":"2025-05-03T14:39:48.893693615+08:00","level":"INFO","msg":"stream: starting","core version":"0.19.9","symlink path":"/home/yichuan/HKU/EBM/ire_reasoning/wandb/run-20250503_143948-8pf63xpb/logs/debug-core.log"}
+{"time":"2025-05-03T14:39:49.258728401+08:00","level":"INFO","msg":"created new stream","id":"8pf63xpb"}
+{"time":"2025-05-03T14:39:49.258883346+08:00","level":"INFO","msg":"stream: started","id":"8pf63xpb"}
+{"time":"2025-05-03T14:39:49.258938296+08:00","level":"INFO","msg":"writer: Do: started","stream_id":"8pf63xpb"}
+{"time":"2025-05-03T14:39:49.258969863+08:00","level":"INFO","msg":"sender: started","stream_id":"8pf63xpb"}
+{"time":"2025-05-03T14:39:49.259115053+08:00","level":"INFO","msg":"handler: started","stream_id":"8pf63xpb"}
+{"time":"2025-05-03T14:39:49.52709668+08:00","level":"INFO","msg":"Starting system monitor"}
+{"time":"2025-05-03T14:57:35.3331792+08:00","level":"INFO","msg":"api: retrying error","error":"Post \"https://api.wandb.ai/files/university_of_hong_kong/EBM_train-binary-addition_bert/8pf63xpb/file_stream\": dial tcp: lookup api.wandb.ai on 127.0.0.53:53: read udp 127.0.0.1:56536->127.0.0.53:53: i/o timeout"}
+{"time":"2025-05-03T15:06:59.123328422+08:00","level":"INFO","msg":"stream: closing","id":"8pf63xpb"}
+{"time":"2025-05-03T15:06:59.123365726+08:00","level":"INFO","msg":"Stopping system monitor"}
+{"time":"2025-05-03T15:06:59.123500741+08:00","level":"INFO","msg":"Stopped system monitor"}
+{"time":"2025-05-03T15:07:00.329336782+08:00","level":"INFO","msg":"fileTransfer: Close: file transfer manager closed"}
+{"time":"2025-05-03T15:07:00.583138671+08:00","level":"INFO","msg":"handler: closed","stream_id":"8pf63xpb"}
+{"time":"2025-05-03T15:07:00.583247911+08:00","level":"INFO","msg":"sender: closed","stream_id":"8pf63xpb"}
+{"time":"2025-05-03T15:07:00.58325123+08:00","level":"INFO","msg":"writer: Close: closed","stream_id":"8pf63xpb"}
+{"time":"2025-05-03T15:07:00.583447509+08:00","level":"INFO","msg":"stream: closed","id":"8pf63xpb"}

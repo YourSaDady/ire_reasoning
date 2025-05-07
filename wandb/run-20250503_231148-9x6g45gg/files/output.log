@@ -1,0 +1,53 @@
+EP_train_pretrain:0:   0%|| 0/14746 [00:00<?, ?it/s]
+
+xo(torch.Size([4, 30])):
+tensor([[1, 1, 2, 1, 2, 1, 2, 2, 1, 2, 1, 2, 2, 1, 1, 1, 1, 2, 0, 0, 0, 0, 0, 0,
+         0, 0, 0, 0, 0, 0],
+        [1, 1, 1, 1, 2, 2, 2, 2, 1, 2, 2, 2, 1, 2, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0,
+         0, 0, 0, 0, 0, 0],
+        [1, 1, 1, 1, 2, 2, 1, 1, 2, 1, 2, 2, 1, 1, 1, 2, 2, 2, 0, 0, 0, 0, 0, 0,
+         0, 0, 0, 0, 0, 0],
+        [1, 1, 1, 2, 1, 2, 1, 1, 1, 2, 1, 2, 2, 2, 2, 1, 2, 1, 0, 0, 0, 0, 0, 0,
+         0, 0, 0, 0, 0, 0]])
+xu(torch.Size([4, 30])):
+tensor([[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 1, 1, 1, 1, 2,
+         2, 2, 1, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 1, 1, 1, 1, 2,
+         2, 1, 2, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 2, 2, 2, 2, 2,
+         1, 1, 2, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 2, 2, 1, 1, 2,
+         1, 2, 2, 0, 0, 0]])
+Error executing job with overrides: []
+Traceback (most recent call last):
+  File "/home/yichuan/HKU/EBM/ire_reasoning/main.py", line 554, in main
+    sebm_trainer.train(epoch, config.train.stage)
+  File "/home/yichuan/HKU/EBM/ire_reasoning/main.py", line 121, in train
+    self.iteration(epoch, self.train_data, stage)
+  File "/home/yichuan/HKU/EBM/ire_reasoning/main.py", line 274, in iteration
+    gamma = self.sebm.model.forward(xo, None, is_ebm=True)
+  File "/home/yichuan/HKU/EBM/ire_reasoning/models/bert.py", line 539, in forward
+    return self.decoder(self.bert(x, segment_label), is_ebm)
+  File "/home/yichuan/miniconda3/envs/ire_reasoning/lib/python3.9/site-packages/torch/nn/modules/module.py", line 1739, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+  File "/home/yichuan/miniconda3/envs/ire_reasoning/lib/python3.9/site-packages/torch/nn/modules/module.py", line 1750, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/home/yichuan/HKU/EBM/ire_reasoning/models/bert.py", line 492, in forward
+    x = self.embedding(x, segment_info)
+  File "/home/yichuan/miniconda3/envs/ire_reasoning/lib/python3.9/site-packages/torch/nn/modules/module.py", line 1739, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+  File "/home/yichuan/miniconda3/envs/ire_reasoning/lib/python3.9/site-packages/torch/nn/modules/module.py", line 1750, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/home/yichuan/HKU/EBM/ire_reasoning/models/bert.py", line 71, in forward
+    x = self.token(sequence) + self.position(sequence) # + self.segment(segment_label)
+  File "/home/yichuan/miniconda3/envs/ire_reasoning/lib/python3.9/site-packages/torch/nn/modules/module.py", line 1739, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+  File "/home/yichuan/miniconda3/envs/ire_reasoning/lib/python3.9/site-packages/torch/nn/modules/module.py", line 1750, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/home/yichuan/miniconda3/envs/ire_reasoning/lib/python3.9/site-packages/torch/nn/modules/sparse.py", line 190, in forward
+    return F.embedding(
+  File "/home/yichuan/miniconda3/envs/ire_reasoning/lib/python3.9/site-packages/torch/nn/functional.py", line 2551, in embedding
+    return torch.embedding(weight, input, padding_idx, scale_grad_by_freq, sparse)
+IndexError: index out of range in self
+
+Set the environment variable HYDRA_FULL_ERROR=1 for a complete stack trace.

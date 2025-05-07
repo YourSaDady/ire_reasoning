@@ -16,9 +16,9 @@ os.chdir('/home/yichuan/HKU/EBM/ire_reasoning')
 print(f'The current working directory: {os.getcwd()}')
 import hydra
 from sequential_ebms import BERTSequentialEBMs
-from dataset import load_bert_data, load_data
+from dataset import load_bert_data, load_data, load_gpt_data
 from utils import convert_time, VisualizeEBMs
-from transformers import BertTokenizer
+from transformers import BertTokenizer, AutoConfig, AutoModelForCausalLM
 import random as rand
 import wandb
 import json
@@ -149,7 +149,8 @@ class SequentialEBMsTrainer:
         batch_size, io_len = data['bert_label'].size()
         # print(f"bert_label({data['bert_label'].shape}): {data['bert_label']}")
         schedule_label = [[0 for c in range(io_len)] for r in range(batch_size)] #initialize a 2D batchalized schedule label (4,30)
-        special_ids = {0,1,2,3} #pad, cls, sep, mask
+        # special_ids = {0,1,2,3} #pad, cls, sep, mask
+        special_ids = {0} #mask
         full_label = data['bert_label'].tolist()
         assert len(full_label)==batch_size and len(full_label[0])==io_len, \
             f'bert_label: Size({len(full_label)}, {len(full_label[0])})'
@@ -204,8 +205,8 @@ class SequentialEBMsTrainer:
         '''
         partial_data = {
             'bert_input': scheduled_data['bert_input'].clone(),
-            'bert_label': torch.zeros(scheduled_data['bert_label'].size(), dtype=scheduled_data['segment_label'].dtype),
-            'segment_label': scheduled_data['segment_label'].clone().to(scheduled_data['segment_label'].dtype),
+            'bert_label': torch.zeros(scheduled_data['bert_label'].size(), dtype=scheduled_data['bert_label'].dtype),
+            # 'segment_label': scheduled_data['segment_label'].clone().to(scheduled_data['segment_label'].dtype),
             'is_positive': scheduled_data['is_positive']
         }
         for b in range(scheduled_data['schedule_label'].size(0)):
@@ -270,11 +271,13 @@ class SequentialEBMsTrainer:
                     # neg_xo, neg_xu = neg_data['bert_input'], neg_data['bert_label']
                     # print(f'\nxo({xo.shape}): \n{xo}\nxu({xu.shape}): \n{xu}\n') # both Size([4, 45])
                     # 1. Forward MLM to generate the gamma for calculating the energy landscapes
-                    gamma = self.sebm.model.forward(xo, data['segment_label'], is_ebm=True) 
+                    # gamma = self.sebm.forward(xo, data['segment_label'], is_ebm=True) 
+                    gamma = self.sebm.forward(xo, None, is_ebm=True) 
                     # neg_gamma = self.sebm.model.forward(xo, neg_data['segment_label'], is_ebm=True) 
                     
                     #_________________test: BERT mlm_loss___________________
-                    mlm_output = self.sebm.model.forward(xo, data['segment_label'], is_ebm=False) #test, softmaxed
+                    mlm_output = self.sebm.forward(xo, None, is_ebm=False)
+                    # mlm_output = self.sebm.forward(xo, data['segment_label'], is_ebm=False) #test, softmaxed
                     # mlm_criterion = nn.NLLLoss(ignore_index=0)
                     mlm_criterion = nn.CrossEntropyLoss()
                     # mlm_loss = mlm_criterion(mlm_output.transpose(1, 2), xu)
@@ -283,39 +286,40 @@ class SequentialEBMsTrainer:
                     
                     # print(f'\ngamma shape: {gamma.shape}') #Size(batch_size, seq_len, num_classes)
                     
-                    # 2-1. Estimate the 1D conditional logp(xu | xo) via pseudolikelihood
+                    #_____________2-1 tentatively annotated for testing ___________
+                    # # 2-1. Estimate the 1D conditional logp(xu | xo) via pseudolikelihood
                     ce_loss = torch.tensor(0., requires_grad=True).to(self.device)
                     contrast_loss = torch.tensor(0., requires_grad=True).to(self.device)
-                    for r in range(xu.size(0)): #iter within batch
-                        # assert torch.nonzero(xu[r]).squeeze().dim(), f"xu[r] is all zero: \n{xu[r]}"
-                        logp_xu = self.sebm.pseudolikelihood(gamma[r], xu[r], xo[r]) #Size(|u'|, num_classes)
-                        xu_token_ids = torch.nonzero(xu[r]).squeeze() #Size(|u'|)
-                        if xu_token_ids.dim()==0 and xu_token_ids:
-                            xu_token_ids = torch.tensor([xu_token_ids])
-                        xu_label = xu[r][xu_token_ids]
-                        assert logp_xu.size(0) == xu_label.size(0), \
-                            f'\nlogp_xu.shape: {logp_xu.shape}, xu_label.shape: {xu_label.shape}'
-                        # print(f'logp_xu.shape: {logp_xu.shape}, xu_label.shape({xu_label.shape}): {xu_label}')
+                    # for r in range(xu.size(0)): #iter within batch
+                    #     # assert torch.nonzero(xu[r]).squeeze().dim(), f"xu[r] is all zero: \n{xu[r]}"
+                    #     logp_xu = self.sebm.pseudolikelihood(gamma[r], xu[r], xo[r]) #Size(|u'|, num_classes)
+                    #     xu_token_ids = torch.nonzero(xu[r]).squeeze() #Size(|u'|)
+                    #     if xu_token_ids.dim()==0 and xu_token_ids:
+                    #         xu_token_ids = torch.tensor([xu_token_ids])
+                    #     xu_label = xu[r][xu_token_ids]
+                    #     assert logp_xu.size(0) == xu_label.size(0), \
+                    #         f'\nlogp_xu.shape: {logp_xu.shape}, xu_label.shape: {xu_label.shape}'
+                    #     # print(f'logp_xu.shape: {logp_xu.shape}, xu_label.shape({xu_label.shape}): {xu_label}')
                         
                         
-                        # #___________sum over batch: contrast loss_______________
-                        # contrast_loss = contrast_loss + self.sebm.calculate_contrast_loss(
-                        #     gamma[r], gamma[r], #use the same latent
-                        #     xu[r], neg_xu[r],
-                        #     xo[r], neg_xo[r]
-                        # )
-                        # #_____________________________
+                    #     # #___________sum over batch: contrast loss_______________
+                    #     # contrast_loss = contrast_loss + self.sebm.calculate_contrast_loss(
+                    #     #     gamma[r], gamma[r], #use the same latent
+                    #     #     xu[r], neg_xu[r],
+                    #     #     xo[r], neg_xo[r]
+                    #     # )
+                    #     # #_____________________________
                         
-                        ce_loss = ce_loss + self.criterion(logp_xu, xu_label)
-                        loss_is_nan = torch.isnan(torch.tensor(ce_loss)).any()
-                        assert loss_is_nan == False, f'\nce_loss becomes NaN! '\
-                            f'\nce_loss: {ce_loss}, is_nan: {loss_is_nan}\n' \
-                            f'logp_xu: \n{logp_xu}, \nxu_label: \n{xu_label}, \ngamma[r]: \n{gamma[r]}'
+                    #     ce_loss = ce_loss + self.criterion(logp_xu, xu_label)
+                    #     loss_is_nan = torch.isnan(torch.tensor(ce_loss)).any()
+                    #     assert loss_is_nan == False, f'\nce_loss becomes NaN! '\
+                    #         f'\nce_loss: {ce_loss}, is_nan: {loss_is_nan}\n' \
+                    #         f'logp_xu: \n{logp_xu}, \nxu_label: \n{xu_label}, \ngamma[r]: \n{gamma[r]}'
                     
                     # 2-2. Contrast-loss
                     # TODO
-                    loss = ce_loss + contrast_loss
-                    # loss = mlm_loss
+                    # loss = ce_loss + contrast_loss
+                    loss = mlm_loss
                     if self.train_wandb:
                         wandb.log({"l_ce": ce_loss, "l_contrast": contrast_loss, "loss": loss, "mlm_loss": mlm_loss})
                     # #_________mlm__________
@@ -413,7 +417,7 @@ class SequentialEBMsTrainer:
             
             elif (not train) and stage == 'sft':
                 # print(f'data: \n{data}')
-                logits = self.sebm.model.forward(data['bert_input'], data['segment_label'], is_ebm=False)
+                logits = self.sebm.forward(data['bert_input'], None, is_ebm=False) # data['segment_label']
                 loss = self.criterion(logits.view(-1, logits.size(-1)), data['bert_label'].view(-1)) #flattened (batch_size * seq_len)
                 # print(f'logits({logits.shape}): \n{logits}')
                 pred = logits.argmax(dim=-1) #argmin for "_mlm_test.pth"(训反了, energy漏加-); argmax for "_w_mask.pth"?
@@ -459,7 +463,7 @@ class SequentialEBMsTrainer:
         # ) 
         if train:
             print(f'\n\nFinished training.')
-            ckpts_path = f'./ebm_ckpts/{self.sebm.task_name}_{self.sebm.param_type}{self.sebm.d_model}_w_mask_noseg.pth' #w_mask_inverse_test
+            ckpts_path = f'./ebm_ckpts/{self.sebm.task_name}_{self.sebm.param_type}{self.sebm.d_model}_w_mask_simp.pth' #w_mask_inverse_test
             torch.save(self.sebm.model.state_dict(), ckpts_path)
             print(f'\nmodel saved to {ckpts_path}')
         elif (not train) and (schedule is not None):
@@ -468,6 +472,13 @@ class SequentialEBMsTrainer:
                 f'final accuracy: {final_acc}')
             with open(eval_path, 'a') as statsfile:
                 statsfile.write(f'\nFinal Accuracy: {final_acc}\n')
+                
+                
+                
+                
+                
+                
+                
 
 @hydra.main(version_base=None, config_path='./configs',
             config_name='config')
@@ -475,7 +486,7 @@ def main(config):
     print(f'\n___\nStage: {config.train.stage}\n___\n')
     '''1. Load task datasets'''
     if config.param_type == 'bert':
-        max_len = config.tasks[config.task_name].inp_len + config.tasks[config.task_name].out_len + 3
+        max_len = config.tasks[config.task_name].inp_len + config.tasks[config.task_name].out_len #+ 3
         train_loader, test_loader, train_size, test_size = load_bert_data(
             config.task_name, 
             config.sampling.stage, #这里声明了stage: pretrain / sft
@@ -483,13 +494,22 @@ def main(config):
             config.train.batch_size, 
             config.sampling.batch_size
         )
-        print(f'\nLoaded datasets for task: {config.task_name}, max_len: {max_len}, ' \
-            f'train:test={train_size}:{test_size},'\
-            f'batch_size={config.train.batch_size}:{config.sampling.batch_size}...')
     elif config.param_type == 'mlp':
         train_loader, test_loader, train_size, test_size = load_data(
             config.task_name, config.train.batch_size, config.sampling.batch_size) 
 
+    elif config.param_type == 'gpt':
+        max_len = config.models['gpt2-scratch'].max_len
+        train_loader, test_loader, train_size, test_size = load_gpt_data(
+            config.task_name,
+            max_len,
+            config.train.batch_size,
+            config.sampling.batch_size,
+        )
+    print(f'param type: {config.param_type}')
+    print(f'\nLoaded datasets for task: {config.task_name}, max_len: {max_len}, ' \
+        f'train:test={train_size}:{test_size},'\
+        f'batch_size={config.train.batch_size}:{config.sampling.batch_size}...')
     # return ##############
 
     '''2. Initialize and train EBMs'''
@@ -507,6 +527,9 @@ def main(config):
             heads=heads,
             device='cpu'
             )
+    elif config.param_type == 'gpt': #gpt2-6m-scratch from diffu-vs-ar paper
+        model_config = AutoConfig.from_pretrained('model_config_tiny')
+        sebm = AutoModelForCausalLM.from_config(model_config) #not ebm!
     else:
         raise NotImplementedError
     sebm_trainer = SequentialEBMsTrainer(
@@ -524,10 +547,10 @@ def main(config):
 
     if not config.load_ebm_ckpts:
         print(f'No checkpoints found.')
-        print(f'\nBefore training...')
-        # test(sebm, val_data[0]) 
-        k=10
-        sebm_trainer.evaluate(k, stage=config.sampling.stage, visualize=False)
+        # print(f'\nBefore training...')
+        # # test(sebm, val_data[0]) 
+        # k=10
+        # sebm_trainer.evaluate(k, stage=config.sampling.stage, visualize=False)
         
         # return##############
         
@@ -567,7 +590,7 @@ def main(config):
             
         
 
-    # return ###############
+    return ###############
 
     '''3. Evaluate'''
     k = 10

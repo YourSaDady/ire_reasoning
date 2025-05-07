@@ -22,6 +22,7 @@ os.environ['WANDB_API_KEY'] = '3c06642500f1527ecd0328870ff61d36b5c17193'
 # print(f'The current working directory: {os.getcwd()}')
 from transformers import AutoTokenizer, PreTrainedTokenizer, AutoModel, AutoModelForCausalLM, GenerationConfig, AutoConfig
 from transformers.modeling_outputs import CausalLMOutput
+from models.custom_tokenizer import CustomTokenizer
 
 from utils import convert_time, VisualizeEBMs, check_grad
 from typing import Optional, Union, Callable
@@ -64,6 +65,7 @@ def random_flip(samples: Union[torch.Tensor, list[torch.Tensor]], flip_range:int
         return flipped_samples[0]
     return flipped_samples
 
+'''暂时废了'''
 class MLPSequentialEBMs():
     '''
     sequential EBMs wrapper for MLP model architectures
@@ -544,9 +546,9 @@ class BERTSequentialEBMs():
         self.task_name = task_config.name
         self.inp_len = task_config.inp_len
         self.out_len = task_config.out_len
-        self.max_len = self.inp_len + self.out_len + 3 #the max length model can take in
+        self.max_len = self.inp_len + self.out_len #+ 3 #the max length model can take in
         self.vocab_size = task_config.num_classes
-        self.special_tok_size = 4
+        self.special_tok_size = 1
         self.d_model = d_model
         self.n_layers = n_layers
         self.heads = heads
@@ -563,6 +565,10 @@ class BERTSequentialEBMs():
             n_layers=self.n_layers,
             heads=self.heads,
         ) #Assume inp_len >= out_len
+    
+    # wrapper
+    def forward(self, bert_input, segment_label, is_ebm):
+        return self.model.forward(bert_input, segment_label, is_ebm)
         
     def energy(self, idx:int, val: bool, rest_idx: torch.Tensor, latent: torch.Tensor, \
         batchalize=False) -> torch.Tensor:
@@ -673,7 +679,7 @@ class BERTSequentialEBMs():
                 for t in range(sampling_times):
                     # print(f'\n____\nStart t={t}-th sampling...\n')
                     gamma = self.model.forward(model_input.unsqueeze(0), \
-                        sample_batch['segment_label'][b].unsqueeze(0), is_ebm=True).view(-1, self.vocab_size)
+                        None, is_ebm=True).view(-1, self.vocab_size) # sample_batch['segment_label'][b].unsqueeze(0)
                     # print(f'after reshape, gamma({gamma.shape})') #30,6
                     # print(f'\nenergy inputs: rest_idx.shape={yo.unsqueeze(-1)}, latent.shape={gamma[yo_idx, :].shape}')
                     yo_energy = self.energy(idx=0, val=True, rest_idx=yo.unsqueeze(-1), \
@@ -710,7 +716,7 @@ class BERTSequentialEBMs():
                         previous_pred[yo_idx] = yo #?
                         # print(f'after update, previous_pred: {previous_pred}')
                         model_input = sample_batch['bert_input'][b].clone()
-                        model_input[model_input == 3] = 0
+                        model_input[model_input == (self.special_tok_size-1)] = 0
                         model_input += previous_pred
                         # print(f'model_input: {model_input}')
                     # 4. Record partial prediction, losses(using logits) and energies (last sample in the batch)
@@ -749,7 +755,7 @@ class BERTSequentialEBMs():
                 
                 # forward pass with softmax in a single run (gamma.size = (30,6))
                 gamma = self.model.forward(model_input.unsqueeze(0), \
-                        sample_batch['segment_label'][b].unsqueeze(0), is_ebm=False).view(-1, self.vocab_size)
+                        None, is_ebm=False).view(-1, self.vocab_size) # sample_batch['segment_label'][b].unsqueeze(0)
                 # print(f'gamma: {gamma}')
                 yo = gamma[yo_idx, :].argmax(dim=-1) #same as argmin_energy #argmin for '_w_mask.pth'
                 # print(f'b={b}, yo({yo.shape}): {yo}')
@@ -790,7 +796,7 @@ class BERTSequentialEBMs():
         '''
         batch_size = sample_batch['bert_input'].size(0)
         model_input = sample_batch['bert_input'] + partial_pred
-        model_input[model_input > self.vocab_size] -= 3 #subtract the MASK value (3), since added by the unmasked value
+        model_input[model_input > self.vocab_size] -= (self.special_tok_size-1) #subtract the MASK value (3), since added by the unmasked value
         # print(f"\nmodel_input: \n{model_input},\nprevious partial_pred: \n{partial_pred}")
         log_step = 1 #TODO
         if visual_ebms:
@@ -800,7 +806,7 @@ class BERTSequentialEBMs():
         if sampler == 'gibbs':
             '''1. generate latent'''
             with torch.no_grad():
-                gamma = self.model.forward(model_input, sample_batch['segment_label'], is_ebm=True)
+                gamma = self.model.forward(model_input, None, is_ebm=True) # sample_batch['segment_label']
                 # print(f'gamma.shape: {gamma.shape}') # Size(batch_size, seq_len, vocab_size) #includes special tokens
             # print(f'\norder_label: {order_label}')
             full_val = [] #x_ou, dim=2
@@ -812,7 +818,7 @@ class BERTSequentialEBMs():
                 full = (sample_batch['schedule_label'][bid] <= order_label).nonzero(as_tuple=True)[0]
                 context = sample_batch['bert_input'][bid][full]
                 if bid == 0:
-                    yo_idx = (context == 3).nonzero(as_tuple=True)[0]#.tolist()
+                    yo_idx = (context == (self.special_tok_size-1)).nonzero(as_tuple=True)[0]#.tolist()
                 full_val.append(context.view(1, -1))
                 full_idx.append(full.view(1, -1))
                 unmask_idx.append(unmask.view(1, -1))
@@ -929,7 +935,7 @@ class BERTSequentialEBMs():
         for is_neg, (label, input) in enumerate(zip([pos_label, neg_label], \
             [pos_input, neg_input])):
             u = torch.nonzero(label).squeeze() #Size(|u|)
-            o = torch.nonzero(input != 3).squeeze()
+            o = torch.nonzero(input != (self.special_tok_size-1)).squeeze()
             if u.dim():
                 pi = torch.randperm(u.size(0)) #a random estimating order
                 u_prime = u[pi]
@@ -990,7 +996,7 @@ class BERTSequentialEBMs():
             f'mlm_input({mlm_input.shape}): {mlm_input}'
         # print(f'Inside pseudolikelihood: latent.shape: {latent.shape}, mlm_label.shape: {mlm_label.shape}')
         u = torch.nonzero(mlm_label).squeeze() #Size(|u|)
-        o = torch.nonzero(mlm_input != 3).squeeze() #include MASK state (3)
+        o = torch.nonzero(mlm_input != (self.special_tok_size-1)).squeeze() #include MASK state (the last special token id)
         o_len = o.size(0)
         if u.dim():
             pi = torch.randperm(u.size(0)) #a random estimating order
@@ -1035,4 +1041,58 @@ class BERTSequentialEBMs():
         
         return logp_xu
     
+
+class GPTSequentialEBMs():
+    '''
+    Temtatively a dummy wrapper for AR baseline, not real EBM!! TODO: implement real sequential EBM for AR 
+    ''' 
+    def __init__(self, model, task_config, model_config, device='cpu'):
+        self.task_name = task_config.name
+        self.param_type = 'gpt'
+        self.tokenizer = CustomTokenizer.from_pretrained('model_config_tiny') 
+        self._build_model(model)
+        self.task_config = task_config
+        self.model_config = model_config
+        self.device = device ###########for debugging
+        self.criterion = nn.CrossEntropyLoss()
+        
+    def _build_model(self, model):
+        if isinstance(model, str): #prertained HF model TODO: check implementation correctness
+            self.model = AutoModelForCausalLM(model)
+        elif model != None: #gpt from scratch
+            self.model = model
     
+    def energy(self):
+        raise
+
+    def sampling(self):
+        raise
+
+    def pseudolikelihood(self):
+        raise
+    
+    def forward(self, sample_batch, is_ebm=False): #returns logits and loss??
+        # TODO: check trainer class?
+        output_dict = self.model.generate(
+            do_sample=False,
+            max_new_tokens=32,
+            output_logits=True,
+            tokenizer=self.tokenizer,
+            eos_token_id=self.tokenizer.eos_token_id,
+            return_dict_in_generate=True,
+        )
+        print(f'output_dict: {output_dict}')
+        output_seq = self.tokenizer.decode(output_dict.sequences[:, -32:])
+        logits = output_dict.logits[:, -32]
+        print(f'output_seq: \n___\n{output_seq}\n___\nlogits({logits.shape}): \n{logits}')
+        
+        if is_ebm:
+            return logits #gamma
+        else: #return output ids (argmax, if not do_sample)
+            assert torch.equal(output_dict.sequences[:, -32:], \
+                torch.argmax(logits, dim=-1)), \
+                    f'output_dict.sequences[:, -32:]: ' \
+                    f'\n{output_dict.sequences[:, -32:]}, whereas '\
+                    f'argmax logits: {torch.argmax(logits, dim=-1)}'
+            return torch.argmax(logits, dim=-1)
+        
