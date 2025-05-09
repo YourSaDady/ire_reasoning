@@ -10,7 +10,7 @@ os.chdir('/home/yichuan/HKU/EBM/ire_reasoning')
 # print(f'The current working directory: {os.getcwd()}')
 
 from models.bert import BERTDataset, train_tokenizer
-from model.gpt import GPTDataset
+from models.gpt import GPTDataset
 from models.custom_tokenizer import CustomTokenizer
 from tokenizers import BertWordPieceTokenizer
 from transformers import BertTokenizer
@@ -290,13 +290,13 @@ def load_gpt_data(task, max_len, train_batch_size, test_batch_size):
     import json
     # load tokenzier
     print(f'Now loading gpt tokenzier...')
-    tokenizer = CustomTokenizer.from_pretrained('model_config_tiny') 
+    tokenizer = CustomTokenizer.from_pretrained('./ire_reasoning/models/model_config_tiny') 
     # reformat data into dataloader
     print(f'Now start loading train and test data...')
     if task == 'countdown':
         train_pairs, test_pairs = [], []
         for split, pairs in zip(['train', 'test'], [train_pairs, test_pairs]):
-            path = f'../datasets/diffusion_vs_ar-data/cd3_{split}.jsonl'
+            path = f'./datasets/diffusion_vs_ar-data/cd3_{split}.jsonl' #pwd = EBM
             with open(path, 'r') as file:
                 for line in file:
                     entry = json.loads(line.strip())

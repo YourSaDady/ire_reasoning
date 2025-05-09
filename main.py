@@ -13,9 +13,9 @@ import os.path as osp
 from tqdm import tqdm
 sys.path.append('/home/yichuan/HKU/EBM/ire_reasoning')
 os.chdir('/home/yichuan/HKU/EBM/ire_reasoning')
-print(f'The current working directory: {os.getcwd()}')
+# print(f'The current working directory: {os.getcwd()}')
 import hydra
-from sequential_ebms import BERTSequentialEBMs
+from sequential_ebms import BERTSequentialEBMs, GPTSequentialEBMs
 from dataset import load_bert_data, load_data, load_gpt_data
 from utils import convert_time, VisualizeEBMs
 from transformers import BertTokenizer, AutoConfig, AutoModelForCausalLM
@@ -102,7 +102,7 @@ class SequentialEBMsTrainer:
         # Schedule the optimizer (as stated in paper)
         self.optim = optim.AdamW(self.sebm.model.parameters(), lr=lr, betas=betas, weight_decay=weight_decay)
         self.optim_schedule = ScheduledOptim(
-            self.optim, self.sebm.d_model, n_warmup_steps=warmup_steps
+            self.optim, self.sebm.d_model, n_warmup_steps=warmup_steps #d_model决定initial_lr
         )
         self.criterion = nn.CrossEntropyLoss().to(device)
         self.log_freq = log_freq
@@ -235,7 +235,7 @@ class SequentialEBMsTrainer:
         
         mode = "train" if train else "test"
         # initialize stat file
-        eval_path = f'./stats/evaluate/{self.sebm.task_name}_' \
+        eval_path = f'./ire_reasoning/stats/evaluate/{self.sebm.task_name}_' \
                     f'{self.sebm.param_type}_{self.sebm.d_model}_{stage}_stat.jsonl'
         # train_path = f'./stats/train/{self.sebm.task_name}_' \
         #             f'{self.sebm.param_type}_{self.sebm.d_model}_stat.jsonl'
@@ -266,8 +266,10 @@ class SequentialEBMsTrainer:
                     # 0. batch_data will be sent into the device(GPU or cpu)
                     data = {key: value.to(self.device) for key, value in data.items()}
                     # neg_data = {key: value.to(self.device) for key, value in neg_data.items()}
-                    
-                    xo, xu = data['bert_input'], data['bert_label'] #already masked with rate t
+                    if self.sebm.param_type == 'bert':
+                        xo, xu = data['bert_input'], data['bert_label'] #already masked with rate t
+                    elif self.sebm.param_type == 'gpt':
+                        xo = data #forward argument is a dict
                     # neg_xo, neg_xu = neg_data['bert_input'], neg_data['bert_label']
                     # print(f'\nxo({xo.shape}): \n{xo}\nxu({xu.shape}): \n{xu}\n') # both Size([4, 45])
                     # 1. Forward MLM to generate the gamma for calculating the energy landscapes
@@ -453,7 +455,7 @@ class SequentialEBMsTrainer:
             # if i % self.log_freq == 0: ###############
             #     data_iter.write(str(post_fix)) ##################
                 
-            # break ###############test
+            break ###############test
         #end of batch iter
         
         # print(
@@ -499,7 +501,7 @@ def main(config):
             config.task_name, config.train.batch_size, config.sampling.batch_size) 
 
     elif config.param_type == 'gpt':
-        max_len = config.models['gpt2-scratch'].max_len
+        max_len = config.models['gpt'].max_len
         train_loader, test_loader, train_size, test_size = load_gpt_data(
             config.task_name,
             max_len,
@@ -515,7 +517,9 @@ def main(config):
     '''2. Initialize and train EBMs'''
     print(f'\nInitializing EBMs...')
     task_config = config.tasks[config.task_name]
-    print(f'inp_len: {task_config.inp_len}, out_len: {task_config.out_len}, num_classes: {task_config.num_classes}')
+    model_config = config.models[config.param_type]
+    if task_config.name.startswith('binary'):
+        print(f'inp_len: {task_config.inp_len}, out_len: {task_config.out_len}, num_classes: {task_config.num_classes}')
     if config.param_type == 'bert':
         d_model = config.models[config.param_type].d_model
         n_layers = config.models[config.param_type].n_layers
@@ -528,8 +532,14 @@ def main(config):
             device='cpu'
             )
     elif config.param_type == 'gpt': #gpt2-6m-scratch from diffu-vs-ar paper
-        model_config = AutoConfig.from_pretrained('model_config_tiny')
-        sebm = AutoModelForCausalLM.from_config(model_config) #not ebm!
+        gpt_config = AutoConfig.from_pretrained('./ire_reasoning/models/model_config_tiny') #pwd: EBM
+        gpt2_scratch = AutoModelForCausalLM.from_config(gpt_config) #not ebm!
+        sebm = GPTSequentialEBMs(
+            gpt2_scratch,
+            task_config,
+            model_config,
+            device='cpu', #TODO
+        )
     else:
         raise NotImplementedError
     sebm_trainer = SequentialEBMsTrainer(

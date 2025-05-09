@@ -1049,7 +1049,8 @@ class GPTSequentialEBMs():
     def __init__(self, model, task_config, model_config, device='cpu'):
         self.task_name = task_config.name
         self.param_type = 'gpt'
-        self.tokenizer = CustomTokenizer.from_pretrained('model_config_tiny') 
+        # print(f'Inside init SEBM, cwd: {os.getcwd()}')
+        self.tokenizer = CustomTokenizer.from_pretrained('./ire_reasoning/models/model_config_tiny') #pwd = EBM
         self._build_model(model)
         self.task_config = task_config
         self.model_config = model_config
@@ -1061,6 +1062,7 @@ class GPTSequentialEBMs():
             self.model = AutoModelForCausalLM(model)
         elif model != None: #gpt from scratch
             self.model = model
+            self.d_model = model.config.n_embd #determines the initial lr
     
     def energy(self):
         raise
@@ -1071,9 +1073,13 @@ class GPTSequentialEBMs():
     def pseudolikelihood(self):
         raise
     
-    def forward(self, sample_batch, is_ebm=False): #returns logits and loss??
+    def forward(self, input_dict, is_ebm=False): #returns logits and loss??
         # TODO: check trainer class?
+        '''
+        input_dict: dict {input_ids, attnetion_mask, src_mask, (label?不存在?)}
+        '''
         output_dict = self.model.generate(
+            input_dict,
             do_sample=False,
             max_new_tokens=32,
             output_logits=True,
@@ -1081,7 +1087,12 @@ class GPTSequentialEBMs():
             eos_token_id=self.tokenizer.eos_token_id,
             return_dict_in_generate=True,
         )
-        print(f'output_dict: {output_dict}')
+        # print(f'output_dict: {output_dict}')
+        print(f'keys in output_dict: ')
+        for k,v in output_dict.items():
+            print(f' - {k}')
+            if torch.is_tensor(v):
+                print(f'v.shape: {v.shape}')
         output_seq = self.tokenizer.decode(output_dict.sequences[:, -32:])
         logits = output_dict.logits[:, -32]
         print(f'output_seq: \n___\n{output_seq}\n___\nlogits({logits.shape}): \n{logits}')

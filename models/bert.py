@@ -12,7 +12,7 @@ from torch.utils.data import Dataset
 from tokenizers import BertWordPieceTokenizer
 from pathlib import Path
 os.chdir('/home/yichuan/HKU/EBM')
-print(f'The current working directory: {os.getcwd()}')
+# print(f'The current working directory: {os.getcwd()}')
 
 '''
 A simplified version of BERT and its relative classes from scratch.
