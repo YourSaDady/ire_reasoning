@@ -546,9 +546,11 @@ Train a WordPiece Tokenizer
 def train_tokenizer(task):
     if task.startswith('binary'):
         paths = [str(x) for x in Path('../datasets/binary_arith_txt').glob('**/*.txt')]
-        print(f'Total: {len(paths)} paths are found. \n{paths}')
+    elif task == 'countdown':
+        paths = [f'./datasets/diffusion_vs_ar-data/cd3_{split}.jsonl' for split in ['train', 'test']]
     else:
         raise NotImplementedError
+    print(f'Total: {len(paths)} paths are found: \n{paths}')
     
     ### training own tokenizer
     tokenizer = BertWordPieceTokenizer(
@@ -569,7 +571,7 @@ def train_tokenizer(task):
         # min_frequency=5,
         # limit_alphabet=1000, 
         # wordpieces_prefix='##',
-        special_tokens=['[PAD]', '[CLS]', '[SEP]', '[MASK]', '[UNK]', ' +++$+++ '],
+        special_tokens=['[PAD]', '[CLS]', '[SEP]', '[MASK]', '[UNK]'],
         show_progress=True
         )
 

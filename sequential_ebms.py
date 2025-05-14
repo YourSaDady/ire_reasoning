@@ -1041,7 +1041,7 @@ class BERTSequentialEBMs():
         
         return logp_xu
     
-
+# 暂时放弃
 class GPTSequentialEBMs():
     '''
     Temtatively a dummy wrapper for AR baseline, not real EBM!! TODO: implement real sequential EBM for AR 
@@ -1056,6 +1056,7 @@ class GPTSequentialEBMs():
         self.model_config = model_config
         self.device = device ###########for debugging
         self.criterion = nn.CrossEntropyLoss()
+        self.softmax = nn.LogSoftmax(dim=-1)
         
     def _build_model(self, model):
         if isinstance(model, str): #prertained HF model TODO: check implementation correctness
@@ -1073,29 +1074,50 @@ class GPTSequentialEBMs():
     def pseudolikelihood(self):
         raise
     
-    def forward(self, input_dict, is_ebm=False): #returns logits and loss??
+    
+    # 暂时放弃
+    # TODO: transformers library 的 generate()只用于inference，train的话用forward似乎很麻烦，用trainer则需要大改
+    def forward(self, input_dict, segment_label=None, is_ebm=False, no_grad=False): #returns logits and loss??
+        from undecorated import undecorated
+        from types import MethodType
         # TODO: check trainer class?
         '''
         input_dict: dict {input_ids, attnetion_mask, src_mask, (label?不存在?)}
         '''
-        output_dict = self.model.generate(
-            input_dict,
-            do_sample=False,
-            max_new_tokens=32,
-            output_logits=True,
-            tokenizer=self.tokenizer,
-            eos_token_id=self.tokenizer.eos_token_id,
-            return_dict_in_generate=True,
-        )
-        # print(f'output_dict: {output_dict}')
-        print(f'keys in output_dict: ')
+        # output_dict = self.model.forward( #loss, logits (4, 512, 31), past_key_values
+        #     input_ids=input_dict['input_ids'],
+        #     attention_mask=input_dict['attention_mask'], #label没用上
+        #     labels=input_dict['labels'], #bert_label
+        #     max_new_tokens=32,
+        #     output_logits=True
+        # )
+        if not no_grad:
+            '''remove the n_grad decorator in generate() to allow gradient backprop'''
+            generate_with_grad = undecorated(self.model.generate)
+            self.model.generate_with_grad = MethodType(generate_with_grad, self.model)
+            output_dict = self.model.generate_with_grad(
+                input_ids=input_dict['input_ids'],
+                attention_mask=input_dict['attention_mask'], #label没用上
+                labels=input_dict['bert_label'],
+                do_sample=False,
+                max_new_tokens=32,
+                output_logits=True,
+                tokenizer=self.tokenizer,
+                eos_token_id=self.tokenizer.eos_token_id,
+                return_dict_in_generate=True,
+            )
+        print(f'output_dict: {output_dict}')
+        print(f'keys in output_dict: ') #sequences(Size(4,544)), logits, past_key_values 
         for k,v in output_dict.items():
             print(f' - {k}')
             if torch.is_tensor(v):
                 print(f'v.shape: {v.shape}')
-        output_seq = self.tokenizer.decode(output_dict.sequences[:, -32:])
-        logits = output_dict.logits[:, -32]
-        print(f'output_seq: \n___\n{output_seq}\n___\nlogits({logits.shape}): \n{logits}')
+        # output_seq = [] #torch.Size([4, 544]), [32]torch.Size([4, 31]) 
+        # for i in range(output_dict.sequences.size(0)):
+        #     output_seq.append(self.tokenizer.decode(output_dict.sequences[i, -32:]))
+        logits = torch.stack(output_dict.logits).permute(1,0,2)
+        print(f'logits.shape: {logits.shape}') # torch.Size([4, 32, 31])
+        # print(f'output_seq: \n___\n{output_seq}\n___\n')
         
         if is_ebm:
             return logits #gamma
@@ -1105,5 +1127,7 @@ class GPTSequentialEBMs():
                     f'output_dict.sequences[:, -32:]: ' \
                     f'\n{output_dict.sequences[:, -32:]}, whereas '\
                     f'argmax logits: {torch.argmax(logits, dim=-1)}'
-            return torch.argmax(logits, dim=-1)
+            # return torch.argmax(logits, dim=-1)
+            
+            return self.softmax(logits)
         

@@ -1,6 +1,7 @@
 import os.path as osp
 import sys
 import os
+import json
 import torch
 from torch.utils.data  import Dataset, DataLoader
 import pandas as pd
@@ -287,7 +288,6 @@ def load_data(task, train_batch_size, val_batch_size):
         raise NotImplementedError(f'The specified task: {task} is not defined')
     
 def load_gpt_data(task, max_len, train_batch_size, test_batch_size):
-    import json
     # load tokenzier
     print(f'Now loading gpt tokenzier...')
     tokenizer = CustomTokenizer.from_pretrained('./ire_reasoning/models/model_config_tiny') 
@@ -348,14 +348,26 @@ def load_bert_data(task, stage, max_len, train_batch_size, val_batch_size):
                         pairs.append((t1, t2))
                 
                 print(f'\n{tag} set size: {len(pairs)}')
-            train_data, test_data = BERTDataset(train_pairs, stage=stage, max_len=max_len, tokenizer=tokenizer), \
-                BERTDataset(test_pairs, stage=stage, max_len=max_len, tokenizer=tokenizer)
-            train_loader, test_loader = DataLoader(train_data, batch_size=train_batch_size, shuffle=True, pin_memory=True), \
-                DataLoader(test_data, batch_size=val_batch_size, shuffle=True, pin_memory=True)
         else:
             raise NotImplementedError        
         
         return train_loader, test_loader, len(train_data), len(test_data)
 
+    if task == 'countdown':
+        train_pairs, test_pairs = [], []
+        for split, pairs in zip(['train', 'test'], [train_pairs, test_pairs]):
+            path = f'./datasets/diffusion_vs_ar-data/cd3_{split}.jsonl' #pwd = EBM
+            with open(path, 'r') as file:
+                for line in file:
+                    entry = json.loads(line.strip())
+                    pairs.append((entry['input'], entry['output']))
+            print(f'\n{split} set size: {len(pairs)}')
     else:
         raise NotImplementedError
+    
+    train_data, test_data = BERTDataset(train_pairs, stage=stage, max_len=max_len, tokenizer=tokenizer), \
+        BERTDataset(test_pairs, stage=stage, max_len=max_len, tokenizer=tokenizer)
+    train_loader, test_loader = DataLoader(train_data, batch_size=train_batch_size, shuffle=True, pin_memory=True), \
+        DataLoader(test_data, batch_size=val_batch_size, shuffle=True, pin_memory=True)
+        
+    return train_loader, test_loader, len(train_pairs), len(test_pairs)

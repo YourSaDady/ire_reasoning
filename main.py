@@ -269,6 +269,9 @@ class SequentialEBMsTrainer:
                     if self.sebm.param_type == 'bert':
                         xo, xu = data['bert_input'], data['bert_label'] #already masked with rate t
                     elif self.sebm.param_type == 'gpt':
+                        self.sebm.model.train()
+                        for param in self.sebm.model.parameters():
+                            print(f'requires_grad: {param.requires_grad}')
                         xo = data #forward argument is a dict
                     # neg_xo, neg_xu = neg_data['bert_input'], neg_data['bert_label']
                     # print(f'\nxo({xo.shape}): \n{xo}\nxu({xu.shape}): \n{xu}\n') # both Size([4, 45])
@@ -279,44 +282,46 @@ class SequentialEBMsTrainer:
                     
                     #_________________test: BERT mlm_loss___________________
                     mlm_output = self.sebm.forward(xo, None, is_ebm=False)
+                    print("mlm_output.requires_grad=", mlm_output.requires_grad)  # Should be True
                     # mlm_output = self.sebm.forward(xo, data['segment_label'], is_ebm=False) #test, softmaxed
                     # mlm_criterion = nn.NLLLoss(ignore_index=0)
                     mlm_criterion = nn.CrossEntropyLoss()
                     # mlm_loss = mlm_criterion(mlm_output.transpose(1, 2), xu)
+                    print(f"\nmlm_output.dtype: {mlm_output.dtype}, bert_label.dtype: {data['bert_label'].dtype}")
                     mlm_loss = mlm_criterion(mlm_output.view(-1, mlm_output.size(-1)), data['bert_label'].view(-1))
                     #———————————————————————————————————————————————————————
                     
                     # print(f'\ngamma shape: {gamma.shape}') #Size(batch_size, seq_len, num_classes)
                     
-                    #_____________2-1 tentatively annotated for testing ___________
-                    # # 2-1. Estimate the 1D conditional logp(xu | xo) via pseudolikelihood
+                    # _____________2-1 tentatively annotated for testing ___________
+                    # 2-1. Estimate the 1D conditional logp(xu | xo) via pseudolikelihood
                     ce_loss = torch.tensor(0., requires_grad=True).to(self.device)
                     contrast_loss = torch.tensor(0., requires_grad=True).to(self.device)
-                    # for r in range(xu.size(0)): #iter within batch
-                    #     # assert torch.nonzero(xu[r]).squeeze().dim(), f"xu[r] is all zero: \n{xu[r]}"
-                    #     logp_xu = self.sebm.pseudolikelihood(gamma[r], xu[r], xo[r]) #Size(|u'|, num_classes)
-                    #     xu_token_ids = torch.nonzero(xu[r]).squeeze() #Size(|u'|)
-                    #     if xu_token_ids.dim()==0 and xu_token_ids:
-                    #         xu_token_ids = torch.tensor([xu_token_ids])
-                    #     xu_label = xu[r][xu_token_ids]
-                    #     assert logp_xu.size(0) == xu_label.size(0), \
-                    #         f'\nlogp_xu.shape: {logp_xu.shape}, xu_label.shape: {xu_label.shape}'
-                    #     # print(f'logp_xu.shape: {logp_xu.shape}, xu_label.shape({xu_label.shape}): {xu_label}')
+                    for r in range(xu.size(0)): #iter within batch
+                        # assert torch.nonzero(xu[r]).squeeze().dim(), f"xu[r] is all zero: \n{xu[r]}"
+                        logp_xu = self.sebm.pseudolikelihood(gamma[r], xu[r], xo[r]) #Size(|u'|, num_classes)
+                        xu_token_ids = torch.nonzero(xu[r]).squeeze() #Size(|u'|)
+                        if xu_token_ids.dim()==0 and xu_token_ids:
+                            xu_token_ids = torch.tensor([xu_token_ids])
+                        xu_label = xu[r][xu_token_ids]
+                        assert logp_xu.size(0) == xu_label.size(0), \
+                            f'\nlogp_xu.shape: {logp_xu.shape}, xu_label.shape: {xu_label.shape}'
+                        # print(f'logp_xu.shape: {logp_xu.shape}, xu_label.shape({xu_label.shape}): {xu_label}')
                         
                         
-                    #     # #___________sum over batch: contrast loss_______________
-                    #     # contrast_loss = contrast_loss + self.sebm.calculate_contrast_loss(
-                    #     #     gamma[r], gamma[r], #use the same latent
-                    #     #     xu[r], neg_xu[r],
-                    #     #     xo[r], neg_xo[r]
-                    #     # )
-                    #     # #_____________________________
+                        # #___________sum over batch: contrast loss_______________
+                        # contrast_loss = contrast_loss + self.sebm.calculate_contrast_loss(
+                        #     gamma[r], gamma[r], #use the same latent
+                        #     xu[r], neg_xu[r],
+                        #     xo[r], neg_xo[r]
+                        # )
+                        # #_____________________________
                         
-                    #     ce_loss = ce_loss + self.criterion(logp_xu, xu_label)
-                    #     loss_is_nan = torch.isnan(torch.tensor(ce_loss)).any()
-                    #     assert loss_is_nan == False, f'\nce_loss becomes NaN! '\
-                    #         f'\nce_loss: {ce_loss}, is_nan: {loss_is_nan}\n' \
-                    #         f'logp_xu: \n{logp_xu}, \nxu_label: \n{xu_label}, \ngamma[r]: \n{gamma[r]}'
+                        ce_loss = ce_loss + self.criterion(logp_xu, xu_label)
+                        loss_is_nan = torch.isnan(torch.tensor(ce_loss)).any()
+                        assert loss_is_nan == False, f'\nce_loss becomes NaN! '\
+                            f'\nce_loss: {ce_loss}, is_nan: {loss_is_nan}\n' \
+                            f'logp_xu: \n{logp_xu}, \nxu_label: \n{xu_label}, \ngamma[r]: \n{gamma[r]}'
                     
                     # 2-2. Contrast-loss
                     # TODO

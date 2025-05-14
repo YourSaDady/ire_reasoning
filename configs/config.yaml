@@ -1,6 +1,6 @@
 # arguments
 task_name: countdown  # binary-addition
-param_type: gpt # mlp, transformer, bert, gpt
+param_type: bert # mlp, transformer, bert, gpt
 # max_len: 128
 # special_tokens: ['<mask>']
 load_ebm_ckpts: False ###########
@@ -64,6 +64,8 @@ tasks:
   countdown:
     name: countdown
     metrics: ['acc']
+    num_classes: 31 #?
+    max_len: 50
 
   sudoku:
     name: sudoku
