@@ -544,9 +544,12 @@ class BERTSequentialEBMs():
         self.param_type = 'bert'
         self.task_config = task_config
         self.task_name = task_config.name
-        self.inp_len = task_config.inp_len
-        self.out_len = task_config.out_len
-        self.max_len = self.inp_len + self.out_len #+ 3 #the max length model can take in
+        if task_config.name.startswith('binary'):
+            self.inp_len = task_config.inp_len
+            self.out_len = task_config.out_len
+            self.max_len = self.inp_len + self.out_len #+ 3 #the max length model can take in
+        else:
+            self.max_len = task_config.max_len #countdown: 50
         self.vocab_size = task_config.num_classes
         self.special_tok_size = 1
         self.d_model = d_model

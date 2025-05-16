@@ -304,7 +304,7 @@ def load_gpt_data(task, max_len, train_batch_size, test_batch_size):
             print(f'\n{split} set size: {len(pairs)}')
         # TODO: GTDataset class
         train_data, test_data = GPTDataset(train_pairs, max_len=max_len, tokenizer=tokenizer), \
-            GPTDataset(test_pairs, max_len=max_len, tokenizer=tokenizer)
+            GPTDataset(test_pairs, max_len=max_len, tokenizer=tokenizer) #max_new_tokens default = 32
         train_loader, test_loader = DataLoader(train_data, batch_size=train_batch_size, shuffle=True, pin_memory=True), \
             DataLoader(test_data, batch_size=test_batch_size, shuffle=True, pin_memory=True)
     else:
@@ -317,17 +317,16 @@ def load_bert_data(task, stage, max_len, train_batch_size, val_batch_size):
     params:
         max_len: the padding length to the BERTDataset, the same parameter for initializing BERT
     '''
-    # tokenizer_path = f'./models/tokenizer_{task}-vocab.txt'
-    tokenizer_path = f'./models/tokenizer_{task}-vocab.txt'
-    if osp.exists(tokenizer_path):
-        tokenizer = BertTokenizer.from_pretrained(tokenizer_path)
-        print(f'\nFound tokenzier at {tokenizer_path}, loaded.')
-    else:
-        print(f'No existing tokenzier found, now start training tokenizer...')
-        tokenizer = train_tokenizer(task)
     # tokenizer = Tokenizer.from_file('./ire_reasoning/models/tokenizer_{task}.json')
     print(f'\nNow start loading train and test data...')
     if task.startswith('binary'):
+        tokenizer_path = f'./models/tokenizer_{task}-vocab.txt'
+        if osp.exists(tokenizer_path):
+            tokenizer = BertTokenizer.from_pretrained(tokenizer_path)
+            print(f'\nFound tokenzier at {tokenizer_path}, loaded.')
+        else:
+            print(f'No existing tokenzier found, now start training tokenizer...')
+            tokenizer = train_tokenizer(task)
         if task.endswith('addition'):
             # print(f'\nInside load_bert_data, the current working directory: {os.getcwd()}\n')
             train_path, test_path = '../datasets/binary_arith_txt/addition/train.txt', '../datasets/binary_arith_txt/addition/val.txt'
@@ -353,7 +352,10 @@ def load_bert_data(task, stage, max_len, train_batch_size, val_batch_size):
         
         return train_loader, test_loader, len(train_data), len(test_data)
 
-    if task == 'countdown':
+    elif task == 'countdown':
+        # 1. load tokenizer
+        tokenizer = CustomTokenizer.from_pretrained('./ire_reasoning/models/model_config_tiny') 
+        # 2. laod dataset
         train_pairs, test_pairs = [], []
         for split, pairs in zip(['train', 'test'], [train_pairs, test_pairs]):
             path = f'./datasets/diffusion_vs_ar-data/cd3_{split}.jsonl' #pwd = EBM
@@ -369,5 +371,8 @@ def load_bert_data(task, stage, max_len, train_batch_size, val_batch_size):
         BERTDataset(test_pairs, stage=stage, max_len=max_len, tokenizer=tokenizer)
     train_loader, test_loader = DataLoader(train_data, batch_size=train_batch_size, shuffle=True, pin_memory=True), \
         DataLoader(test_data, batch_size=val_batch_size, shuffle=True, pin_memory=True)
+        
+    print(f'train_data[0]: \n{train_data[0]}')
+    # print(f'\ntrain_loader[0]: \n{train_loader[0]}')
         
     return train_loader, test_loader, len(train_pairs), len(test_pairs)

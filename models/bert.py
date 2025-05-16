@@ -83,7 +83,7 @@ class BERTDataset(Dataset):
         self.tokenizer = tokenizer
         self.max_len = max_len
         self.corpus_lines = len(data_pair)
-        self.lines = data_pair
+        self.lines = data_pair #  line: ('44,2,54,64', '2*54=108,108-44=64')
         self.stage = stage
         self.is_pos = True
         
@@ -122,8 +122,9 @@ class BERTDataset(Dataset):
                 (t1, t1_label), (t2, t2_label) = self.mask(t1, 0), self.mask(t2, t) #t
                 t2_all_zero = all(x == 0 for x in t2_label)
             # keep t1 unmasked and t2 fully masked as the initial sequence 
-            elif self.stage == 'inference':
-                (t1, t1_label), (t2, t2_label) = self.mask(t1, 0), self.mask(t2, 1)
+            elif self.stage == 'inference': 
+                # (t1, t1_label), (t2, t2_label) = self.mask(t1, 0), self.mask(t2, 1)
+                (t1, t1_label), (t2, t2_label) = self.encode(t1, 0), self.encode(t2, 1)
                 t2_all_zero = False
             else:
                 raise NotImplementedError
@@ -131,9 +132,13 @@ class BERTDataset(Dataset):
         # print(f'After added special tokens, t1({len(t1)}): \n{t1}, \nt1_label: \n{t1_label}, \nt2({len(t2)}): {t2}, \nt2_label: {t2_label}')
         # concatenate t1 and t2 and add padding to max_len
         # print(f'\nself.max_len: {self.max_len}')
-        bert_input = (t1 + t2)[:self.max_len]
-        bert_label = (t1_label + t2_label)[:self.max_len]
-        padding = [self.tokenizer.vocab['[MASK]'] for _ in range(self.max_len - len(bert_input))]
+        bert_input = (t1 + [self.tokenizer._vocab_str_to_int["[SEP]"]] + t2 + \
+            [self.tokenizer._vocab_str_to_int["[EOS]"]])[:self.max_len]
+        bert_label = (t1_label + [self.tokenizer._vocab_str_to_int["[SEP]"]] + t2_label \
+            + [self.tokenizer._vocab_str_to_int["[EOS]"]])[:self.max_len]
+        assert len(bert_input) == len(bert_label)
+        padding = [self.tokenizer._vocab_str_to_int["[PAD]"] for _ in \
+            range(self.max_len - len(bert_input))]
         bert_input.extend(padding), bert_label.extend(padding)
         
         
@@ -141,7 +146,7 @@ class BERTDataset(Dataset):
             'bert_input': bert_input,
             'bert_label': bert_label,
         }
-        # print(f'final:\nbert_input: \n{bert_input}, \nbert_label: \n{bert_label},\nsegment_label: \n{segment_label}')
+        # print(f'final:\nraw line[idx]: \n{self.lines[item]}\nbert_input: \n{bert_input}, \nbert_label: \n{bert_label}') # \nsegment_label: \n{segment_label}
         output = {k: torch.tensor(v) for k, v in output.items()}
         output['is_positive'] = self.is_pos
         
@@ -299,6 +304,15 @@ class BERTDataset(Dataset):
             
         return t1, t2
     
+    def encode(self, sentence, t):
+        sen_ids = self.tokenizer.encode(sentence)
+        sen_mask = [self.tokenizer._vocab_str_to_int["[MASK]"]]*len(sen_ids)
+        # print(f'inside encode(), t: {t}, \nsen_ids: \n{sen_ids}, \nsen_mask: \n{sen_mask}')
+        if t == 0:
+            return (sen_ids, sen_mask)
+        elif t == 1:
+            return (sen_mask, sen_ids)
+    
     def mask(self, sentence, t):
         tokens = sentence.split() #only useful for textual sentences
         output_label = []
@@ -311,7 +325,7 @@ class BERTDataset(Dataset):
             # mask tokens of a word with t%
             if prob < t:
                 for i in range(len(token_id)):
-                    output.append(self.tokenizer.vocab['[MASK]'])
+                    output.append(self.tokenizer._vocab_str_to_int["[MASK]"])
                 output_label.append(token_id)
             else:
                 output.append(token_id)

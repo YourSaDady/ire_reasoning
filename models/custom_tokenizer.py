@@ -71,7 +71,7 @@ class CustomTokenizer(PreTrainedTokenizer):
                     "[SEP]": 1,
                     "[MASK]": 2,
                     "[EOS]": 3,
-                    "[UNK]": 4,
+                    "[UNK]": 4,     
                 an id (starting at 5) will be assigned to each character.
 
             model_max_length (int): Model maximum sequence length.

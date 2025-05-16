@@ -15,9 +15,9 @@ models:
     # special_tokens_map: {'bos_token': '<|begin_of_text|>', 'eos_token': '<|eot_id|>'}
     name: meta-llama/Llama-3.1-8B-Instruct
   bert:
-    d_model: 128 # 32
-    n_layers: 6
-    heads: 8
+    d_model: 384 #128 # 32
+    n_layers: 3 #6
+    heads: 12 #8
 
   gpt: #from scratch
     # d_model: #?
@@ -77,13 +77,13 @@ tasks:
 
 
 train:
-  stage: pretrain #pretrain (mm_energy), sft (), inference
+  stage: inference #pretrain (mm_energy), sft (), inference
   epochs: 1 #40 #same as diffusion-vs-ar ########
   lr: 1e-4 #没用?
   early_stop_threshold: 0.5
   batch_size:  4 #100 #sudoku must be 1
   visualize: True
-  wandb: False ####################### 
+  wandb: True ####################### 
 
 sampling:
   stage: inference #sft(default mask rate is t),inference(fully mask, depend on sampler)

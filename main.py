@@ -253,14 +253,14 @@ class SequentialEBMsTrainer:
         # for i, (pos_data, neg_data) in data_iter: #batch
         for i, data in data_iter: #batch
             if train:
-                if stage == 'inference':
+                if stage != 'inference': #########for tesing
                     K = 10
                     t_list = unmasking_schedule(K+2, 'cosine')[1:-1]
                     scheduled_data, early_stop = self.add_schedule(data, t_list)
                 else:
                     early_stop = 1
                 for k in range(early_stop):
-                    if stage == 'inference':
+                    if stage != 'inference': #########for tesing
                         data = self.prepare_partial_data(scheduled_data, k+1) #AR-like
                     '''MLM training pradigm with varying t'''
                     # 0. batch_data will be sent into the device(GPU or cpu)
@@ -281,13 +281,15 @@ class SequentialEBMsTrainer:
                     # neg_gamma = self.sebm.model.forward(xo, neg_data['segment_label'], is_ebm=True) 
                     
                     #_________________test: BERT mlm_loss___________________
+                    # print(f'\nxo.shape: {xo.shape}') #4,50
                     mlm_output = self.sebm.forward(xo, None, is_ebm=False)
-                    print("mlm_output.requires_grad=", mlm_output.requires_grad)  # Should be True
+                    # print("mlm_output.requires_grad=", mlm_output.requires_grad, ', mlm_output.shape: ', mlm_output.shape)  # Should be True
                     # mlm_output = self.sebm.forward(xo, data['segment_label'], is_ebm=False) #test, softmaxed
                     # mlm_criterion = nn.NLLLoss(ignore_index=0)
                     mlm_criterion = nn.CrossEntropyLoss()
                     # mlm_loss = mlm_criterion(mlm_output.transpose(1, 2), xu)
-                    print(f"\nmlm_output.dtype: {mlm_output.dtype}, bert_label.dtype: {data['bert_label'].dtype}")
+                    # print(f"\nmlm_output.dtype: {mlm_output.dtype}, bert_label.dtype: {xu.dtype}")
+                    # print(f"mlm_output({mlm_output.shape}): \n{mlm_output},\nbert_label({xu.shape}): \n{xu}")
                     mlm_loss = mlm_criterion(mlm_output.view(-1, mlm_output.size(-1)), data['bert_label'].view(-1))
                     #———————————————————————————————————————————————————————
                     
@@ -460,7 +462,7 @@ class SequentialEBMsTrainer:
             # if i % self.log_freq == 0: ###############
             #     data_iter.write(str(post_fix)) ##################
                 
-            break ###############test
+            # break ###############test
         #end of batch iter
         
         # print(
@@ -470,7 +472,7 @@ class SequentialEBMsTrainer:
         # ) 
         if train:
             print(f'\n\nFinished training.')
-            ckpts_path = f'./ebm_ckpts/{self.sebm.task_name}_{self.sebm.param_type}{self.sebm.d_model}_w_mask_simp.pth' #w_mask_inverse_test
+            ckpts_path = f'./ire_reasoning/ebm_ckpts/{self.sebm.task_name}_{self.sebm.param_type}{self.sebm.d_model}_sft.pth' #w_mask_inverse_test
             torch.save(self.sebm.model.state_dict(), ckpts_path)
             print(f'\nmodel saved to {ckpts_path}')
         elif (not train) and (schedule is not None):
@@ -493,7 +495,10 @@ def main(config):
     print(f'\n___\nStage: {config.train.stage}\n___\n')
     '''1. Load task datasets'''
     if config.param_type == 'bert':
-        max_len = config.tasks[config.task_name].inp_len + config.tasks[config.task_name].out_len #+ 3
+        if config.task_name.startswith('binary'):
+            max_len = config.tasks[config.task_name].inp_len + config.tasks[config.task_name].out_len #+ 3
+        elif config.task_name == 'countdown':
+            max_len = config.tasks[config.task_name].max_len
         train_loader, test_loader, train_size, test_size = load_bert_data(
             config.task_name, 
             config.sampling.stage, #这里声明了stage: pretrain / sft
