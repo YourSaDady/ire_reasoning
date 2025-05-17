@@ -316,6 +316,9 @@ def load_bert_data(task, stage, max_len, train_batch_size, val_batch_size):
     '''
     params:
         max_len: the padding length to the BERTDataset, the same parameter for initializing BERT
+        
+    return:
+        train_loader, test_loader, train_size, test_size, tokenizer
     '''
     # tokenizer = Tokenizer.from_file('./ire_reasoning/models/tokenizer_{task}.json')
     print(f'\nNow start loading train and test data...')
@@ -375,4 +378,4 @@ def load_bert_data(task, stage, max_len, train_batch_size, val_batch_size):
     print(f'train_data[0]: \n{train_data[0]}')
     # print(f'\ntrain_loader[0]: \n{train_loader[0]}')
         
-    return train_loader, test_loader, len(train_pairs), len(test_pairs)
+    return train_loader, test_loader, len(train_pairs), len(test_pairs), tokenizer

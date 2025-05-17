@@ -21,7 +21,7 @@ models:
 
   gpt: #from scratch
     # d_model: #?
-    max_len: 512
+    max_len: 50 #512
     d_model: 384 #The same as "n_embd" in config.json
     n_layers: 3
     heads: 12
@@ -81,13 +81,13 @@ train:
   epochs: 1 #40 #same as diffusion-vs-ar ########
   lr: 1e-4 #没用?
   early_stop_threshold: 0.5
-  batch_size:  4 #100 #sudoku must be 1
+  batch_size:  100 #100 #sudoku must be 1
   visualize: True
   wandb: True ####################### 
 
 sampling:
   stage: inference #sft(default mask rate is t),inference(fully mask, depend on sampler)
-  batch_size: 4
+  batch_size: 1 #4
   times: 10
   steps: 1
   sampler: argmin_energy #argmin_energy(traditional loss), gibbs(ebm method)

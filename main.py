@@ -149,8 +149,8 @@ class SequentialEBMsTrainer:
         batch_size, io_len = data['bert_label'].size()
         # print(f"bert_label({data['bert_label'].shape}): {data['bert_label']}")
         schedule_label = [[0 for c in range(io_len)] for r in range(batch_size)] #initialize a 2D batchalized schedule label (4,30)
-        # special_ids = {0,1,2,3} #pad, cls, sep, mask
-        special_ids = {0} #mask
+        special_ids = {0,1,2,3,4} #custom_tokenizer: pad, sep, mask, eos, unk
+        # special_ids = {0} #mask
         full_label = data['bert_label'].tolist()
         assert len(full_label)==batch_size and len(full_label[0])==io_len, \
             f'bert_label: Size({len(full_label)}, {len(full_label[0])})'
@@ -164,14 +164,15 @@ class SequentialEBMsTrainer:
             for bid in range(batch_size): #each row inside the batch shares the same sequence of umask num
                 labeled_num = len([x for x in schedule_label[bid] if x != 0])
                 unlabeled_pos = [pos for pos in range(len(schedule_label[bid])) \
-                    if (schedule_label[bid][pos] == 0 and full_label[bid][pos]>0)]
-                sample_num = unmask_num # - labeled_num
+                    if (schedule_label[bid][pos] == 0 and full_label[bid][pos]>=len(special_ids))] #full_label[bid][pos]>0
+                sample_num = unmask_num - labeled_num
                 unmask_pos = rand.sample(unlabeled_pos, min(len(unlabeled_pos), sample_num))
                 for pos in unmask_pos:
                     schedule_label[bid][pos] = (k+1) #add order label (1-indexed)
             # print(f'after k-{k+1}th schedule, scheudle_label: \n{schedule_label}')
-            if len(unlabeled_pos) <= sample_num: #complete labeling
-                break
+            # if len(unlabeled_pos) <= sample_num: #complete labeling #由于batch内每行input len 可能不同，这里不考虑early_stop
+            # if len(unlabeled_pos) == 0:
+            #     break
             # assert unmask_num > 0, f'unmasking number should be positive! Got {unmask_num}'
             # for bid in range(batch_size):
             #     for pos, label in enumerate(full_label[bid]):
@@ -186,11 +187,14 @@ class SequentialEBMsTrainer:
         # for pos in data['bert_input'].size(1): #add CLS and SEP tokens
         #     if data['bert_input'][:, pos][0] == 1 or data['bert_input'][:, pos][0] == 2:
         #         schedule_label[:, pos] = data['bert_input'][:, pos]
-        # print(f'\nschedule_label: \n{schedule_label}')
+        # print(f'\nInside add_schedule(), schedule_label: \n{schedule_label}\n, bert_label: \n{data["bert_label"]}')
         scheduled_data['schedule_label'] = schedule_label
-        assert torch.count_nonzero(schedule_label) == torch.count_nonzero(data['bert_label']), \
+        # 以下assertion变了： torch.count_nonzero(data['bert_label'])
+        valid_labels = (data['bert_label'] >= len(special_ids)).sum().item() #num of labels greater than 2
+        assert torch.count_nonzero(schedule_label) == valid_labels, \
             f'nonzero labels count: schedule={torch.count_nonzero(schedule_label)}, ' \
-                f"bert={torch.count_nonzero(data['bert_label'])}"
+                f"bert={valid_labels}, \nbert_label: \n{data['bert_label']}, '\
+                    f'\nschedule_label: n\{schedule_label}"
         return scheduled_data, iters_count
                         
     def eval_metric(self, pred, label, metric="acc"):
@@ -249,18 +253,23 @@ class SequentialEBMsTrainer:
             total=len(data_loader),
             bar_format="{l_bar}{r_bar}"
         )
+        
+        if self.sebm.task_name == 'countdown':
+            special_tokens = {0,1,2,3,4}
+        else:
+            raise NotImplementedError(f'special tokens for task {self.sebm.task_name} not specified!!')
 
         # for i, (pos_data, neg_data) in data_iter: #batch
         for i, data in data_iter: #batch
             if train:
-                if stage != 'inference': #########for tesing
+                if stage == 'inference': #########for tesing
                     K = 10
                     t_list = unmasking_schedule(K+2, 'cosine')[1:-1]
                     scheduled_data, early_stop = self.add_schedule(data, t_list)
                 else:
                     early_stop = 1
                 for k in range(early_stop):
-                    if stage != 'inference': #########for tesing
+                    if stage == 'inference': #########for tesing
                         data = self.prepare_partial_data(scheduled_data, k+1) #AR-like
                     '''MLM training pradigm with varying t'''
                     # 0. batch_data will be sent into the device(GPU or cpu)
@@ -300,8 +309,11 @@ class SequentialEBMsTrainer:
                     ce_loss = torch.tensor(0., requires_grad=True).to(self.device)
                     contrast_loss = torch.tensor(0., requires_grad=True).to(self.device)
                     for r in range(xu.size(0)): #iter within batch
+                        # print(f'\n_____\nr: {r}, k: {k}\n________\n')
                         # assert torch.nonzero(xu[r]).squeeze().dim(), f"xu[r] is all zero: \n{xu[r]}"
                         logp_xu = self.sebm.pseudolikelihood(gamma[r], xu[r], xo[r]) #Size(|u'|, num_classes)
+                        if logp_xu == None:
+                            break
                         xu_token_ids = torch.nonzero(xu[r]).squeeze() #Size(|u'|)
                         if xu_token_ids.dim()==0 and xu_token_ids:
                             xu_token_ids = torch.tensor([xu_token_ids])
@@ -324,6 +336,8 @@ class SequentialEBMsTrainer:
                         assert loss_is_nan == False, f'\nce_loss becomes NaN! '\
                             f'\nce_loss: {ce_loss}, is_nan: {loss_is_nan}\n' \
                             f'logp_xu: \n{logp_xu}, \nxu_label: \n{xu_label}, \ngamma[r]: \n{gamma[r]}'
+                    if logp_xu == None:
+                        break
                     
                     # 2-2. Contrast-loss
                     # TODO
@@ -377,8 +391,11 @@ class SequentialEBMsTrainer:
                 # 2. iterate through k EBMs, send input to device, and each EBM performs gibbs sampling
                 partial_pred = torch.randint(self.sebm.special_tok_size, \
                         self.sebm.vocab_size, data['bert_label'].size()) #init
-                partial_pred[:, :(self.sebm.inp_len+2)] = 0
-                partial_pred[:, -1] = 0
+                # partial_pred[:, :(self.sebm.inp_len+2)] = 0
+                # partial_pred[:, -1] = 0
+                invalid_pos = data['bert_label'] < len(special_tokens)
+                # print(f'invalid_pos: \n{invalid_pos}')
+                partial_pred[invalid_pos] = data['bert_label'][invalid_pos]
                 # print(f'initial partial_pred({partial_pred.shape}): \n{partial_pred}')
                 # partial_pred = torch.zeros_like(scheduled_data['bert_input']) #init
                 k_losses, k_energies = {}, {}
@@ -430,11 +447,16 @@ class SequentialEBMsTrainer:
                 loss = self.criterion(logits.view(-1, logits.size(-1)), data['bert_label'].view(-1)) #flattened (batch_size * seq_len)
                 # print(f'logits({logits.shape}): \n{logits}')
                 pred = logits.argmax(dim=-1) #argmin for "_mlm_test.pth"(训反了, energy漏加-); argmax for "_w_mask.pth"?
-                pred_mask = (data['bert_label'] == 0)
-                pred[pred_mask] = 0
+                invalid_pos = data['bert_label'] < len(special_tokens)
+                pred[invalid_pos] = data['bert_label'][invalid_pos]
                 # print(f"logits.shape: {logits.shape}, label.shape: {data['bert_label'].shape}")
                 correct = self.eval_metric(pred, data['bert_label'])
                 # print(f"pred: \n{pred}, \nlabel: \n{data['bert_label']},\ncorrrect: {correct}")
+                # # ______decode______ 
+                # decoded_label = self.sebm.tokenizer.decode(data['bert_label'][0].tolist(), skip_special_tokens=True)
+                # decoded_pred = self.sebm.tokenizer.decode(pred[0].tolist(), skip_special_tokens=True)
+                # print(f'decoded label: \n{decoded_label}, \ndecoded pred: \n{decoded_pred}')
+                # # __________________
                 avg_loss += loss.item()
                 total_correct += correct
                 total_samples += data['bert_input'].size(0)
@@ -446,9 +468,9 @@ class SequentialEBMsTrainer:
                     'sample_id': i*4,
                     'batch_correct': correct,
                     'sample_loss': round(loss.item(), 2), #>10
-                    'pred': pred.cpu().tolist()[0][self.sebm.inp_len+2:],
-                    'label': data['bert_label'].cpu().tolist()[0][self.sebm.inp_len+2:],
-                    'logits': [[round(ele, 2) for ele in row] for row in logits.cpu().tolist()[0][self.sebm.inp_len+2:]]
+                    'pred': pred.cpu().tolist()[0],
+                    'label': data['bert_label'].cpu().tolist()[0],
+                    'logits': [[round(ele, 2) for ele in row] for row in logits.cpu().tolist()[0]]
                 }
                 with open(eval_path, 'a') as statsfile:
                     statsfile.write(json.dumps(stats)+'\n')
@@ -462,7 +484,7 @@ class SequentialEBMsTrainer:
             # if i % self.log_freq == 0: ###############
             #     data_iter.write(str(post_fix)) ##################
                 
-            # break ###############test
+            break ###############test
         #end of batch iter
         
         # print(
@@ -472,7 +494,7 @@ class SequentialEBMsTrainer:
         # ) 
         if train:
             print(f'\n\nFinished training.')
-            ckpts_path = f'./ire_reasoning/ebm_ckpts/{self.sebm.task_name}_{self.sebm.param_type}{self.sebm.d_model}_sft.pth' #w_mask_inverse_test
+            ckpts_path = f'./ire_reasoning/ebm_ckpts/{self.sebm.task_name}_{self.sebm.param_type}{self.sebm.d_model}_{stage}.pth' #w_mask_inverse_test
             torch.save(self.sebm.model.state_dict(), ckpts_path)
             print(f'\nmodel saved to {ckpts_path}')
         elif (not train) and (schedule is not None):
@@ -499,7 +521,7 @@ def main(config):
             max_len = config.tasks[config.task_name].inp_len + config.tasks[config.task_name].out_len #+ 3
         elif config.task_name == 'countdown':
             max_len = config.tasks[config.task_name].max_len
-        train_loader, test_loader, train_size, test_size = load_bert_data(
+        train_loader, test_loader, train_size, test_size, tokenizer = load_bert_data(
             config.task_name, 
             config.sampling.stage, #这里声明了stage: pretrain / sft
             max_len,
@@ -535,6 +557,7 @@ def main(config):
         n_layers = config.models[config.param_type].n_layers
         heads = config.models[config.param_type].heads
         sebm = BERTSequentialEBMs(
+            tokenizer=tokenizer,
             task_config=task_config,
             d_model=d_model, #######32 hidden_size
             n_layers=n_layers,
@@ -563,7 +586,7 @@ def main(config):
         sampling_times=config.sampling.times
     )
 
-    # return ##############
+    return ##############
 
     if not config.load_ebm_ckpts:
         print(f'No checkpoints found.')
@@ -591,8 +614,10 @@ def main(config):
     else:
         # ckpts_path = f'./ebm_ckpts/{task_config.name}_{config.param_type}' \
         #     f'{config.models[config.param_type].d_model}_diffusion.pth' # _w_mask_inverse.pth # _mlm_test # _w_mask #_diffusion
-        # print(f'\n3. Loading checkpoints from {ckpts_path}...')
-        # sebm_trainer.load_model(ckpts_path)##########################
+        # ckpts_path = './ire_reasoning/ebm_ckpts/countdown_bert384_sft.pth'
+        ckpts_path = f'./ire_reasoning/ebm_ckpts/{task_config.name}_{config.param_type}{config.models[config.param_type].d_model}_{config.train.stage}.pth'
+        print(f'\n3. Loading checkpoints from {ckpts_path}...')
+        sebm_trainer.load_model(ckpts_path)##########################
         
         if config.continue_train: #further tune the mlm model with fully masked t2 ('sft' stage)
             print(f'Continue train on {config.train.stage}...')
@@ -610,7 +635,7 @@ def main(config):
             
         
 
-    return ###############
+    # return ###############
 
     '''3. Evaluate'''
     k = 10

@@ -104,6 +104,7 @@ class BERTDataset(Dataset):
             - bert_label: padded label tensor of Size(max_len)
             - is_positive: bool, indicating whether is positive or not 
         '''
+        # print(f'\ninside _getitem_(), raw data: \n{self.lines[item]}')
         t2_all_zero = True
         while t2_all_zero: #randomly mask at least one position in t2
             # uniformly sample unmasking rate t

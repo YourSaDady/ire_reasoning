@@ -540,8 +540,9 @@ class MLPSequentialEBMs():
         
         
 class BERTSequentialEBMs():
-    def __init__(self, task_config, d_model, n_layers, heads=8, device='cpu'):
+    def __init__(self, tokenizer, task_config, d_model, n_layers, heads=8, device='cpu'):
         self.param_type = 'bert'
+        self.tokenizer = tokenizer
         self.task_config = task_config
         self.task_name = task_config.name
         if task_config.name.startswith('binary'):
@@ -998,6 +999,7 @@ class BERTSequentialEBMs():
             f'mlm_label({mlm_label.shape}): {mlm_label}, ' \
             f'mlm_input({mlm_input.shape}): {mlm_input}'
         # print(f'Inside pseudolikelihood: latent.shape: {latent.shape}, mlm_label.shape: {mlm_label.shape}')
+        # print(f'\nInside pseudolikelihood(), latent({latent.shape}): \n{latent}\nmlm_label({mlm_label.shape}): \n{mlm_label}\nmlm_input({mlm_input.shape}): \n{mlm_input}')
         u = torch.nonzero(mlm_label).squeeze() #Size(|u|)
         o = torch.nonzero(mlm_input != (self.special_tok_size-1)).squeeze() #include MASK state (the last special token id)
         o_len = o.size(0)
@@ -1014,6 +1016,8 @@ class BERTSequentialEBMs():
         logp_xu = []
         mlm_label = mlm_label.unsqueeze(-1) #Size(45,1)
         mlm_input = mlm_input.unsqueeze(-1)
+        if len(u_prime) == 0:
+            return None
         assert len(u_prime), f'u_prime is empty!! mlm_label: {mlm_label}, u: {u}, pi: {pi}'
         for i in range(len(u_prime)): #iter through |u'| EBMs
             condition_vals = mlm_label[u_prime[:i+1], :] #inclusive x_{u'_i} 121??
