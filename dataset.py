@@ -309,6 +309,7 @@ def load_gpt_data(task, max_len, train_batch_size, test_batch_size):
             DataLoader(test_data, batch_size=test_batch_size, shuffle=True, pin_memory=True)
     else:
         raise NotImplementedError
+    print(f'train_data[0]: \n{train_data[0]}')
     return train_loader, test_loader, len(train_data), len(test_data)
 
 def load_bert_data(task, stage, max_len, train_batch_size, val_batch_size):

@@ -30,11 +30,12 @@ def pad_sequence(seq, padding_value, cut_len):
     return seq
 
 class GPTDataset(Dataset):
-    def __init__(self, data_pair, max_len, tokenizer, max_new_tokens=32):
+    def __init__(self, data_pair, max_len, tokenizer, max_new_tokens=32, ignore_pad_for_loss=True):
         self.tokenizer = tokenizer
         self.max_len = max_len
         self.lines = data_pair #list of (input_str, output_str)
-        self.max_new_tokens=max_new_tokens
+        self.max_new_tokens = max_new_tokens
+        self.ignore_pad_for_loss = ignore_pad_for_loss 
         
     def __len__(self):
         return len(self.lines)
@@ -45,9 +46,9 @@ class GPTDataset(Dataset):
         
         param: item: line index
         return: model_input: 
-            - input_ids: src + SEP + tgt + EOS
+            - input_ids: src + SEP + MASK's(len(tgt)) + EOS (*edited)
             - attention_mask: 1's (len(input_ids))
-            - labels: IGNORE's (len(src)) + tgt
+            - labels: MASK's (len(src)) + SEP + tgt + EOS (*edited)
         
         
         '''
@@ -59,8 +60,14 @@ class GPTDataset(Dataset):
         tgt_ids, src_ids = tgt_ids[:(self.max_len)], \
             src_ids[-(self.max_len-len(tgt_ids)):] #cutoff to max_len
         source_mask = [IGNORE_INDEX] * len(src_ids)   
+        '''modified: masks in input and labels'''
         labels = source_mask + tgt_ids
         input_ids = src_ids + tgt_ids
+        # src_mask_ids, tgt_mask_ids = [self.tokenizer.mask_token_id] * len(src_ids) \
+        #     + [self.tokenizer.sep_token_id], [self.tokenizer.mask_token_ids] * len(tgt_ids) \
+        #     + [self.tokenizer.eos_token_id]
+        # input_ids, labels = src_ids + tgt_mask_ids, src_mask_ids + tgt_ids 
+        
         model_inputs["input_ids"] = input_ids
         # model_inputs["attention_mask"].append([1] * len(src_ids)+ [0]*(len(input_ids)-len(src_ids)))
         model_inputs["attention_mask"] = [1] * len(input_ids)
@@ -70,11 +77,15 @@ class GPTDataset(Dataset):
         model_inputs['input_ids'] = pad_sequence(model_inputs['input_ids'], \
             padding_value=self.tokenizer.pad_token_id, cut_len=self.max_len)
         model_inputs['attention_mask'] = pad_sequence(model_inputs['attention_mask'], \
-            padding_value=self.tokenizer.pad_token_id, cut_len=self.max_len)
+            padding_value=1, cut_len=self.max_len)
+        if self.ignore_pad_for_loss:
+            pad_value = IGNORE_INDEX
+        else:
+            pad_value = self.tokenizer.pad_token_id
         model_inputs['labels'] = pad_sequence(model_inputs['labels'], \
-            padding_value=IGNORE_INDEX, cut_len=self.max_len) #ignore pad token for loss
-        model_inputs['bert_label'] = pad_sequence(tgt_ids, padding_value=IGNORE_INDEX, \
-            cut_len=self.max_new_tokens) #max_new_tokens
+            padding_value=pad_value, cut_len=self.max_len) #ignore pad token for loss #modifed: IGNORE_INDEX
+        # model_inputs['bert_label'] = pad_sequence(tgt_ids, padding_value=IGNORE_INDEX, \
+        #     cut_len=self.max_new_tokens) #max_new_tokens
         
         model_inputs = {k: torch.tensor(v) for k, v in model_inputs.items()}
         

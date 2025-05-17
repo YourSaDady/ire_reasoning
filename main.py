@@ -93,10 +93,12 @@ class SequentialEBMsTrainer:
         log_freq=10, #log every 10 batches
         train_wandb=True,
         test_wandb=False,
+        is_ebm=True,
         device='cpu' ########debugging
     ):
         self.device = device
         self.sebm = sebm
+        self.is_ebm = is_ebm
         self.train_data = train_dataloader
         self.test_data = test_dataloader
         # Schedule the optimizer (as stated in paper)
@@ -104,21 +106,21 @@ class SequentialEBMsTrainer:
         self.optim_schedule = ScheduledOptim(
             self.optim, self.sebm.d_model, n_warmup_steps=warmup_steps #d_model决定initial_lr
         )
-        self.criterion = nn.CrossEntropyLoss().to(device)
+        self.criterion = nn.CrossEntropyLoss(label_smoothing=True).to(device)
         self.log_freq = log_freq
         # sampling configs:
         self.sampler = sampler
         self.sampling_times = sampling_times
         self.train_wandb = train_wandb
         self.test_wandb = test_wandb
-        print("Total Parameters:", sum([p.nelement() for p in self.sebm.model.parameters()]))
+        print(f"Total Parameters: {sum([p.nelement() for p in self.sebm.model.parameters()])}, is_ebm: {self.is_ebm}")
     
     def load_model(self, ckpts_path):
         state_dict = torch.load(ckpts_path)
         self.sebm.model.load_state_dict(state_dict)
         
     def train(self, epoch, stage):
-        self.iteration(epoch, self.train_data, stage)
+        self.iteration(epoch, self.train_data, stage, is_ebm=self.is_ebm)
 
     def test(self, epoch, stage): #暂时无用
         self.iteration(epoch, self.test_data, stage, train=False)
@@ -128,7 +130,7 @@ class SequentialEBMsTrainer:
         Recover a fully masked sequence using a specified scheduler, with decreasing t
         '''
         t_list = unmasking_schedule(k+2, scheduler)[1:-1]
-        # print(f't_list: {t_list}')
+        print(f't_list: {t_list}')
         if visualize:
             raise NotImplementedError
         else:
@@ -227,7 +229,7 @@ class SequentialEBMsTrainer:
         
     
     def iteration(self, epoch, data_loader, stage, train=True, schedule=None, \
-                  visual_ebms=None):
+                  is_ebm=True, visual_ebms=None):
         '''
         Algorithm core function (exclude sampling details)
         Performs train / test / evaluation iterations during different stages
@@ -262,14 +264,14 @@ class SequentialEBMsTrainer:
         # for i, (pos_data, neg_data) in data_iter: #batch
         for i, data in data_iter: #batch
             if train:
-                if stage == 'inference': #########for tesing
+                if stage != 'inference': #########for tesing
                     K = 10
                     t_list = unmasking_schedule(K+2, 'cosine')[1:-1]
                     scheduled_data, early_stop = self.add_schedule(data, t_list)
                 else:
                     early_stop = 1
                 for k in range(early_stop):
-                    if stage == 'inference': #########for tesing
+                    if stage != 'inference': #########for tesing
                         data = self.prepare_partial_data(scheduled_data, k+1) #AR-like
                     '''MLM training pradigm with varying t'''
                     # 0. batch_data will be sent into the device(GPU or cpu)
@@ -279,9 +281,9 @@ class SequentialEBMsTrainer:
                         xo, xu = data['bert_input'], data['bert_label'] #already masked with rate t
                     elif self.sebm.param_type == 'gpt':
                         self.sebm.model.train()
-                        for param in self.sebm.model.parameters():
-                            print(f'requires_grad: {param.requires_grad}')
-                        xo = data #forward argument is a dict
+                        # for param in self.sebm.model.parameters():
+                        #     print(f'requires_grad: {param.requires_grad}')
+                        xo, xu = data, data['labels'] #forward argument is a dict
                     # neg_xo, neg_xu = neg_data['bert_input'], neg_data['bert_label']
                     # print(f'\nxo({xo.shape}): \n{xo}\nxu({xu.shape}): \n{xu}\n') # both Size([4, 45])
                     # 1. Forward MLM to generate the gamma for calculating the energy landscapes
@@ -291,15 +293,16 @@ class SequentialEBMsTrainer:
                     
                     #_________________test: BERT mlm_loss___________________
                     # print(f'\nxo.shape: {xo.shape}') #4,50
-                    mlm_output = self.sebm.forward(xo, None, is_ebm=False)
+                    mlm_output, org_loss = self.sebm.forward(xo, None, is_ebm=False)
                     # print("mlm_output.requires_grad=", mlm_output.requires_grad, ', mlm_output.shape: ', mlm_output.shape)  # Should be True
                     # mlm_output = self.sebm.forward(xo, data['segment_label'], is_ebm=False) #test, softmaxed
                     # mlm_criterion = nn.NLLLoss(ignore_index=0)
                     mlm_criterion = nn.CrossEntropyLoss()
                     # mlm_loss = mlm_criterion(mlm_output.transpose(1, 2), xu)
                     # print(f"\nmlm_output.dtype: {mlm_output.dtype}, bert_label.dtype: {xu.dtype}")
-                    # print(f"mlm_output({mlm_output.shape}): \n{mlm_output},\nbert_label({xu.shape}): \n{xu}")
-                    mlm_loss = mlm_criterion(mlm_output.view(-1, mlm_output.size(-1)), data['bert_label'].view(-1))
+                    # print(f"mlm_output({mlm_output.shape}): \n{mlm_output},\nlabels({xu.shape}): \n{xu}") #Size(4,50,31), Size(4,50)?
+                    mlm_loss = mlm_criterion(mlm_output.view(-1, mlm_output.size(-1)), xu.view(-1))
+                    # print(f'\nmlm_loss: {mlm_loss}, loss: {org_loss}')
                     #———————————————————————————————————————————————————————
                     
                     # print(f'\ngamma shape: {gamma.shape}') #Size(batch_size, seq_len, num_classes)
@@ -311,8 +314,11 @@ class SequentialEBMsTrainer:
                     for r in range(xu.size(0)): #iter within batch
                         # print(f'\n_____\nr: {r}, k: {k}\n________\n')
                         # assert torch.nonzero(xu[r]).squeeze().dim(), f"xu[r] is all zero: \n{xu[r]}"
-                        logp_xu = self.sebm.pseudolikelihood(gamma[r], xu[r], xo[r]) #Size(|u'|, num_classes)
-                        if logp_xu == None:
+                        if self.sebm.param_type == 'bert':
+                            logp_xu = self.sebm.pseudolikelihood(gamma[r], xu[r], xo[r]) #Size(|u'|, num_classes)
+                        elif self.sebm.param_type == 'gpt':
+                            logp_xu = self.sebm.pseudolikelihood(gamma[r], xu[r], xo['input_ids'][r]) #gamma[r]: Size(50, 31), xu[r]: Size(50), xo[r]: Size(50)
+                        if (logp_xu == None) or (logp_xu == -1): #not ebm #############################TODO: gpt需要加上后边的condition; bert要去掉后边的
                             break
                         xu_token_ids = torch.nonzero(xu[r]).squeeze() #Size(|u'|)
                         if xu_token_ids.dim()==0 and xu_token_ids:
@@ -344,7 +350,7 @@ class SequentialEBMsTrainer:
                     # loss = ce_loss + contrast_loss
                     loss = mlm_loss
                     if self.train_wandb:
-                        wandb.log({"l_ce": ce_loss, "l_contrast": contrast_loss, "loss": loss, "mlm_loss": mlm_loss})
+                        wandb.log({"l_ce": ce_loss, "l_contrast": contrast_loss, "loss": org_loss, "mlm_loss": mlm_loss}) #loss: loss
                     # #_________mlm__________
                     # if i % 100 == 0:
                     #     pred = mlm_output.argmax(dim=-1)
@@ -419,12 +425,17 @@ class SequentialEBMsTrainer:
                     if k+1 == early_stop: #fully unmasked before reaching k
                         break
                 pred = partial_pred
-                correct_count = self.eval_metric(pred, scheduled_data['bert_label'])
-                total_correct += correct_count
+                invalid_pos = scheduled_data['bert_label'] < len(special_tokens)
+                pred[invalid_pos] = scheduled_data['bert_label'][invalid_pos]
+                correct = self.eval_metric(pred, scheduled_data['bert_label'])
+                total_correct += correct
                 total_samples = (i+1)*scheduled_data['bert_input'].size(0)
-                # print(f'\nfinal pred: \n{pred}, \nk_losses: \n{k_losses},\nk_energies: \n{k_energies}')
-                # print(f"\nlabels: {scheduled_data['bert_label']}\ncorrect_count: {correct_count}")
-                # 3. check correctness (tk-avg and final) and record the energy landscape TODO
+                # print(f"pred: \n{pred}, \nlabel: \n{scheduled_data['bert_label']},\ncorrrect: {correct}")
+                # # ______decode______ 
+                # decoded_label = self.sebm.tokenizer.decode(scheduled_data['bert_label'][0].tolist(), skip_special_tokens=True)
+                # decoded_pred = self.sebm.tokenizer.decode(pred[0].tolist(), skip_special_tokens=True)
+                # print(f'i:{i}, \ndecoded label: \n{decoded_label}, \ndecoded pred: \n{decoded_pred},\ncorrrect: {correct}\n\n')
+                # # __________________
                 # TODO 单独记录energy变化
                 flattened_loss, flattened_energy = [], []
                 for k in k_losses:
@@ -443,35 +454,60 @@ class SequentialEBMsTrainer:
             
             elif (not train) and stage == 'sft':
                 # print(f'data: \n{data}')
-                logits = self.sebm.forward(data['bert_input'], None, is_ebm=False) # data['segment_label']
-                loss = self.criterion(logits.view(-1, logits.size(-1)), data['bert_label'].view(-1)) #flattened (batch_size * seq_len)
-                # print(f'logits({logits.shape}): \n{logits}')
-                pred = logits.argmax(dim=-1) #argmin for "_mlm_test.pth"(训反了, energy漏加-); argmax for "_w_mask.pth"?
-                invalid_pos = data['bert_label'] < len(special_tokens)
-                pred[invalid_pos] = data['bert_label'][invalid_pos]
-                # print(f"logits.shape: {logits.shape}, label.shape: {data['bert_label'].shape}")
-                correct = self.eval_metric(pred, data['bert_label'])
-                # print(f"pred: \n{pred}, \nlabel: \n{data['bert_label']},\ncorrrect: {correct}")
-                # # ______decode______ 
-                # decoded_label = self.sebm.tokenizer.decode(data['bert_label'][0].tolist(), skip_special_tokens=True)
-                # decoded_pred = self.sebm.tokenizer.decode(pred[0].tolist(), skip_special_tokens=True)
-                # print(f'decoded label: \n{decoded_label}, \ndecoded pred: \n{decoded_pred}')
-                # # __________________
+                if self.sebm.param_type == 'bert':
+                    logits, _ = self.sebm.forward(data['bert_input'], None, is_ebm=False) # data['segment_label']
+                    loss = self.criterion(logits.view(-1, logits.size(-1)), data['bert_label'].view(-1)) #flattened (batch_size * seq_len)
+                    # print(f'logits({logits.shape}): \n{logits}')
+                    pred = logits.argmax(dim=-1) #argmin for "_mlm_test.pth"(训反了, energy漏加-); argmax for "_w_mask.pth"?
+                    invalid_pos = data['bert_label'] < len(special_tokens)
+                    pred[invalid_pos] = data['bert_label'][invalid_pos]
+                    # print(f"logits.shape: {logits.shape}, label.shape: {data['bert_label'].shape}")
+                    correct = self.eval_metric(pred, data['bert_label'])
+                    # print(f"pred: \n{pred}, \nlabel: \n{data['bert_label']},\ncorrrect: {correct}")
+                    # ______decode______ 
+                    # decoded_label = self.sebm.tokenizer.decode(data['bert_label'][0].tolist(), skip_special_tokens=True)
+                    # decoded_pred = self.sebm.tokenizer.decode(pred[0].tolist(), skip_special_tokens=True)
+                    # print(f'i:{i}, \ndecoded label: \n{decoded_label}, \ndecoded pred: \n{decoded_pred},\ncorrrect: {correct}\n\n')
+                    # # __________________
+                elif self.sebm.param_type == 'gpt':
+                    logits, org_loss = self.sebm.forward(data)
+                    loss = self.criterion(logits.view(-1, logits.size(-1)), data['labels'].view(-1))
+                    pred = logits.argmax(dim=-1)
+                    invalid_pos = data['labels'] < len(special_tokens)
+                    pred[invalid_pos] = data['labels'][invalid_pos]
+                    # print(f"logits.shape: {logits.shape}, label.shape: {data['labels'].shape}")
+                    correct = self.eval_metric(pred, data['labels'])
+                    # print(f"pred: \n{pred}, \nlabel: \n{data['labels']},\ncorrrect: {correct}")
+                    # ______decode______ 
+                    decoded_label = self.sebm.tokenizer.decode(data['labels'][0].tolist(), skip_special_tokens=True)
+                    decoded_pred = self.sebm.tokenizer.decode(pred[0].tolist(), skip_special_tokens=True)
+                    # print(f'decoded label: \n{decoded_label}, \ndecoded pred: \n{decoded_pred}')
+                    # __________________
+                else:
+                    raise NotImplementedError
                 avg_loss += loss.item()
                 total_correct += correct
-                total_samples += data['bert_input'].size(0)
+                if self.sebm.param_type == 'bert':
+                    total_samples += data['bert_input'].size(0)
+                elif self.sebm.param_type == 'gpt':
+                    total_samples += data['input_ids'].size(0)
                 if self.test_wandb:
-                    wandb.log({"l_ce": loss, "avg_acc": total_correct/total_samples * 100})
+                    wandb.log({"l_ce": loss, 'org_loss': org_loss, "avg_acc": total_correct/total_samples * 100})
                 
                 # save stats to jsonl file
                 stats = {
                     'sample_id': i*4,
                     'batch_correct': correct,
                     'sample_loss': round(loss.item(), 2), #>10
+                    'decoded_label': decoded_label,
+                    'decoded_pred': decoded_pred,
                     'pred': pred.cpu().tolist()[0],
-                    'label': data['bert_label'].cpu().tolist()[0],
                     'logits': [[round(ele, 2) for ele in row] for row in logits.cpu().tolist()[0]]
                 }
+                if self.sebm.param_type == 'bert':
+                    stats['label'] = data['bert_label'].cpu().tolist()[0]
+                elif self.sebm.param_type == 'gpt':
+                    stats['label'] = data['labels'].cpu().tolist()[0]
                 with open(eval_path, 'a') as statsfile:
                     statsfile.write(json.dumps(stats)+'\n')
                 
@@ -484,7 +520,9 @@ class SequentialEBMsTrainer:
             # if i % self.log_freq == 0: ###############
             #     data_iter.write(str(post_fix)) ##################
                 
-            break ###############test
+            # break ###############test
+            # if i == 10:
+            #     break ###############test
         #end of batch iter
         
         # print(
@@ -494,7 +532,7 @@ class SequentialEBMsTrainer:
         # ) 
         if train:
             print(f'\n\nFinished training.')
-            ckpts_path = f'./ire_reasoning/ebm_ckpts/{self.sebm.task_name}_{self.sebm.param_type}{self.sebm.d_model}_{stage}.pth' #w_mask_inverse_test
+            ckpts_path = f'./ire_reasoning/ebm_ckpts/{self.sebm.task_name}_{self.sebm.param_type}{self.sebm.d_model}_{stage}_new.pth' #w_mask_inverse_test
             torch.save(self.sebm.model.state_dict(), ckpts_path)
             print(f'\nmodel saved to {ckpts_path}')
         elif (not train) and (schedule is not None):
@@ -503,6 +541,7 @@ class SequentialEBMsTrainer:
                 f'final accuracy: {final_acc}')
             with open(eval_path, 'a') as statsfile:
                 statsfile.write(f'\nFinal Accuracy: {final_acc}\n')
+            print(f'\nStats written to path: {eval_path}')
                 
                 
                 
@@ -562,7 +601,7 @@ def main(config):
             d_model=d_model, #######32 hidden_size
             n_layers=n_layers,
             heads=heads,
-            device='cpu'
+            device=config.device
             )
     elif config.param_type == 'gpt': #gpt2-6m-scratch from diffu-vs-ar paper
         gpt_config = AutoConfig.from_pretrained('./ire_reasoning/models/model_config_tiny') #pwd: EBM
@@ -571,7 +610,7 @@ def main(config):
             gpt2_scratch,
             task_config,
             model_config,
-            device='cpu', #TODO
+            device=config.device, #TODO
         )
     else:
         raise NotImplementedError
@@ -583,10 +622,12 @@ def main(config):
         train_wandb=config.train.wandb,
         sampler=config.sampling.sampler,
         test_wandb=config.sampling.wandb,
-        sampling_times=config.sampling.times
+        is_ebm=config.is_ebm,
+        sampling_times=config.sampling.times,
+        device=config.device
     )
 
-    return ##############
+    # return ##############
 
     if not config.load_ebm_ckpts:
         print(f'No checkpoints found.')

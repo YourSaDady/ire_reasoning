@@ -14,6 +14,8 @@ from pathlib import Path
 os.chdir('/home/yichuan/HKU/EBM')
 # print(f'The current working directory: {os.getcwd()}')
 
+IGNORE_INDEX = -100
+
 '''
 A simplified version of BERT and its relative classes from scratch.
 
@@ -125,7 +127,8 @@ class BERTDataset(Dataset):
             # keep t1 unmasked and t2 fully masked as the initial sequence 
             elif self.stage == 'inference': 
                 # (t1, t1_label), (t2, t2_label) = self.mask(t1, 0), self.mask(t2, 1)
-                (t1, t1_label), (t2, t2_label) = self.encode(t1, 0), self.encode(t2, 1)
+                (t1, t1_ignore, t1_mask), (t2, t2_ignore, t2_mask) = \
+                    self.encode(t1), self.encode(t2) 
                 t2_all_zero = False
             else:
                 raise NotImplementedError
@@ -133,19 +136,22 @@ class BERTDataset(Dataset):
         # print(f'After added special tokens, t1({len(t1)}): \n{t1}, \nt1_label: \n{t1_label}, \nt2({len(t2)}): {t2}, \nt2_label: {t2_label}')
         # concatenate t1 and t2 and add padding to max_len
         # print(f'\nself.max_len: {self.max_len}')
-        bert_input = (t1 + [self.tokenizer._vocab_str_to_int["[SEP]"]] + t2 + \
-            [self.tokenizer._vocab_str_to_int["[EOS]"]])[:self.max_len]
-        bert_label = (t1_label + [self.tokenizer._vocab_str_to_int["[SEP]"]] + t2_label \
-            + [self.tokenizer._vocab_str_to_int["[EOS]"]])[:self.max_len]
+        bert_input = (t1 + [self.tokenizer.sep_token_id] + t2 + \
+            [self.tokenizer.eos_token_id])[:self.max_len]
+        bert_label = (t1_ignore + [self.tokenizer.sep_token_id] + t2 \
+            + [self.tokenizer.eos_token_id])[:self.max_len]
+        bert_attn = [1] * len(bert_input)
         assert len(bert_input) == len(bert_label)
-        padding = [self.tokenizer._vocab_str_to_int["[PAD]"] for _ in \
-            range(self.max_len - len(bert_input))]
-        bert_input.extend(padding), bert_label.extend(padding)
+        input_padding = [self.tokenizer.pad_token_id] * (self.max_len - len(bert_input))
+        label_padding = [IGNORE_INDEX] * (self.max_len - len(bert_input)) #self.tokenizer.pad_token_id
+        attn_padding = [0] * (self.max_len - len(bert_input))
+        bert_input.extend(input_padding), bert_label.extend(label_padding), bert_attn.extend(attn_padding)
         
         
         output = {
             'bert_input': bert_input,
             'bert_label': bert_label,
+            'bert_attn': bert_attn,
         }
         # print(f'final:\nraw line[idx]: \n{self.lines[item]}\nbert_input: \n{bert_input}, \nbert_label: \n{bert_label}') # \nsegment_label: \n{segment_label}
         output = {k: torch.tensor(v) for k, v in output.items()}
@@ -305,14 +311,12 @@ class BERTDataset(Dataset):
             
         return t1, t2
     
-    def encode(self, sentence, t):
+    def encode(self, sentence):
         sen_ids = self.tokenizer.encode(sentence)
         sen_mask = [self.tokenizer._vocab_str_to_int["[MASK]"]]*len(sen_ids)
+        sen_ignore = [IGNORE_INDEX] * len(sen_ids)
         # print(f'inside encode(), t: {t}, \nsen_ids: \n{sen_ids}, \nsen_mask: \n{sen_mask}')
-        if t == 0:
-            return (sen_ids, sen_mask)
-        elif t == 1:
-            return (sen_mask, sen_ids)
+        return sen_ids, sen_ignore, sen_mask
     
     def mask(self, sentence, t):
         tokens = sentence.split() #only useful for textual sentences

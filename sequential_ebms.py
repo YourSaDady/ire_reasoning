@@ -32,6 +32,7 @@ from models.mlp import MLP
 from models.bert import DiscreteDiffusion
 
 inf = 1000000
+IGNORE_INDEX = -100
 
 def swish(x): #当做一种mlp的activation就好：在linear与ReLU之间可调。beta=1的时候(i.e. this definition)叫SiLU (Sigmoid Linear Unit)
     return x * torch.sigmoid(x)
@@ -572,7 +573,10 @@ class BERTSequentialEBMs():
     
     # wrapper
     def forward(self, bert_input, segment_label, is_ebm):
-        return self.model.forward(bert_input, segment_label, is_ebm)
+        if is_ebm:
+            return self.model.forward(bert_input, segment_label, is_ebm)
+        else:
+            return self.model.forward(bert_input, segment_label, is_ebm), 0.0
         
     def energy(self, idx:int, val: bool, rest_idx: torch.Tensor, latent: torch.Tensor, \
         batchalize=False) -> torch.Tensor:
@@ -760,6 +764,7 @@ class BERTSequentialEBMs():
                 # forward pass with softmax in a single run (gamma.size = (30,6))
                 gamma = self.model.forward(model_input.unsqueeze(0), \
                         None, is_ebm=False).view(-1, self.vocab_size) # sample_batch['segment_label'][b].unsqueeze(0)
+                gamma[:, 0] = IGNORE_INDEX
                 # print(f'gamma: {gamma}')
                 yo = gamma[yo_idx, :].argmax(dim=-1) #same as argmin_energy #argmin for '_w_mask.pth'
                 # print(f'b={b}, yo({yo.shape}): {yo}')
@@ -1078,8 +1083,8 @@ class GPTSequentialEBMs():
     def sampling(self):
         raise
 
-    def pseudolikelihood(self):
-        raise
+    def pseudolikelihood(self, latent, mlm_label, mlm_input):
+        return -1
     
     
     # 暂时放弃
@@ -1091,50 +1096,49 @@ class GPTSequentialEBMs():
         '''
         input_dict: dict {input_ids, attnetion_mask, src_mask, (label?不存在?)}
         '''
-        # output_dict = self.model.forward( #loss, logits (4, 512, 31), past_key_values
-        #     input_ids=input_dict['input_ids'],
-        #     attention_mask=input_dict['attention_mask'], #label没用上
-        #     labels=input_dict['labels'], #bert_label
-        #     max_new_tokens=32,
-        #     output_logits=True
-        # )
-        if not no_grad:
-            '''remove the n_grad decorator in generate() to allow gradient backprop'''
-            generate_with_grad = undecorated(self.model.generate)
-            self.model.generate_with_grad = MethodType(generate_with_grad, self.model)
-            output_dict = self.model.generate_with_grad(
-                input_ids=input_dict['input_ids'],
-                attention_mask=input_dict['attention_mask'], #label没用上
-                labels=input_dict['bert_label'],
-                do_sample=False,
-                max_new_tokens=32,
-                output_logits=True,
-                tokenizer=self.tokenizer,
-                eos_token_id=self.tokenizer.eos_token_id,
-                return_dict_in_generate=True,
-            )
-        print(f'output_dict: {output_dict}')
-        print(f'keys in output_dict: ') #sequences(Size(4,544)), logits, past_key_values 
-        for k,v in output_dict.items():
-            print(f' - {k}')
-            if torch.is_tensor(v):
-                print(f'v.shape: {v.shape}')
+        output_dict = self.model.forward( #loss, logits (4, 512, 31), past_key_values
+            input_ids=input_dict['input_ids'],
+            attention_mask=input_dict['attention_mask'], #label没用上
+            labels=input_dict['labels'], #bert_label
+            # max_new_tokens=32,
+            # output_logits=True
+        )
+        # if not no_grad:
+        #     '''remove the n_grad decorator in generate() to allow gradient backprop'''
+        #     generate_with_grad = undecorated(self.model.generate)
+        #     self.model.generate_with_grad = MethodType(generate_with_grad, self.model)
+        #     output_dict = self.model.generate_with_grad(
+        #         input_ids=input_dict['input_ids'],
+        #         attention_mask=input_dict['attention_mask'], #label没用上
+        #         labels=input_dict['labels'],
+        #         do_sample=False,
+        #         max_new_tokens=32,
+        #         output_logits=True,
+        #         tokenizer=self.tokenizer,
+        #         eos_token_id=self.tokenizer.eos_token_id,
+        #         return_dict_in_generate=True,
+        #     )
+        # print(f'keys in output_dict: ') #sequences(Size(4,544)), logits, past_key_values 
+        # for k,v in output_dict.items():
+        #     print(f' - {k}')
+        #     if torch.is_tensor(v):
+        #         print(f'    - v.shape: {v.shape}')
         # output_seq = [] #torch.Size([4, 544]), [32]torch.Size([4, 31]) 
         # for i in range(output_dict.sequences.size(0)):
         #     output_seq.append(self.tokenizer.decode(output_dict.sequences[i, -32:]))
-        logits = torch.stack(output_dict.logits).permute(1,0,2)
-        print(f'logits.shape: {logits.shape}') # torch.Size([4, 32, 31])
+        logits = output_dict.logits #Size([4, 50, 31])
+        loss = output_dict.loss #scalar
         # print(f'output_seq: \n___\n{output_seq}\n___\n')
         
         if is_ebm:
-            return logits #gamma
+            return logits #gamma, mlm_output
         else: #return output ids (argmax, if not do_sample)
-            assert torch.equal(output_dict.sequences[:, -32:], \
-                torch.argmax(logits, dim=-1)), \
-                    f'output_dict.sequences[:, -32:]: ' \
-                    f'\n{output_dict.sequences[:, -32:]}, whereas '\
-                    f'argmax logits: {torch.argmax(logits, dim=-1)}'
+            # assert torch.equal(output_dict.sequences[:, -32:], \
+            #     torch.argmax(logits, dim=-1)), \
+            #         f'output_dict.sequences[:, -32:]: ' \
+            #         f'\n{output_dict.sequences[:, -32:]}, whereas '\
+            #         f'argmax logits: {torch.argmax(logits, dim=-1)}'
             # return torch.argmax(logits, dim=-1)
             
-            return self.softmax(logits)
+            return self.softmax(logits), loss
         
