@@ -686,6 +686,7 @@ class BERTSequentialEBMs():
                 #     f"\nmodel_input: {model_input}")
                 for t in range(sampling_times):
                     # print(f'\n____\nStart t={t}-th sampling...\n')
+                    # print(f'forward input.shape: {model_input.unsqueeze(0)}')
                     gamma = self.model.forward(model_input.unsqueeze(0), \
                         None, is_ebm=True).view(-1, self.vocab_size) # sample_batch['segment_label'][b].unsqueeze(0)
                     # print(f'after reshape, gamma({gamma.shape})') #30,6
@@ -722,10 +723,11 @@ class BERTSequentialEBMs():
                         # update model input as well
                         # print(f'yo\' energy is smaller, before update, previous_pred: {previous_pred}')
                         previous_pred[yo_idx] = yo #?
-                        # print(f'after update, previous_pred: {previous_pred}')
+                        # print(f'after update, previous_pred: {previous_pred}, \nbert_input: {sample_batch["bert_input"][b]}')
                         model_input = sample_batch['bert_input'][b].clone()
-                        model_input[model_input == (self.special_tok_size-1)] = 0
-                        model_input += previous_pred
+                        model_input[previous_pred != 0] = previous_pred[previous_pred != 0]
+                        # model_input[model_input == (self.special_tok_size-1)] = 0
+                        # model_input += previous_pred
                         # print(f'model_input: {model_input}')
                     # 4. Record partial prediction, losses(using logits) and energies (last sample in the batch)
                     if b == 0:
@@ -747,7 +749,8 @@ class BERTSequentialEBMs():
                 previous_pred = partial_pred[b]
                 yo_idx = ((sample_batch['schedule_label'][b] > 0) & \
                     (sample_batch['schedule_label'][b] <= order_label)).nonzero(as_tuple=True)[0]
-                # print(f'yo_idx.shape({yo_idx.shape}): \n{yo_idx}') #Size(|o|)
+                # if b == 0:
+                #     print(f'k: {order_label}, yo_idx({yo_idx.shape}): \n{yo_idx}') #Size(|o|)
                 # yo = previous_pred[yo_idx]
                 # print(f'yo({yo.shape}): \n{yo}')
                 model_input = sample_batch['bert_input'][b].clone()
@@ -765,11 +768,11 @@ class BERTSequentialEBMs():
                 gamma = self.model.forward(model_input.unsqueeze(0), \
                         None, is_ebm=False).view(-1, self.vocab_size) # sample_batch['segment_label'][b].unsqueeze(0)
                 gamma[:, 0] = IGNORE_INDEX
-                # print(f'gamma: {gamma}')
+                # print(f'gamma.shape: {gamma.shape}') #torch.Size([50, 31])
                 yo = gamma[yo_idx, :].argmax(dim=-1) #same as argmin_energy #argmin for '_w_mask.pth'
                 # print(f'b={b}, yo({yo.shape}): {yo}')
                 previous_pred[yo_idx] = yo
-                pred.append(previous_pred.view(1,-1))
+                pred.append(previous_pred.unsqueeze(0)) #view(1,-1)
                 # record loss and energy (first sample per batch)
                 if b == 0:
                     # print(f'k={order_label}, gamma: \n{gamma}')

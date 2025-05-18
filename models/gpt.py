@@ -61,12 +61,12 @@ class GPTDataset(Dataset):
             src_ids[-(self.max_len-len(tgt_ids)):] #cutoff to max_len
         source_mask = [IGNORE_INDEX] * len(src_ids)   
         '''modified: masks in input and labels'''
-        labels = source_mask + tgt_ids
-        input_ids = src_ids + tgt_ids
-        # src_mask_ids, tgt_mask_ids = [self.tokenizer.mask_token_id] * len(src_ids) \
-        #     + [self.tokenizer.sep_token_id], [self.tokenizer.mask_token_ids] * len(tgt_ids) \
-        #     + [self.tokenizer.eos_token_id]
-        # input_ids, labels = src_ids + tgt_mask_ids, src_mask_ids + tgt_ids 
+        # labels = source_mask + tgt_ids
+        # input_ids = src_ids + tgt_ids
+        src_mask_ids = [self.tokenizer.mask_token_id]*len(src_ids)+[self.tokenizer.sep_token_id]
+        tgt_mask_ids = [self.tokenizer.mask_token_id]*len(tgt_ids)+[self.tokenizer.eos_token_id]
+        input_ids = src_ids + tgt_mask_ids
+        labels = src_mask_ids + tgt_ids 
         
         model_inputs["input_ids"] = input_ids
         # model_inputs["attention_mask"].append([1] * len(src_ids)+ [0]*(len(input_ids)-len(src_ids)))

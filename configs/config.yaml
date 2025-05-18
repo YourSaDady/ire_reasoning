@@ -1,10 +1,10 @@
 # arguments
 task_name: countdown  # binary-addition
-param_type: gpt # mlp, transformer, bert, gpt
+param_type: bert # mlp, transformer, bert, gpt
 is_ebm: False
 # max_len: 128
 # special_tokens: ['<mask>']
-load_ebm_ckpts: False ###########
+load_ebm_ckpts: True ###########
 continue_train: False #######for further training with fully masked t2 (inference) after trained on mlm
 device: cpu #cpu, cuda
 
@@ -88,11 +88,11 @@ train:
   wandb: True ####################### 
 
 sampling:
-  stage: sft #sft(default mask rate is t),inference(fully mask, depend on sampler)
+  stage: inference #sft(default mask rate is t),inference(fully mask, depend on sampler)
   batch_size: 1 #4
   times: 10
   steps: 1
-  sampler: argmin_energy #argmin_energy(traditional loss), gibbs(ebm method)
+  sampler: gibbs #argmin_energy(traditional loss), gibbs(ebm method)
   wandb: False
   # temperature: 1.0cd
 

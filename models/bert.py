@@ -136,10 +136,10 @@ class BERTDataset(Dataset):
         # print(f'After added special tokens, t1({len(t1)}): \n{t1}, \nt1_label: \n{t1_label}, \nt2({len(t2)}): {t2}, \nt2_label: {t2_label}')
         # concatenate t1 and t2 and add padding to max_len
         # print(f'\nself.max_len: {self.max_len}')
-        bert_input = (t1 + [self.tokenizer.sep_token_id] + t2 + \
+        bert_input = (t1 + [self.tokenizer.sep_token_id] + t2_mask + \
             [self.tokenizer.eos_token_id])[:self.max_len]
-        bert_label = (t1_ignore + [self.tokenizer.sep_token_id] + t2 \
-            + [self.tokenizer.eos_token_id])[:self.max_len]
+        bert_label = (t1_mask + [self.tokenizer.sep_token_id] + t2 \
+            + [self.tokenizer.eos_token_id])[:self.max_len] #train: ignore src; inference: mask src
         bert_attn = [1] * len(bert_input)
         assert len(bert_input) == len(bert_label)
         input_padding = [self.tokenizer.pad_token_id] * (self.max_len - len(bert_input))
