@@ -83,7 +83,7 @@ train:
   epochs: 1 #1 #40 #same as diffusion-vs-ar ########
   lr: 3e-4 #有用: init optimizer
   early_stop_threshold: 0.01 #没用?
-  batch_size:  1 #200 #100 #sudoku must be 1
+  batch_size:  200 #200 #100 #sudoku must be 1
   visualize: True
   wandb: True ####################### 
 

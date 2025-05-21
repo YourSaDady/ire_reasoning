@@ -303,7 +303,8 @@ class SequentialEBMsTrainer:
                     
                     #_________________test: BERT mlm_loss___________________
                     # print(f'\nxo.shape: {xo.shape}') #4,50
-                    mlm_output, org_loss = self.sebm.forward(xo, None, is_ebm=False)
+                    mlm_output, org_loss = self.sebm.forward(xo, None, is_ebm=False) #xo is partially unmasked 'bert_input'
+                    # print(f'mlm_output.shape: {mlm_output.shape}') #Size(batch_size, |u'|, num_classes)
                     mlm_criterion = nn.CrossEntropyLoss()
                     mlm_loss = mlm_criterion(mlm_output.view(-1, mlm_output.size(-1)), xu.view(-1))
                     # print(f'\nmlm_loss: {mlm_loss}, loss: {org_loss}')
@@ -313,11 +314,11 @@ class SequentialEBMsTrainer:
                     
                     # _____________2-1 tentatively annotated for testing ___________
                     # 2-1. Estimate the 1D conditional logp(xu | xo) via pseudolikelihood
-                    ce_loss = torch.tensor(0., requires_grad=True).to(self.device)
                     contrast_loss = torch.tensor(0., requires_grad=True).to(self.device)
                     # recover the ignored token to padding
                     xu_ = xu.clone()
                     xu_[xu_ == -100] = 0
+                    logp_xu_list, xu_list = [], [] #to store a batch of logp_xu's, of Size(batch_size, |u'|, num_classes)
                     for r in range(xu.size(0)): #iter within batch
                         # print(f'\n_____\nr: {r}, k: {k}\n________\n')
                         # assert torch.nonzero(xu[r]).squeeze().dim(), f"xu[r] is all zero: \n{xu[r]}"
@@ -333,6 +334,8 @@ class SequentialEBMsTrainer:
                         xu_label = xu[r][xu_token_ids]
                         assert logp_xu.size(0) == xu_label.size(0), \
                             f'\nlogp_xu.shape: {logp_xu.shape}, xu_label.shape: {xu_label.shape}'
+                        logp_xu_list.append(logp_xu.unsqueeze(0))
+                        xu_list.append(xu_label.unsqueeze(0))
                         # print(f'logp_xu.shape: {logp_xu.shape}, xu_label.shape({xu_label.shape}): {xu_label}')
                         # if r == 0:
                         #     print(f'xu_token_ids: {xu_token_ids}, \nxu_label: {xu_label}')
@@ -344,24 +347,25 @@ class SequentialEBMsTrainer:
                         #     xo[r], neg_xo[r]
                         # )
                         # #_____________________________
-                        
-                        ce_loss = ce_loss + self.criterion(logp_xu, xu_label)
-                        loss_is_nan = torch.isnan(torch.tensor(ce_loss)).any()
-                        assert loss_is_nan == False, f'\nce_loss becomes NaN! '\
-                            f'\nce_loss: {ce_loss}, is_nan: {loss_is_nan}\n' \
-                            f'logp_xu: \n{logp_xu}, \nxu_label: \n{xu_label}, \ngamma[r]: \n{gamma[r]}'
                     #end of row iter
-                    if logp_xu == None:
-                        break
-                    
+                    batch_logp_xu = torch.cat(logp_xu_list, dim=1).squeeze(0) #flattened: Size(sum of |u'| within the batch, num_classes)
+                    batch_xu = torch.cat(xu_list, dim=1).view(-1) #flattened: Size(sum of |u'| within the batch) 
+                    assert batch_logp_xu.dim(), f'k = {k}, early_stop = {early_stop}, logp_xu_list is empty!: {logp_xu_list}, '
+                    # print(f'\nbatch_logp_xu.shape:{batch_logp_xu.shape}, batch_xu.shape: {batch_xu.shape}')
                     # 2-2. Contrast-loss
-                    # TODO
+                    ce_loss = self.criterion(batch_logp_xu, batch_xu)
+                    loss_is_nan = torch.isnan(ce_loss.clone().detach()).any()
+                    assert loss_is_nan == False, f'\nce_loss becomes NaN! '\
+                        f'\nce_loss: {ce_loss}, is_nan: {loss_is_nan}\n' \
+                        f'batch_logp_xu: \n{batch_logp_xu}, \nbatch_xu: \n{batch_xu}, \ngamma[r]: \n{gamma[r]}'
+                            
                     loss = ce_loss + contrast_loss
                     # loss = mlm_loss
                     if self.train_wandb:
                         wandb.log({"l_ce": ce_loss, "l_contrast": contrast_loss, "loss": org_loss, "mlm_loss": mlm_loss}) #loss: loss
                     # #_________mlm__________
-                    print(f'i: {i}, ce_loss: {ce_loss}, mlm_loss: {mlm_loss}')
+                    if i % 5 == 0:
+                        print(f'i={i}, k={k}, ce_loss: {ce_loss}, mlm_loss: {mlm_loss}')
                     # if i % 100 == 0:
                     #     pred = mlm_output.argmax(dim=-1)
                     #     correct = self.eval_metric(pred, data['bert_label'])
@@ -543,7 +547,7 @@ class SequentialEBMsTrainer:
             # if i % self.log_freq == 0: ###############
             #     data_iter.write(str(post_fix)) ##################
                 
-            break ###############test
+            # break ###############test
             # if i > 500:
             #     break ###############test
         #end of batch iter

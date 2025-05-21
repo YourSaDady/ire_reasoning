@@ -1007,11 +1007,13 @@ class BERTSequentialEBMs():
             f'mlm_label({mlm_label.shape}): {mlm_label}, ' \
             f'mlm_input({mlm_input.shape}): {mlm_input}'
         # print(f'Inside pseudolikelihood: latent.shape: {latent.shape}, mlm_label.shape: {mlm_label.shape}')
-        print(f'\nInside pseudolikelihood(), latent({latent.shape}): \n{latent}\nmlm_label({mlm_label.shape}): \n{mlm_label}\nmlm_input({mlm_input.shape}): \n{mlm_input}')
-        print(f'\nspecial_tok_size: {self.special_tok_size}')
-        u = torch.nonzero(mlm_label != self.tokenizer.pad_tokn_id).squeeze() #Size(|u|)
-        # maintain the input tokens that are not MASK or PAD
-        o = torch.nonzero((mlm_input != self.tokenizer.mask_token_id) and (mlm_input != self.tokenizer.pad_token_id)).squeeze() #include MASK state (the last special token id)
+        # print(f'\nInside pseudolikelihood(), latent({latent.shape})\nmlm_label({mlm_label.shape}): \n{mlm_label}\nmlm_input({mlm_input.shape}): \n{mlm_input}')
+        # 1. generate the unobserved and observed token indices
+        u = torch.nonzero(mlm_label != self.tokenizer.pad_token_id).squeeze() #Size(|u|)
+        # ignore the MASK and PAD tokens in the partially unmasked input
+        o_mask = (mlm_input != self.tokenizer.mask_token_id) & (mlm_input != self.tokenizer.pad_token_id)
+        o = torch.nonzero(o_mask, as_tuple=True)[0]
+        # print(f'after removing padding, o({o.shape}): {o}')
         o_len = o.size(0)
         # u and o can be a single token value
         if u.dim():
@@ -1031,6 +1033,7 @@ class BERTSequentialEBMs():
         if len(u_prime) == 0:
             return None
         assert len(u_prime), f'u_prime is empty!! mlm_label: {mlm_label}, u: {u}, pi: {pi}'
+        # print(f'\nu: {u}, \nu_prime: {u_prime}, \no: {o}')
         for i in range(len(u_prime)): #iter through |u'| EBMs
             condition_vals = mlm_label[u_prime[:i+1], :] #inclusive x_{u'_i} 121??
             condition_latent = latent[u_prime[:i+1], :]
@@ -1038,7 +1041,7 @@ class BERTSequentialEBMs():
             #we found that including MASK state can give better performance? 
             full_vals = torch.cat([mlm_input[o, :], condition_vals], dim=0)
             full_latent = torch.cat([latent[o, :], condition_latent], dim=0)
-            # print(f'\ni: {i}, rest_idx({condition_vals.shape}): \n{condition_vals}\ncondition_latent.shape: {condition_latent.shape}')
+            # print(f'\ni: {i}, full_vals({full_vals.shape}): \n{full_vals.squeeze(-1)}\nfull_latent.shape: {full_latent.shape}')
             
             # ei_dist = self.energy(idx=pi[i], val=False, rest_idx=condition_vals, latent=condition_latent)
             # ei_dist = self.energy(idx=self.inp_len+2+pi[i], val=False, rest_idx=full_vals, latent=full_latent)
