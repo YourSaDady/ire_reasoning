@@ -748,7 +748,7 @@ class BERTSequentialEBMs():
             for b in range(batch_size):
                 previous_pred = partial_pred[b]
                 yo_idx = ((sample_batch['schedule_label'][b] > 0) & \
-                    (sample_batch['schedule_label'][b] <= order_label)).nonzero(as_tuple=True)[0]
+                    (sample_batch['schedule_label'][b] == order_label)).nonzero(as_tuple=True)[0] #<=
                 # if b == 0:
                 #     print(f'k: {order_label}, yo_idx({yo_idx.shape}): \n{yo_idx}') #Size(|o|)
                 # yo = previous_pred[yo_idx]
@@ -997,8 +997,8 @@ class BERTSequentialEBMs():
         estimte the logp using the model output logits and the MLM labels 
         params: 
             - latent: model output logits, Size(seq_len, num_classes)
-            - mlm_label: input_ids for the masked tokens, Size(seq_len)
-            - mlm_input: input_ids for the observed tokens, Size(seq_len), fully used their latents
+            - mlm_label: input_ids for the partially masked tokens, Size(seq_len); filled with zeros
+            - mlm_input: input_ids for the observed tokens, Size(seq_len); partially revealed bert_input
         return:
             - lop_xu: the conditional logprob distribution, Size(seq_len, num_classes)
         '''
@@ -1007,10 +1007,13 @@ class BERTSequentialEBMs():
             f'mlm_label({mlm_label.shape}): {mlm_label}, ' \
             f'mlm_input({mlm_input.shape}): {mlm_input}'
         # print(f'Inside pseudolikelihood: latent.shape: {latent.shape}, mlm_label.shape: {mlm_label.shape}')
-        # print(f'\nInside pseudolikelihood(), latent({latent.shape}): \n{latent}\nmlm_label({mlm_label.shape}): \n{mlm_label}\nmlm_input({mlm_input.shape}): \n{mlm_input}')
-        u = torch.nonzero(mlm_label).squeeze() #Size(|u|)
-        o = torch.nonzero(mlm_input != (self.special_tok_size-1)).squeeze() #include MASK state (the last special token id)
+        print(f'\nInside pseudolikelihood(), latent({latent.shape}): \n{latent}\nmlm_label({mlm_label.shape}): \n{mlm_label}\nmlm_input({mlm_input.shape}): \n{mlm_input}')
+        print(f'\nspecial_tok_size: {self.special_tok_size}')
+        u = torch.nonzero(mlm_label != self.tokenizer.pad_tokn_id).squeeze() #Size(|u|)
+        # maintain the input tokens that are not MASK or PAD
+        o = torch.nonzero((mlm_input != self.tokenizer.mask_token_id) and (mlm_input != self.tokenizer.pad_token_id)).squeeze() #include MASK state (the last special token id)
         o_len = o.size(0)
+        # u and o can be a single token value
         if u.dim():
             pi = torch.randperm(u.size(0)) #a random estimating order
             u_prime = u[pi]
@@ -1024,6 +1027,7 @@ class BERTSequentialEBMs():
         logp_xu = []
         mlm_label = mlm_label.unsqueeze(-1) #Size(45,1)
         mlm_input = mlm_input.unsqueeze(-1)
+        # TODO: 这一步可能有问题：batch内如果已经fully unmasked
         if len(u_prime) == 0:
             return None
         assert len(u_prime), f'u_prime is empty!! mlm_label: {mlm_label}, u: {u}, pi: {pi}'

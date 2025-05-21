@@ -108,7 +108,7 @@ class SequentialEBMsTrainer:
         self.optim_schedule = ScheduledOptim(
             self.optim, self.sebm.d_model, n_warmup_steps=warmup_steps #d_model决定initial_lr
         )
-        self.criterion = nn.CrossEntropyLoss(label_smoothing=True).to(device)
+        self.criterion = nn.CrossEntropyLoss().to(device) #label_smoothing=True
         self.log_freq = log_freq
         # sampling configs:
         self.sampler = sampler
@@ -211,9 +211,12 @@ class SequentialEBMsTrainer:
             matching_rows = (pred == label).all(dim=1)  # Check for equality along the rows
             return matching_rows.sum().item()  # Sum up the True values
         
-    def prepare_partial_data(self, scheduled_data, order_label):
+    def prepare_partial_data(self, scheduled_data, order_label): #TODO: 当前只有bert版本;当前只有train版本（history tgt tokens来自sample label)
         '''
         for the diffusion-style masking process, prepare the partially masked data according to k
+        return dict:
+            - input: original bert_input with history tgt tokens replacing the masks
+            - output: only the current tgt tokens, rest are zeros
         '''
         partial_data = {
             'bert_input': scheduled_data['bert_input'].clone(),
@@ -229,7 +232,7 @@ class SequentialEBMsTrainer:
             partial_data['bert_input'][b][history_idx] = scheduled_data['bert_label'][b][history_idx]
             partial_data['bert_label'][b][current_idx] = scheduled_data['bert_label'][b][current_idx]
             
-        # print(f'\nk={order_label}, partial_data: \n{partial_data}')
+        # print(f'\nk={order_label}, xo: \n{partial_data["bert_input"][0]}, xu: \n{partial_data["bert_label"][0]}')
         return partial_data        
         
         
@@ -301,13 +304,7 @@ class SequentialEBMsTrainer:
                     #_________________test: BERT mlm_loss___________________
                     # print(f'\nxo.shape: {xo.shape}') #4,50
                     mlm_output, org_loss = self.sebm.forward(xo, None, is_ebm=False)
-                    # print("mlm_output.requires_grad=", mlm_output.requires_grad, ', mlm_output.shape: ', mlm_output.shape)  # Should be True
-                    # mlm_output = self.sebm.forward(xo, data['segment_label'], is_ebm=False) #test, softmaxed
-                    # mlm_criterion = nn.NLLLoss(ignore_index=0)
                     mlm_criterion = nn.CrossEntropyLoss()
-                    # mlm_loss = mlm_criterion(mlm_output.transpose(1, 2), xu)
-                    # print(f"\nmlm_output.dtype: {mlm_output.dtype}, bert_label.dtype: {xu.dtype}")
-                    # print(f"mlm_output({mlm_output.shape}): \n{mlm_output},\nlabels({xu.shape}): \n{xu}") #Size(4,50,31), Size(4,50)?
                     mlm_loss = mlm_criterion(mlm_output.view(-1, mlm_output.size(-1)), xu.view(-1))
                     # print(f'\nmlm_loss: {mlm_loss}, loss: {org_loss}')
                     #———————————————————————————————————————————————————————
@@ -327,9 +324,9 @@ class SequentialEBMsTrainer:
                         if self.sebm.param_type == 'bert':
                             logp_xu = self.sebm.pseudolikelihood(gamma[r], xu_[r], xo[r]) #Size(|u'|, num_classes)
                         elif self.sebm.param_type == 'gpt':
-                            logp_xu = self.sebm.pseudolikelihood(gamma[r], xu_[r], xo['input_ids'][r]) #gamma[r]: Size(50, 31), xu[r]: Size(50), xo[r]: Size(50)
-                        # if (logp_xu == None) or (logp_xu == -1): #not ebm #############################TODO: gpt需要加上后边的condition; bert要去掉后边的
-                        #     break
+                            logp_xu = self.sebm.pseudolikelihood(gamma[r], xu[r], xo['input_ids'][r]) #gamma[r]: Size(50, 31), xu[r]: Size(50), xo[r]: Size(50)
+                        if (logp_xu == None):# or (logp_xu == -1): #not ebm #############################TODO: gpt需要加上后边的condition; bert要去掉后边的
+                            continue #batch内该row fully unmasked, 不计算loss
                         xu_token_ids = torch.nonzero(xu_[r]).squeeze() #Size(|u'|)
                         if xu_token_ids.dim()==0 and xu_token_ids:
                             xu_token_ids = torch.tensor([xu_token_ids])
@@ -337,7 +334,8 @@ class SequentialEBMsTrainer:
                         assert logp_xu.size(0) == xu_label.size(0), \
                             f'\nlogp_xu.shape: {logp_xu.shape}, xu_label.shape: {xu_label.shape}'
                         # print(f'logp_xu.shape: {logp_xu.shape}, xu_label.shape({xu_label.shape}): {xu_label}')
-                        
+                        # if r == 0:
+                        #     print(f'xu_token_ids: {xu_token_ids}, \nxu_label: {xu_label}')
                         
                         # #___________sum over batch: contrast loss_______________
                         # contrast_loss = contrast_loss + self.sebm.calculate_contrast_loss(
@@ -352,6 +350,7 @@ class SequentialEBMsTrainer:
                         assert loss_is_nan == False, f'\nce_loss becomes NaN! '\
                             f'\nce_loss: {ce_loss}, is_nan: {loss_is_nan}\n' \
                             f'logp_xu: \n{logp_xu}, \nxu_label: \n{xu_label}, \ngamma[r]: \n{gamma[r]}'
+                    #end of row iter
                     if logp_xu == None:
                         break
                     
@@ -362,6 +361,7 @@ class SequentialEBMsTrainer:
                     if self.train_wandb:
                         wandb.log({"l_ce": ce_loss, "l_contrast": contrast_loss, "loss": org_loss, "mlm_loss": mlm_loss}) #loss: loss
                     # #_________mlm__________
+                    print(f'i: {i}, ce_loss: {ce_loss}, mlm_loss: {mlm_loss}')
                     # if i % 100 == 0:
                     #     pred = mlm_output.argmax(dim=-1)
                     #     correct = self.eval_metric(pred, data['bert_label'])
@@ -481,11 +481,14 @@ class SequentialEBMsTrainer:
                     # print(f"logits.shape: {logits.shape}, label.shape: {data['bert_label'].shape}")
                     correct = self.eval_metric(pred, data['bert_label'])
                     # print(f"pred: \n{pred}, \nlabel: \n{data['bert_label']},\ncorrrect: {correct}")
-                    # ______decode______ 
-                    decoded_label = self.sebm.tokenizer.decode(data['bert_label'][0].tolist(), skip_special_tokens=True)
-                    decoded_pred = self.sebm.tokenizer.decode(pred[0].tolist(), skip_special_tokens=True)
-                    print(f'i:{i}, \ndecoded label: \n{decoded_label}, \ndecoded pred: \n{decoded_pred},\ncorrrect: {correct}\n\n')
-                    # __________________
+                    # # ______decode______ 
+                    # label = data['bert_label'][0].clone()
+                    # label[label == -100] = 0
+                    # pred[0][pred[0] == -100] = 0
+                    # decoded_label = self.sebm.tokenizer.decode(label.tolist(), skip_special_tokens=True)
+                    # decoded_pred = self.sebm.tokenizer.decode(pred[0].tolist(), skip_special_tokens=True)
+                    # print(f'i:{i}, \ndecoded label: \n{decoded_label}, \ndecoded pred: \n{decoded_pred},\ncorrrect: {correct}\n\n')
+                    # # __________________
                 elif self.sebm.param_type == 'gpt':
                     logits, org_loss = self.sebm.forward(data)
                     loss = self.criterion(logits.view(-1, logits.size(-1)), data['labels'].view(-1))
@@ -495,14 +498,14 @@ class SequentialEBMsTrainer:
                     # print(f"logits.shape: {logits.shape}, label.shape: {data['labels'].shape}")
                     correct = self.eval_metric(pred, data['labels'])
                     # print(f"pred: \n{pred}, \nlabel: \n{data['labels']},\ncorrrect: {correct}")
-                    # # ______decode______ 
-                    # label = data['labels'][0].clone()
-                    # label[label == -100] = 0
-                    # pred[0][pred[0] == -100] = 0
-                    # decoded_label = self.sebm.tokenizer.decode(label.tolist(), skip_special_tokens=True)
-                    # decoded_pred = self.sebm.tokenizer.decode(pred[0].tolist(), skip_special_tokens=True)
-                    # print(f'i: {i}, decoded label: \n{decoded_label}, \ndecoded pred: \n{decoded_pred}')
-                    # # __________________
+                    # ______decode______ 
+                    label = data['labels'][0].clone()
+                    label[label == -100] = 0
+                    pred[0][pred[0] == -100] = 0
+                    decoded_label = self.sebm.tokenizer.decode(label.tolist(), skip_special_tokens=True)
+                    decoded_pred = self.sebm.tokenizer.decode(pred[0].tolist(), skip_special_tokens=True)
+                    print(f'i: {i}, decoded label: \n{decoded_label}, \ndecoded pred: \n{decoded_pred}')
+                    # __________________
                 else:
                     raise NotImplementedError
                 avg_loss += loss.item()
@@ -540,9 +543,9 @@ class SequentialEBMsTrainer:
             # if i % self.log_freq == 0: ###############
             #     data_iter.write(str(post_fix)) ##################
                 
-            # break ###############test
-            if i == 10:
-                break ###############test
+            break ###############test
+            # if i > 500:
+            #     break ###############test
         #end of batch iter
         
         # print(
@@ -582,7 +585,7 @@ def main(config):
             max_len = config.tasks[config.task_name].max_len
         train_loader, test_loader, train_size, test_size, tokenizer = load_bert_data(
             config.task_name, 
-            config.sampling.stage, #这里声明了stage: pretrain / sft
+            'inference',#config.train.stage, #这里声明了stage: pretrain / sft
             max_len,
             config.train.batch_size, 
             config.sampling.batch_size
