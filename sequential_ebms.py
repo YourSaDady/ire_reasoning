@@ -622,16 +622,21 @@ class BERTSequentialEBMs():
                 
         return -1 * torch.sum(energy, dim=-2) #sum along all ui positions #-1 *
         
-    def gibbs_dist(self, energy_dist: torch.Tensor):
+    def gibbs_dist(self, energy_dist: torch.Tensor, energy_clip=True):
         '''
         Given the energy distribution at position i across all classes,
         calculate the Boltzmann (Gibbs) distribution. 
         
         params:
             energy_dist: Size(batch_size, num_classes)
+            energy_clip: whether subtract the maximum energy before calculating the p_i distribution (to waive NaN), default to True
         return:
             p_i: Size(batch_size, num_classes)
         '''
+        if energy_clip: 
+            e_max = energy_dist.max()
+            energy_dist = energy_dist - e_max
+        
         z_i = torch.sum(torch.exp(-1*energy_dist), dim=-1) #Size(batch_size)
         expanded_zi = z_i.unsqueeze(1).expand_as(energy_dist) #Size(batch_size, num_classes)
         # Sample from the 1D conditional p(y_{o_i} | y_{o_-i})
@@ -702,11 +707,13 @@ class BERTSequentialEBMs():
                     yo_prime = yo.clone()
                     for i in range(yo_idx.size(0)): #iter |o|
                         # sample on position i
+                        # print(f'inputs to the energy: yo_prime: {yo_prime}, gamma[yo_idx,:]: {gamma[yo_idx, :]}')
                         ei_dist = self.energy(idx=i, val=False, rest_idx=yo_prime.unsqueeze(-1), \
                             latent=gamma[yo_idx, :], batchalize=False)
                         p_oi = self.gibbs_dist(ei_dist.unsqueeze(0)) #Size(1,6)
                         
                         #_________forcing ignoring/considering the special tokens_______
+                        # print(f'p_oi({p_oi.shape}): \n{p_oi},\n ei_dist({ei_dist.shape}): \n{ei_dist}')
                         y_oi_prime = torch.multinomial(p_oi[:,self.special_tok_size:], 1) + self.special_tok_size
                         # y_oi_prime = torch.multinomial(p_oi, 1)
                         #___________________________________________________
