@@ -18,7 +18,7 @@ import hydra
 from sequential_ebms import BERTSequentialEBMs, GPTSequentialEBMs
 from dataset import load_bert_data, load_data, load_gpt_data
 from utils import convert_time, VisualizeEBMs
-from transformers import BertTokenizer, AutoConfig, AutoModelForCausalLM
+# from transformers import AutoConfig, AutoModelForCausalLM
 import random as rand
 import wandb
 import json
@@ -196,7 +196,7 @@ class SequentialEBMsTrainer:
         #     if data['bert_input'][:, pos][0] == 1 or data['bert_input'][:, pos][0] == 2:
         #         schedule_label[:, pos] = data['bert_input'][:, pos]
         # print(f'\nInside add_schedule(), schedule_label: \n{schedule_label}\n, bert_label: \n{data["bert_label"]}')
-        scheduled_data['schedule_label'] = schedule_label
+        scheduled_data['schedule_label'] = schedule_label#.to(self.device)
         # 以下assertion变了： torch.count_nonzero(data['bert_label'])
         valid_labels = (data['bert_label'] >= len(special_ids)).sum().item() #num of labels greater than 2
         assert torch.count_nonzero(schedule_label) == valid_labels, \
@@ -228,14 +228,18 @@ class SequentialEBMsTrainer:
             history_idx = ((scheduled_data['schedule_label'][b] > 0) & \
                 (scheduled_data['schedule_label'][b] < order_label)).nonzero(as_tuple=True)[0]
             current_idx = ((scheduled_data['schedule_label'][b] > 0) & \
-                (scheduled_data['schedule_label'][b] == order_label)).nonzero(as_tuple=True)[0]
+                (scheduled_data['schedule_label'][b] <= order_label)).nonzero(as_tuple=True)[0]
             partial_data['bert_input'][b][history_idx] = scheduled_data['bert_label'][b][history_idx]
             partial_data['bert_label'][b][current_idx] = scheduled_data['bert_label'][b][current_idx]
             
         # print(f'\nk={order_label}, xo: \n{partial_data["bert_input"][0]}, xu: \n{partial_data["bert_label"][0]}')
         return partial_data        
         
-        
+    def to_device(self, data_dict):
+        for k,v in data_dict.items():
+            if torch.is_tensor(v):
+                v.to(self.device)
+        return data_dict
     
     def iteration(self, epoch, data_loader, stage, train=True, schedule=None, \
                   is_ebm=True, visual_ebms=None):
@@ -273,11 +277,13 @@ class SequentialEBMsTrainer:
 
         # for i, (pos_data, neg_data) in data_iter: #batch
         for i, data in data_iter: #batch
+            # data = self.to_device(data)
             if train:
                 if stage == 'inference': #########for tesing
                     K = 10
                     t_list = unmasking_schedule(K+2, 'cosine')[1:-1]
                     scheduled_data, early_stop = self.add_schedule(data, t_list)
+                    print(f'\nscheduled_data: \n{scheduled_data}')
                 else:
                     early_stop = 1
                 for k in range(early_stop):
@@ -286,6 +292,8 @@ class SequentialEBMsTrainer:
                     '''MLM training pradigm with varying t'''
                     # 0. batch_data will be sent into the device(GPU or cpu)
                     data = {key: value.to(self.device) for key, value in data.items()}
+                    if k == 3:
+                        print(f'when k = 3, the data: \n{data}')
                     # neg_data = {key: value.to(self.device) for key, value in neg_data.items()}
                     if self.sebm.param_type == 'bert':
                         xo, xu = data['bert_input'], data['bert_label'] #already masked with rate t
@@ -306,6 +314,7 @@ class SequentialEBMsTrainer:
                     mlm_output, org_loss = self.sebm.forward(xo, None, is_ebm=False) #xo is partially unmasked 'bert_input'
                     # print(f'mlm_output.shape: {mlm_output.shape}') #Size(batch_size, |u'|, num_classes)
                     mlm_criterion = nn.CrossEntropyLoss()
+                    # print(f'k: {k}, mlm_loss input: \n - mlm_output({mlm_output.view(-1, mlm_output.size(-1)).shape}): {mlm_output.view(-1, mlm_output.size(-1))}\n - label({xu.view(-1).shape}): {xu.view(-1)}')
                     mlm_loss = mlm_criterion(mlm_output.view(-1, mlm_output.size(-1)), xu.view(-1))
                     # print(f'\nmlm_loss: {mlm_loss}, loss: {org_loss}')
                     #———————————————————————————————————————————————————————
@@ -320,18 +329,19 @@ class SequentialEBMsTrainer:
                     xu_[xu_ == -100] = 0
                     logp_xu_list, xu_list = [], [] #to store a batch of logp_xu's, of Size(batch_size, |u'|, num_classes)
                     for r in range(xu.size(0)): #iter within batch
+                        xu_token_ids = torch.nonzero(xu_[r]).squeeze() #Size(|u'|)
+                        if xu_token_ids.dim()==0 and xu_token_ids:
+                            xu_token_ids = torch.tensor([xu_token_ids])
                         # print(f'\n_____\nr: {r}, k: {k}\n________\n')
                         # assert torch.nonzero(xu[r]).squeeze().dim(), f"xu[r] is all zero: \n{xu[r]}"
                         if self.sebm.param_type == 'bert':
-                            logp_xu = self.sebm.pseudolikelihood(gamma[r], xu_[r], xo[r]) #Size(|u'|, num_classes)
+                            # logp_xu = self.sebm.pseudolikelihood(gamma[r], xu_[r], xo[r]) #Size(|u'|, num_classes)
+                            logp_xu = gamma[r]#[xu_token_ids]
                         elif self.sebm.param_type == 'gpt':
                             logp_xu = self.sebm.pseudolikelihood(gamma[r], xu[r], xo['input_ids'][r]) #gamma[r]: Size(50, 31), xu[r]: Size(50), xo[r]: Size(50)
                         if (logp_xu == None):# or (logp_xu == -1): #not ebm #############################TODO: gpt需要加上后边的condition; bert要去掉后边的
                             continue #batch内该row fully unmasked, 不计算loss
-                        xu_token_ids = torch.nonzero(xu_[r]).squeeze() #Size(|u'|)
-                        if xu_token_ids.dim()==0 and xu_token_ids:
-                            xu_token_ids = torch.tensor([xu_token_ids])
-                        xu_label = xu[r][xu_token_ids]
+                        xu_label = xu[r]#[xu_token_ids]
                         assert logp_xu.size(0) == xu_label.size(0), \
                             f'\nlogp_xu.shape: {logp_xu.shape}, xu_label.shape: {xu_label.shape}'
                         logp_xu_list.append(logp_xu.unsqueeze(0))
@@ -353,6 +363,9 @@ class SequentialEBMsTrainer:
                     assert batch_logp_xu.dim(), f'k = {k}, early_stop = {early_stop}, logp_xu_list is empty!: {logp_xu_list}, '
                     # print(f'\nbatch_logp_xu.shape:{batch_logp_xu.shape}, batch_xu.shape: {batch_xu.shape}')
                     # 2-2. Contrast-loss
+                    # print(f'k: {k}, ce_loss input: \n - batch_logp_xu({batch_logp_xu.shape}): {batch_logp_xu}\n - batch_xu({batch_xu.shape}): {batch_xu}')
+                    # assert torch.equal(mlm_output.view(-1, mlm_output.size(-1)), batch_logp_xu), f'mlm_output: {mlm_output.view(-1, mlm_output.size(-1))}, \nbatch_logp_xu: {batch_logp_xu}'
+                    # assert torch.equal(xu.view(-1), batch_xu), f'mlm label: {xu.view(-1)}, ce label: {batch_xu}'
                     ce_loss = self.criterion(batch_logp_xu, batch_xu)
                     loss_is_nan = torch.isnan(ce_loss.clone().detach()).any()
                     assert loss_is_nan == False, f'\nce_loss becomes NaN! '\
@@ -407,10 +420,11 @@ class SequentialEBMsTrainer:
                 '''inference with scheduled t and sequential EBMs sampling'''
                 # 1. break down the sequence tokens according to the schedule
                 scheduled_data, early_stop = self.add_schedule(data, schedule)
+                scheduled_data = {key: value.to(self.device) for key, value in scheduled_data.items()}
                 # print(f'scheduled_data: \n{scheduled_data}')
                 # print(f'\nspecial_token_size: {self.sebm.special_tok_size}, vocab_size: {self.sebm.vocab_size}')
                 # 2. iterate through k EBMs, send input to device, and each EBM performs gibbs sampling
-                partial_pred = data['bert_input'].clone()
+                partial_pred = scheduled_data['bert_input'].clone()
                 # partial_pred = torch.randint(self.sebm.special_tok_size, \
                 #         self.sebm.vocab_size, data['bert_label'].size()) #init
                 # partial_pred[:, :(self.sebm.inp_len+2)] = 0
@@ -455,7 +469,8 @@ class SequentialEBMsTrainer:
                 pred[0][pred[0] == -100] = 0
                 decoded_label = self.sebm.tokenizer.decode(label.tolist(), skip_special_tokens=True)
                 decoded_pred = self.sebm.tokenizer.decode(pred[0].tolist(), skip_special_tokens=True)
-                print(f'i:{i}, \ndecoded label: \n{decoded_label}, \ndecoded pred: \n{decoded_pred},\ncorrrect: {correct}\n\n')
+                if i < 10:
+                    print(f'i:{i}, \ndecoded label: \n{decoded_label}, \ndecoded pred: \n{decoded_pred},\ncorrrect: {correct}\n\n')
                 # __________________
                 # TODO 单独记录energy变化
                 flattened_loss, flattened_energy = [], []
@@ -559,7 +574,7 @@ class SequentialEBMsTrainer:
         # ) 
         if train:
             print(f'\n\nFinished training.')
-            ckpts_path = f'./ire_reasoning/ebm_ckpts/{self.sebm.task_name}_{self.sebm.param_type}{self.sebm.d_model}_{stage}_ebm.pth' #w_mask_inverse_test
+            ckpts_path = f'./ire_reasoning/ebm_ckpts/{self.sebm.task_name}_{self.sebm.param_type}{self.sebm.d_model}_{stage}_test.pth' #w_mask_inverse_test
             torch.save(self.sebm.model.state_dict(), ckpts_path)
             print(f'\nmodel saved to {ckpts_path}')
         elif (not train) and (schedule is not None):
@@ -630,6 +645,7 @@ def main(config):
             heads=heads,
             device=config.device
             )
+        assert all(param.device.type == config.device for param in sebm.model.parameters())
     elif config.param_type == 'gpt': #gpt2-6m-scratch from diffu-vs-ar paper
         gpt_config = AutoConfig.from_pretrained('./ire_reasoning/models/model_config_tiny') #pwd: EBM
         gpt2_scratch = AutoModelForCausalLM.from_config(gpt_config) #not ebm!
@@ -683,7 +699,7 @@ def main(config):
         # ckpts_path = f'./ebm_ckpts/{task_config.name}_{config.param_type}' \
         #     f'{config.models[config.param_type].d_model}_diffusion.pth' # _w_mask_inverse.pth # _mlm_test # _w_mask #_diffusion
         # ckpts_path = './ire_reasoning/ebm_ckpts/countdown_bert384_sft.pth'
-        ckpts_path = f'./ire_reasoning/ebm_ckpts/{task_config.name}_{config.param_type}{config.models[config.param_type].d_model}_{config.train.stage}.pth'
+        ckpts_path = f'./ire_reasoning/ebm_ckpts/{task_config.name}_{config.param_type}{config.models[config.param_type].d_model}_{config.train.stage}_ebm.pth'
         print(f'\n3. Loading checkpoints from {ckpts_path}...')
         sebm_trainer.load_model(ckpts_path)##########################
         

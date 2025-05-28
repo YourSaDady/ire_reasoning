@@ -48,6 +48,7 @@ class PositionalEmbedding(nn.Module):
         # self.register_buffer('pe', pe)
 
     def forward(self, x):
+        self.pe.to(x.device)
         return self.pe
     
 class BERTEmbedding(nn.Module):
@@ -71,7 +72,8 @@ class BERTEmbedding(nn.Module):
        
     def forward(self, sequence, segment_label):
         # print(f'Inside BERTEmbedding.forward(), input sequence.shape: {sequence.shape}')
-        x = self.token(sequence) + self.position(sequence) # + self.segment(segment_label)
+        device = sequence.device
+        x = self.token(sequence) + self.position(sequence).to(device) # + self.segment(segment_label)
         return self.dropout(x) 
     
 

@@ -13,8 +13,7 @@ os.chdir('/home/yichuan/HKU/EBM/ire_reasoning')
 from models.bert import BERTDataset, train_tokenizer
 from models.gpt import GPTDataset
 from models.custom_tokenizer import CustomTokenizer
-from tokenizers import BertWordPieceTokenizer
-from transformers import BertTokenizer
+# from transformers import BertTokenizer
 
 '''
 Sudoku Task. Borrowed from IRED

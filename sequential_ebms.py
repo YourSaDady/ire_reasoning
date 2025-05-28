@@ -20,8 +20,8 @@ os.environ['WANDB_API_KEY'] = '3c06642500f1527ecd0328870ff61d36b5c17193'
 # os.environ['CUDA_LAUNCH_BLOCKING']=1
 # os.environ['TORCH_USE_CUDA_DSA']=1
 # print(f'The current working directory: {os.getcwd()}')
-from transformers import AutoTokenizer, PreTrainedTokenizer, AutoModel, AutoModelForCausalLM, GenerationConfig, AutoConfig
-from transformers.modeling_outputs import CausalLMOutput
+# from transformers import AutoTokenizer, PreTrainedTokenizer, AutooMdel, AutoModelForCausalLM, GenerationConfig, AutoConfig
+# from transformers.modeling_outputs import CausalLMOutput
 from models.custom_tokenizer import CustomTokenizer
 
 from utils import convert_time, VisualizeEBMs, check_grad
@@ -570,6 +570,7 @@ class BERTSequentialEBMs():
             n_layers=self.n_layers,
             heads=self.heads,
         ) #Assume inp_len >= out_len
+        self.model.to(self.device)
     
     # wrapper
     def forward(self, bert_input, segment_label, is_ebm):
@@ -672,8 +673,9 @@ class BERTSequentialEBMs():
             for b in range(batch_size):
                 previous_pred = partial_pred[b]
                 yo_idx = ((sample_batch['schedule_label'][b] > 0) & \
-                    (sample_batch['schedule_label'][b] <= order_label)).nonzero(as_tuple=True)[0]
+                    (sample_batch['schedule_label'][b] <= order_label)).nonzero(as_tuple=True)[0].to(self.device)
                 # print(f'yo_idx.shape({yo_idx.shape}): \n{yo_idx}') #Size(|o|)
+                # print(f'previous_pred.device: {previous_pred.device}, yo_idx.device: {yo_idx.device}, self.device: {self.device}')
                 yo = previous_pred[yo_idx]
                 # print(f'yo({yo.shape}): \n{yo}')
                 model_input = sample_batch['bert_input'][b].clone()
@@ -755,7 +757,7 @@ class BERTSequentialEBMs():
             for b in range(batch_size):
                 previous_pred = partial_pred[b]
                 yo_idx = ((sample_batch['schedule_label'][b] > 0) & \
-                    (sample_batch['schedule_label'][b] == order_label)).nonzero(as_tuple=True)[0] #<=
+                    (sample_batch['schedule_label'][b] <= order_label)).nonzero(as_tuple=True)[0] #<=
                 # if b == 0:
                 #     print(f'k: {order_label}, yo_idx({yo_idx.shape}): \n{yo_idx}') #Size(|o|)
                 # yo = previous_pred[yo_idx]
@@ -993,9 +995,6 @@ class BERTSequentialEBMs():
                 (torch.exp(-1*pos_ei) + torch.exp(-1*neg_ei)))
         
         return contrast_loss
-
-            
-
     
     def pseudolikelihood(self, latent, mlm_label, mlm_input):
         '''
