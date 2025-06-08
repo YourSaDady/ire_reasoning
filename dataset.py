@@ -3,17 +3,20 @@ import sys
 import os
 import json
 import torch
+import itertools
+import random as rand
 from torch.utils.data  import Dataset, DataLoader
 import pandas as pd
 import numpy as np
-sys.path.append('/home/yichuan/HKU/EBM/ire_reasoning')
-os.chdir('/home/yichuan/HKU/EBM/ire_reasoning')
+sys.path.append('/home/yichuan/HKU/EBM')
+os.chdir('/home/yichuan/HKU/EBM')
 # print(f'The current working directory: {os.getcwd()}')
 
-from models.bert import BERTDataset, train_tokenizer
-from models.gpt import GPTDataset
+from models.bert import train_tokenizer
 from models.custom_tokenizer import CustomTokenizer
 # from transformers import BertTokenizer
+
+IGNORE_INDEX = -100
 
 '''
 Sudoku Task. Borrowed from IRED
@@ -36,7 +39,7 @@ def get_data_dir(identifier):
     else:
         raise ValueError('Unknown dataset: {}.'.format(identifier))
 
-def load_satnet_dataset(data_dir):
+def load_satnet_dataset(data_dir): #废了
     if not osp.exists(data_dir):
         raise ValueError(f'Data directory {data_dir} does not exist. Run data/download-satnet.sh to download the dataset.')
     features = torch.load(osp.join(data_dir, 'features.pt'))
@@ -66,6 +69,124 @@ class SudokuDataset(Dataset):
 
     def __getitem__(self, idx):
         return _rescale(self.features[idx].reshape(-1)), _rescale(self.labels[idx].reshape(-1)), self.cond_entry[idx].reshape(-1)
+
+class CountDownDataset(Dataset):
+    def __init__(self, data_pair, tokenizer, stage, max_len=256):
+        '''
+        Init params:
+            - data_pair: a list of (x, y) pairs, where x and y are strings, and words are separated by blank spaces
+            - stage: pretrain / sft specify the masking area when calling __getitem__()
+        '''
+        self.tokenizer = tokenizer
+        self.max_len = max_len
+        self.corpus_lines = len(data_pair)
+        self.lines = data_pair #  line: ('44,2,54,64', '2*54=108,108-44=64')
+        self.stage = stage
+        self.is_pos = True
+        
+    def __len__(self):
+        return self.corpus_lines
+    
+    def __getitem__(self, item): #"0", "1", MASK only, no segment label
+        '''
+        Select a positive sample pair from the data_pair, and preprocess.  
+        
+        params: item: line index
+        return: output_dict:
+            - input: masked context tensor of Size(max_len)
+            - label: padded label tensor of Size(max_len)
+            - is_positive: bool, indicating whether is positive or not 
+        '''
+        # print(f'\ninside _getitem_(), raw data: \n{self.lines[item]}')
+        t2_all_zero = True
+        while t2_all_zero: #randomly mask at least one position in t2
+            # uniformly sample unmasking rate t
+            t = rand.random()
+            if t == 0:
+                t = 0.05
+            # get pos / neg sentence pair
+            t1, t2 = self.get_sent(item, self.is_pos)
+            # print(f'Inside __getitem__(), original t1: \n{t1}, \nt2: \n{t2}')
+            # randomly mask t1 and t2 with a uniformly sampled masking rate t
+            if self.stage == 'pretrain':
+                (t1, t1_label), (t2, t2_label) = self.mask(t1, t), self.mask(t2, t) #tokenized
+                t2_all_zero = all(x == 0 for x in t2_label)
+            # mask t2 with random t while keep t1 unmasked
+            elif self.stage == 'sft':
+                (t1, t1_label), (t2, t2_label) = self.mask(t1, 0), self.mask(t2, t) #t
+                t2_all_zero = all(x == 0 for x in t2_label)
+            # keep t1 unmasked and t2 fully masked as the initial sequence 
+            elif self.stage == 'inference': 
+                # (t1, t1_label), (t2, t2_label) = self.mask(t1, 0), self.mask(t2, 1)
+                (t1, t1_mask), (t2, t2_mask) = self.encode(t1), self.encode(t2) 
+                t2_all_zero = False
+            else:
+                raise NotImplementedError
+        
+        # print(f'After added special tokens, t1({len(t1)}): \n{t1}, \nt1_label: \n{t1_label}, \nt2({len(t2)}): {t2}, \nt2_label: {t2_label}')
+        # concatenate t1 and t2 and add padding to max_len
+        # print(f'\nself.max_len: {self.max_len}')
+        input = (t1 + [self.tokenizer.sep_token_id] + t2_mask + \
+            [self.tokenizer.eos_token_id])[:self.max_len]
+        label = (t1_mask + [self.tokenizer.sep_token_id] + t2 \
+            + [self.tokenizer.eos_token_id])[:self.max_len] #train: ignore src; inference: mask src
+        attn = [1] * len(input)
+        assert len(input) == len(label)
+        input_padding = [self.tokenizer.pad_token_id] * (self.max_len - len(input))
+        label_padding = [IGNORE_INDEX] * (self.max_len - len(input)) #self.tokenizer.pad_token_id
+        attn_padding = [0] * (self.max_len - len(input))
+        input.extend(input_padding), label.extend(label_padding), attn.extend(attn_padding)
+        
+        
+        output = {
+            'input': input,
+            'label': label,
+            'attention': attn,
+        }
+        # print(f'final:\nraw line[idx]: \n{self.lines[item]}\nbert_input: \n{bert_input}, \nbert_label: \n{bert_label}') # \nsegment_label: \n{segment_label}
+        output = {k: torch.tensor(v) for k, v in output.items()}
+        output['is_positive'] = self.is_pos
+        
+        return output
+    
+    def get_sent(self, idx, is_pos):
+        if is_pos:
+            t1, t2 = self.lines[idx][0], self.lines[idx][1]
+        else:
+            t1, t2 = self.lines[idx][0], self.lines[rand.randrange(len(self.lines))][1]
+            
+        return t1, t2
+    
+    def mask(self, sentence, t):
+        tokens = sentence.split() #only useful for textual sentences
+        output_label = []
+        output =[]
+        # t% of the tokens will be masked
+        for i, token in enumerate(tokens): # iter through words
+            prob = rand.random()
+            # remove cls and sep token
+            token_id = self.tokenizer(token)['input_ids'][1:-1] # token list
+            # mask tokens of a word with t%
+            if prob < t:
+                for i in range(len(token_id)):
+                    output.append(self.tokenizer._vocab_str_to_int["[MASK]"])
+                output_label.append(token_id)
+            else:
+                output.append(token_id)
+                for i in range(len(token_id)):
+                    output_label.append(0)
+        # flattening
+        output = list(itertools.chain(*[[x] if not isinstance(x, list) else x for x in output]))
+        output_label = list(itertools.chain(*[[x] if not isinstance(x, list) else x for x in output_label]))
+        assert len(output) == len(output_label)
+        return output, output_label
+    
+    def encode(self, sentence):
+        sen_ids = self.tokenizer.encode(sentence)
+        sen_mask = [self.tokenizer._vocab_str_to_int["[MASK]"]]*len(sen_ids)
+        sen_ignore = [IGNORE_INDEX] * len(sen_ids)
+        # print(f'inside encode(), t: {t}, \nsen_ids: \n{sen_ids}, \nsen_mask: \n{sen_mask}')
+        return sen_ids, sen_mask
 
 def _rescale(x): # 1 -> 1; 0 -> -1 (暂时不用)
     return (x - 0.5) * 2
@@ -113,144 +234,6 @@ class SATDataset(Dataset): #identifier 就是 'binary_arith' + {split}
         elif self.task.startswith('binary'):
             return self.features[idx], self.labels[idx]
 
-
-
-# '''
-# Simplyfied version from MDLM
-# '''
-# def get_dataloaders(config, tokenizer, skip_train=False, skip_valid=False, valid_seed=None):
-#     #TODO: simplify to Sudoku and Binary tasks
-#     return train_loader, val_loader
-
-# def get_dataset(
-#     dataset_name, tokenizer, wrap, mode, cache_dir,
-#     block_size=1024, num_proc=len(os.sched_getaffinity(0)), streaming=False):
-#     if wrap:
-#         filename = f'{dataset_name}_{mode}_bs{block_size}_wrapped.dat'
-#     else:
-#         filename = f'{dataset_name}_{mode}_bs{block_size}_unwrapped.dat'
-#     _path = os.path.join(cache_dir, filename)
-    
-#     if utils.fsspec_exists(_path):
-#         LOGGER.info(f'Loading data from: {_path}')
-#         return datasets.load_from_disk(_path).with_format('torch')
-#     LOGGER.info(f'Generating new data at: {_path}')
-#     #...
-
-
-# def get_tokenizer(config):
-#   if config.data.tokenizer_name_or_path == 'text8':
-#     tokenizer = Text8Tokenizer()
-#   elif config.data.tokenizer_name_or_path == 'bert-base-uncased':
-#     tokenizer = transformers.BertTokenizer.\
-#       from_pretrained('bert-base-uncased')
-#   else:
-#     tokenizer = transformers.AutoTokenizer.from_pretrained(
-#       config.data.tokenizer_name_or_path)
-
-#   if (isinstance(tokenizer, transformers.GPT2TokenizerFast)
-#       or isinstance(tokenizer, transformers.GPT2Tokenizer)):
-#     tokenizer._tokenizer.post_processor = tokenizers.processors.BertProcessing(
-#       (tokenizer.bos_token, tokenizer.bos_token_id),
-#       (tokenizer.eos_token, tokenizer.eos_token_id))
-
-#   # For wrapped batches:
-#   #  [BOS] sent1 [EOS] sent2-fragment [EOS]
-#   #  [BOS] sent2-fragment [EOS] sent3 [EOS]
-#   if tokenizer.bos_token is None:
-#     if tokenizer.cls_token is None:
-#       raise AttributeError(
-#         'Tokenizer must have a bos_token or '
-#         f'cls_token: {tokenizer}')
-#     tokenizer.bos_token = tokenizer.cls_token
-#   if tokenizer.eos_token is None:
-#     if tokenizer.sep_token is None:
-#       raise AttributeError(
-#         'Tokenizer must have a eos_token '
-#         f'or sep_token: {tokenizer}')
-#     tokenizer.eos_token = tokenizer.sep_token
-#   if tokenizer.pad_token is None:
-#     tokenizer.add_special_tokens({'pad_token': '[PAD]'})
-
-#   return tokenizer
-
-# #borrowed
-# def get_dataloaders_org(config, tokenizer, skip_train=False, skip_valid=False, valid_seed=None):
-#     num_gpus = torch.cuda.device_count()
-#     assert (config.loader.global_batch_size
-#           == (config.loader.batch_size
-#               * config.trainer.num_nodes
-#               * num_gpus
-#               * config.trainer.accumulate_grad_batches))
-#     if config.loader.global_batch_size % (
-#         num_gpus * config.trainer.accumulate_grad_batches) != 0:
-#         raise ValueError(
-#             f'Train Batch Size {config.training.batch_size}'
-#             f'not divisible by {num_gpus} gpus with accumulation '
-#             f'{config.trainer.accumulate_grad_batches}.')
-#     if config.loader.eval_global_batch_size % num_gpus != 0:
-#         raise ValueError(
-#             f'Eval Batch Size for {config.eval.batch_size} '
-#             f'not divisible by {num_gpus}.')
-#     if skip_train:
-#         train_set = None
-#     else:
-#         train_set = get_dataset(
-#             config.data.train,
-#             tokenizer,
-#             mode='train',
-#             wrap=config.data.wrap,
-#             cache_dir=config.data.cache_dir,
-#             block_size=config.model.length)
-    
-#     if config.data.valid in ['text8', 'lm1b', 'ag_news']:
-#         validation_split = 'test'
-#     else:
-#         validation_split = 'validation'
-#     if skip_valid:
-#         valid_set = None
-#     else:
-#         valid_set = get_dataset(
-#             config.data.valid,
-#             tokenizer,
-#             wrap=config.data.wrap,
-#             mode=validation_split,
-#             cache_dir=config.data.cache_dir,
-#             block_size=config.model.length,
-#         streaming=False)
-
-#     if skip_train:
-#         train_loader = None
-#     else:
-#         train_loader = torch.utils.data.DataLoader(
-#         train_set,
-#         batch_size=config.loader.batch_size,
-#         num_workers=config.loader.num_workers,
-#         pin_memory=config.loader.pin_memory,
-#         shuffle=not config.data.streaming,
-#         persistent_workers=True)
-#         train_loader.tokenizer = tokenizer
-#     if skip_valid:
-#         valid_loader = None
-#     else:
-#         if valid_seed is None:
-#             shuffle_valid = False
-#             generator = None
-#         else:
-#             shuffle_valid = True
-#             generator = torch.Generator().manual_seed(valid_seed)
-#             valid_loader = torch.utils.data.DataLoader(
-#             valid_set,
-#             batch_size=config.loader.eval_batch_size,
-#             num_workers=config.loader.num_workers,
-#             pin_memory=config.loader.pin_memory,
-#             shuffle=shuffle_valid,
-#             generator=generator)
-#             # Will be used in generative perplexity calculation
-#             valid_loader.tokenizer = tokenizer
-
-#     return train_loader, valid_loader
-
 '''sample_num * [Size(inp_len), Size(out_len)] -> batch_num * Size(batch_size, inp_len+out_len)'''
 def batchlize(task, dataset, batch_size=1000): #TODO: add Sudoku specification
     batches = [] #list[Size(batch_size, inp_len+out_len)]
@@ -270,9 +253,9 @@ def batchlize(task, dataset, batch_size=1000): #TODO: add Sudoku specification
                 ] #list[(feature_label: Size(1, 9*9+9*9), cond_entry: Size(9*9))]
     return batches
 
+#######################################################################################################
 
-
-def load_data(task, train_batch_size, val_batch_size):
+def load_data_old(task, train_batch_size, val_batch_size):
     if task == 'sudoku' or task.startswith('binary'):
         train_set = SATDataset(task, split='train')
         val_set = SATDataset(task, split='val')
@@ -301,9 +284,9 @@ def load_gpt_data(task, max_len, train_batch_size, test_batch_size):
                     entry = json.loads(line.strip())
                     pairs.append((entry['input'], entry['output']))
             print(f'\n{split} set size: {len(pairs)}')
-        # TODO: GTDataset class
-        train_data, test_data = GPTDataset(train_pairs, max_len=max_len, tokenizer=tokenizer), \
-            GPTDataset(test_pairs, max_len=max_len, tokenizer=tokenizer) #max_new_tokens default = 32
+
+        train_data, test_data = CountDownDataset(train_pairs, max_len=max_len, tokenizer=tokenizer), \
+            CountDownDataset(test_pairs, max_len=max_len, tokenizer=tokenizer) #max_new_tokens default = 32
         train_loader, test_loader = DataLoader(train_data, batch_size=train_batch_size, shuffle=True, pin_memory=True), \
             DataLoader(test_data, batch_size=test_batch_size, shuffle=True, pin_memory=True)
     else:
@@ -311,11 +294,17 @@ def load_gpt_data(task, max_len, train_batch_size, test_batch_size):
     print(f'train_data[0]: \n{train_data[0]}')
     return train_loader, test_loader, len(train_data), len(test_data)
 
-def load_bert_data(task, stage, max_len, train_batch_size, val_batch_size):
+def load_data(task, stage, max_len, train_batch_size, val_batch_size):
     test_count = 0
     '''
     params:
-        max_len: the padding length to the BERTDataset, the same parameter for initializing BERT
+        stage: 
+            - inference (default, fully masked target)
+            - sft (partially masked target), 
+            - pretrain (partially masked source and target sequences)
+        max_len: the full length the model can take
+        train_batch_size
+        val_batch_size
         
     return:
         train_loader, test_loader, train_size, test_size, tokenizer
@@ -357,6 +346,7 @@ def load_bert_data(task, stage, max_len, train_batch_size, val_batch_size):
 
     elif task == 'countdown':
         # 1. load tokenizer
+        print(f'pwd: {os.getcwd()}')
         tokenizer = CustomTokenizer.from_pretrained('./ire_reasoning/models/model_config_tiny') 
         # 2. laod dataset
         train_pairs, test_pairs = [], []
@@ -367,11 +357,11 @@ def load_bert_data(task, stage, max_len, train_batch_size, val_batch_size):
                     entry = json.loads(line.strip())
                     pairs.append((entry['input'], entry['output']))
             print(f'\n{split} set size: {len(pairs)}')
+        train_data = CountDownDataset(train_pairs, stage=stage, max_len=max_len, tokenizer=tokenizer)
+        test_data = CountDownDataset(test_pairs, stage=stage, max_len=max_len, tokenizer=tokenizer)
     else:
         raise NotImplementedError
     
-    train_data, test_data = BERTDataset(train_pairs, stage=stage, max_len=max_len, tokenizer=tokenizer), \
-        BERTDataset(test_pairs, stage=stage, max_len=max_len, tokenizer=tokenizer)
     train_loader, test_loader = DataLoader(train_data, batch_size=train_batch_size, shuffle=True, pin_memory=True), \
         DataLoader(test_data, batch_size=val_batch_size, shuffle=True, pin_memory=True)
         

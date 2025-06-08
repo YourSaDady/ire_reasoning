@@ -98,12 +98,8 @@ class BERTDataset(Dataset):
         '''
         Select a positive sample pair from the data_pair, and preprocess.  
         
-        params:
-            - item: line index
-            - t: a random masking rate from a specific schedule
-            - is_pos: positive means x and y from the same line pair; otherwise negative
-            
-        output_dict:
+        params: item: line index
+        return: output_dict:
             - bert_input: masked context tensor of Size(max_len)
             - bert_label: padded label tensor of Size(max_len)
             - is_positive: bool, indicating whether is positive or not 
@@ -299,7 +295,7 @@ class BERTDataset(Dataset):
         
         return pos_neg_outputs
     
-    def get_sents(self, idx):
+    def get_sents(self, idx): #废
         t1, pos_t2, neg_t2 = self.lines[idx][0], self.lines[idx][1], \
             self.lines[rand.randrange(len(self.lines))][1]
         return t1, pos_t2, neg_t2
