@@ -941,32 +941,40 @@ class BERTSequentialEBMs():
             return updated_partial_pred, loss_list
         
     def calculate_contrast_loss(self, pos_latent, neg_latent, pos_label, neg_label, \
-        pos_input, neg_input):
+        pos_input, neg_input, form='softmax', threshold=3, alpha=0.2):
         '''
         Non-batchalized, calcualte the contrast loss based on Eq.(2), take sum from all classes
+        All tensor parameters: Size(max_len)
+        
+        functional forms: 
+            - softmax (diverged): compute the logsoftmax of each pos-neg enegy pair at each position, them sum up
+            - L2: compute the batch-averaged L2 loss between positive and negative energy tensors
+            - hinge: compute the multiclass Hinge loss between the positive energy-based distribution and an argmax negative energy label
         '''
-        # print(f'pos_input: \n{pos_input}, \npos_label:\n{pos_label}')
-        # basically the same implementation as pseudolikelihood
+        # 1. Prepare all the computing factors needed
         os_ = []
         u_primes = []
         pis = []
-        for is_neg, (label, input) in enumerate(zip([pos_label, neg_label], \
+        for _, (label, input) in enumerate(zip([pos_label, neg_label], \
             [pos_input, neg_input])):
-            u = torch.nonzero(label).squeeze() #Size(|u|)
-            o = torch.nonzero(input != (self.special_tok_size-1)).squeeze()
+            u = torch.nonzero(label != self.tokenizer.pad_token_id).squeeze() #Size(|u|)
+            o_mask = (input != self.tokenizer.mask_token_id) & \
+                (input != self.tokenizer.pad_token_id)
+            o = torch.nonzero(o_mask, as_tuple=True)[0]
+            o_len = o.size(0)
             if u.dim():
-                pi = torch.randperm(u.size(0)) #a random estimating order
-                u_prime = u[pi]
+                # pi = torch.randperm(u.size(0)) #a random estimating order
+                # u_prime = u[pi]
+                pi = torch.arange(u.size(0))
+                u_prime = u
             else: # u is a single value
                 pi = torch.tensor([0])
                 u, u_prime = torch.tensor([u]), torch.tensor([u])
             if o.dim() == 0:
                 o = torch.tensor([o])
             os_.append(o), u_primes.append(u_prime), pis.append(pi)
-        # print(f'pos_input: \n{pos_input}, \nneg_input: \n{neg_input}')
-        # print(f'pos_label: \n{pos_label}, \nneg_label: \n{neg_label}')
-        # print(f'pos_pi: \n{pis[0]}, \nneg_pi: \n{pis[1]}')
         pos_eis, neg_eis = [], []
+        pos_ei_dists, neg_ei_dists = [], []
         pos_label, neg_label, pos_input, neg_input = pos_label.unsqueeze(-1), \
             neg_label.unsqueeze(-1), pos_input.unsqueeze(-1), neg_input.unsqueeze(-1)
         for i in range(len(u_primes[1])):
@@ -976,21 +984,51 @@ class BERTSequentialEBMs():
                 full_vals = torch.cat([input[o, :], label[u_prime[:i+1], :]], dim=0)
                 full_latent = torch.cat([latent[o, :], latent[u_prime[:i+1], :]], dim=0)
             
-                ei = self.energy(idx=self.inp_len+2+pi[i], val=True, \
-                    rest_idx=full_vals, latent=full_latent)
+                ei = self.energy(idx=o_len+pi[i], val=True, \
+                    rest_idx=full_vals, latent=full_latent) #Size(1)
+                ei_dist = self.energy(idx=o_len+pi[i], val=False, \
+                    rest_idx=full_vals, latent=full_latent) #Size(1, num_classes)
                 if is_neg:
                     neg_eis.append(ei)
+                    neg_ei_dists.append(ei_dist) 
                 else:
                     pos_eis.append(ei)
+                    pos_ei_dists.append(ei_dist)
         assert len(pos_eis) != 0 and len(neg_eis) != 0, f'u_prime: {u_prime}\npos_label({pos_label.shape}): {pos_label}, \nneg_label({neg_label.shape}): {neg_label}'
-        all_eis = torch.cat(pos_eis+neg_eis, dim=0) #Size(|u'i|)
-        max_ei = all_eis.max()
-        contrast_loss = torch.tensor(0., requires_grad=True).to(self.device)
-        for pos_ei, neg_ei in zip(pos_eis, neg_eis):
-            pos_ei, neg_ei = pos_ei-max_ei, neg_ei-max_ei
-            contrast_loss = contrast_loss - torch.log(torch.exp(-1*pos_ei) / \
-                (torch.exp(-1*pos_ei) + torch.exp(-1*neg_ei)))
-        
+        # 2. Compute contrast losses of different functional forms
+        if form == 'softmax': #diverge error
+            all_eis = torch.cat(pos_eis+neg_eis, dim=0) #Size(|u'i|)
+            max_ei = all_eis.max()
+            contrast_loss = torch.tensor(0., requires_grad=True).to(self.device)
+            for pos_ei, neg_ei in zip(pos_eis, neg_eis):
+                pos_ei, neg_ei = pos_ei-max_ei, neg_ei-max_ei
+                # sigmoid because the raw contrast loss is huge (6k+)
+                contrast_loss = contrast_loss - ( \
+                    torch.log(torch.exp(-1*pos_ei) / \
+                        (torch.exp(-1*pos_ei) + torch.exp(-1*neg_ei))))
+        elif form == 'l2':
+            contrast_criterion = nn.MSELoss(reduction='mean')
+            pos_e, neg_e = torch.cat(pos_eis, dim=0), torch.cat(neg_eis, dim=0)
+            assert pos_e.size(0) == neg_e.size(0) == len(u_primes[1]), f'energy tensors\' length mismatch! pos_e.size: {pos_e.size()}, neg_e.size(): {neg_e.size()}, |u\'|: {len(u_primes[1])}' #|u'|
+            l2 = contrast_criterion(pos_e, neg_e)
+            # print(f'pos_e.size: {pos_e.size()}, neg_e.size(): {neg_e.size()}, l2 contrast_loss: {contrast_loss.size()}')
+            contrast_loss = torch.pow(torch.clamp(threshold - l2, min=0.0), 2)
+        elif form == 'hinge':
+            contrast_criterion = nn.MultiMarginLoss(margin=5, reduction='mean')
+            pos_e_dist = torch.cat(pos_ei_dists, dim=0) #Size(|u'|, num_classes)
+            neg_e_dist = torch.cat(neg_ei_dists, dim=0) #Size(|u'|)
+            assert pos_e_dist.size() == neg_e_dist.size(), print(f'Mismatch!! pos_e_dist: {pos_e_dist.size()}, neg_e_dist: {neg_e_dist.size()}')
+            # print(f'inputs to the hinge loss: pos_e_dist: {pos_e_dist.shape}, pos_e_dist: {pos_e_dist.shape}, neg_pred: {torch.argmax(neg_e_dist, dim=0)}')
+            # take the mean of the two hinge losses after interchange the pos and neg tensors
+            
+            # contrast_loss = contrast_criterion(pos_e_dist, torch.argmax(neg_e_dist, dim=0))
+            contrast_loss = (contrast_criterion(pos_e_dist, torch.argmax(neg_e_dist, dim=0)) + \
+                contrast_criterion(neg_e_dist, torch.argmax(pos_e_dist, dim=0))) / 2
+        elif form == 'reg':
+            pos_e, neg_e = torch.cat(pos_eis, dim=0), torch.cat(neg_eis, dim=0)
+            contrast_loss = torch.sum(alpha * (torch.pow(pos_e, 2) + torch.pow(neg_e, 2)))
+            
+        contrast_loss = (contrast_loss).squeeze()
         return contrast_loss
     
     def pseudolikelihood(self, latent, mlm_label, mlm_input):
@@ -1064,7 +1102,7 @@ class BERTSequentialEBMs():
             z_ui = torch.sum(torch.exp(-1*ei_dist), dim=-1) #Size(1)
             expanded_z_ui = z_ui.unsqueeze(0).expand_as(ei_dist) #Size(num_classes)?
             logp_xui = torch.log(torch.exp(-1*ei_dist) / expanded_z_ui)
-            assert torch.isnan(logp_xui).any() == False, f'logp_xui is NaN!! ei_dist: \n{ei_dist}, \nexpanded_z_ui: \n{expanded_z_ui}'
+            assert torch.isnan(logp_xui).any() == False, f'logp_xui is NaN!! ei_dist: \n{ei_dist}, \nfull_latent: \n{full_latent}\nmlm_input: \n{mlm_input.squeeze()}\ni: {i}'
             # print(f'\nlogp_xui.shape: {logp_xui.shape}') #Size(num_classes)
             logp_xu.append(logp_xui.unsqueeze(0)) #Eq.(0), with sum replaced by concatenation
         #end of EBM iter
@@ -1075,7 +1113,6 @@ class BERTSequentialEBMs():
         # logp_xu = logp_xu_prime[pi_inv]
         
         return logp_xu
-    
     
     
     
@@ -1234,8 +1271,8 @@ class GPTSequentialEBMs():
                         latent=gamma[yo_idx, :], batchalize=False)
                     # print(f'yo_energy: {yo_energy}')
                     
-                    # if b == 0 and t == 0:
-                    #     energies.append(round(yo_energy.item(), 2)) #initial energy
+                    if b == 0 and t == 0:
+                        energies.append(round(yo_energy.item(), 2)) #initial energy
                     
                     # 2. gibbs sampling on each masked position
                     yo_prime = yo.clone()

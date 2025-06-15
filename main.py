@@ -20,6 +20,7 @@ from dataset import load_data
 from utils import convert_time, VisualizeEBMs
 import random as rand
 import wandb
+from time import time
 import json
 
 IGNORE_INDEX = -100
@@ -95,11 +96,13 @@ class SequentialEBMsTrainer:
         train_wandb=True,
         test_wandb=False,
         is_ebm=True,
+        contrast=False,
         device='cpu' ########debugging
     ):
         self.device = device
         self.sebm = sebm
         self.is_ebm = is_ebm
+        self.contrast = contrast
         self.train_data = train_dataloader
         self.test_data = test_dataloader
         # Schedule the optimizer (as stated in paper)
@@ -143,7 +146,7 @@ class SequentialEBMsTrainer:
         simply add a schedule label key-value pair to the data dict
         
         params:
-            data: batchalized data dict with bert_inputs, bert_labels, segment_labels and is_positive
+            data: batchalized data dict with bert_inputs, bert_labels, segment_labels and contrast
             schedule: a list of decreasing masking rate t (fully masked to fully unmasked)
         return:
             scheduled_data: batchalized data dict extended with schedule_label k-v pair
@@ -221,15 +224,23 @@ class SequentialEBMsTrainer:
             'input': scheduled_data['input'].clone(),
             'label': torch.zeros(scheduled_data['label'].size(), dtype=scheduled_data['label'].dtype),
             # 'segment_label': scheduled_data['segment_label'].clone().to(scheduled_data['segment_label'].dtype),
-            'positive': scheduled_data['is_positive']
+            'contrast': scheduled_data['contrast']
         }
+        if self.contrast:
+            partial_data['neg_input'] = partial_data['input'].clone()
+            partial_data['neg_label'] = partial_data['label'].clone()
         for b in range(scheduled_data['schedule_label'].size(0)):
             history_idx = ((scheduled_data['schedule_label'][b] > 0) & \
                 (scheduled_data['schedule_label'][b] < order_label)).nonzero(as_tuple=True)[0]
             current_idx = ((scheduled_data['schedule_label'][b] > 0) & \
                 (scheduled_data['schedule_label'][b] <= order_label)).nonzero(as_tuple=True)[0]
             partial_data['input'][b][history_idx] = scheduled_data['label'][b][history_idx]
-            partial_data['label'][b][current_idx] = scheduled_data['label'][b][current_idx]           
+            partial_data['label'][b][current_idx] = scheduled_data['label'][b][current_idx] 
+            if self.contrast:
+                partial_data['neg_input'][b][history_idx] = \
+                    scheduled_data['label'][b][history_idx] 
+                partial_data['neg_label'][b][current_idx] = \
+                    scheduled_data['neg_label'][b][current_idx]
             
             
         # print(f'\nk={order_label}, xo: \n{partial_data["bert_input"][0]}, xu: \n{partial_data["bert_label"][0]}')
@@ -286,6 +297,8 @@ class SequentialEBMsTrainer:
                     # print(f'\nscheduled_data: \n{scheduled_data}')
                 else:
                     early_stop = 1
+                    
+                ce_losses, contrast_losses, total_losses = {}, {}, {} #for storing each k-th EBM's losses for pretty wandb visualization
                 for k in range(early_stop):
                     if stage == 'inference': #########for tesing
                         data = self.prepare_partial_data(scheduled_data, k+1) #AR-like
@@ -302,6 +315,11 @@ class SequentialEBMsTrainer:
                         # for param in self.sebm.model.parameters():
                         #     print(f'requires_grad: {param.requires_grad}')
                         xo, xu = data, data['label'] #forward argument is a dict
+                    if self.contrast:
+                        # neg_xo, neg_xu = data['neg_input'], data['neg_label']
+                        # neg_gamma = self.sebm.forward(neg_xo, None, is_ebm=True)
+                        neg_xu = data['neg_label']
+                        
                     # neg_xo, neg_xu = neg_data['bert_input'], neg_data['bert_label']
                     # print(f'\nxo({xo.shape}): \n{xo}\nxu({xu.shape}): \n{xu}\n') # both Size([4, 45])
                     # 1. Forward MLM to generate the gamma for calculating the energy landscapes
@@ -309,15 +327,15 @@ class SequentialEBMsTrainer:
                     gamma = self.sebm.forward(xo, None, is_ebm=True) #4,50,31
                     # neg_gamma = self.sebm.model.forward(xo, neg_data['segment_label'], is_ebm=True) 
                     
-                    #_________________test: BERT mlm_loss___________________
-                    # print(f'\nxo.shape: {xo.shape}') #4,50
-                    mlm_output, org_loss = self.sebm.forward(xo, None, is_ebm=False) #xo is partially unmasked 'bert_input'
-                    # print(f'mlm_output.shape: {mlm_output.shape}') #Size(batch_size, |u'|, num_classes)
-                    mlm_criterion = nn.CrossEntropyLoss()
-                    # print(f'k: {k}, mlm_loss input: \n - mlm_output({mlm_output.view(-1, mlm_output.size(-1)).shape}): {mlm_output.view(-1, mlm_output.size(-1))}\n - label({xu.view(-1).shape}): {xu.view(-1)}')
-                    mlm_loss = mlm_criterion(mlm_output.view(-1, mlm_output.size(-1)), xu.view(-1))
-                    # print(f'\nmlm_loss: {mlm_loss}, loss: {org_loss}')
-                    #———————————————————————————————————————————————————————
+                    # #_________________test: BERT mlm_loss___________________
+                    # # print(f'\nxo.shape: {xo.shape}') #4,50
+                    # mlm_output, org_loss = self.sebm.forward(xo, None, is_ebm=False) #xo is partially unmasked 'bert_input'
+                    # # print(f'mlm_output.shape: {mlm_output.shape}') #Size(batch_size, |u'|, num_classes)
+                    # mlm_criterion = nn.CrossEntropyLoss()
+                    # # print(f'k: {k}, mlm_loss input: \n - mlm_output({mlm_output.view(-1, mlm_output.size(-1)).shape}): {mlm_output.view(-1, mlm_output.size(-1))}\n - label({xu.view(-1).shape}): {xu.view(-1)}')
+                    # mlm_loss = mlm_criterion(mlm_output.view(-1, mlm_output.size(-1)), xu.view(-1))
+                    # # print(f'\nmlm_loss: {mlm_loss}, loss: {org_loss}')
+                    # #———————————————————————————————————————————————————————
                     
                     # print(f'\ngamma shape: {gamma.shape}') #Size(batch_size, seq_len, num_classes)
                     
@@ -327,9 +345,11 @@ class SequentialEBMsTrainer:
                     # recover the ignored token to padding
                     xu_ = xu.clone()
                     xu_[xu_ == -100] = 0
-                    if i == 0:
-                        print(f'\nxu[0]: \n{xu[0]}\nxu_[0]: \n{xu_[0]}\n')
+                    # if i == 0:
+                    #     print(f'\nxu[0]: \n{xu[0]}\nxu_[0]: \n{xu_[0]}\n')
                     logp_xu_list, xu_list = [], [] #to store a batch of logp_xu's, of Size(batch_size, |u'|, num_classes)
+                    neg_logp_xu_list, neg_xu_list = [], []
+                    cal_t = time()
                     for r in range(xu.size(0)): #iter within batch
                         xu_token_ids = torch.nonzero(xu_[r]).squeeze() #Size(|u'|)
                         if xu_token_ids.dim()==0 and xu_token_ids:
@@ -337,11 +357,15 @@ class SequentialEBMsTrainer:
                         # print(f'\n_____\nr: {r}, k: {k}\n________\n')
                         # assert torch.nonzero(xu[r]).squeeze().dim(), f"xu[r] is all zero: \n{xu[r]}"
                         if self.sebm.param_type == 'bert':
+                            # logp_xu = gamma[r]#[xu_token_ids]
                             logp_xu = self.sebm.pseudolikelihood(gamma[r], xu_[r], xo[r]) #Size(|u'|, num_classes)
-                            # logp_xu = gamma[r]#[xu_token_ids]
+                            if self.contrast:
+                                neg_logp_xu = self.sebm.pseudolikelihood(gamma[r], neg_xu[r], xo[r])
                         elif self.sebm.param_type == 'gpt':
-                            logp_xu = self.sebm.pseudolikelihood(gamma[r], xu_[r], xo['input'][r]) #gamma[r]: Size(50, 31), xu[r]: Size(50), xo[r]: Size(50)
                             # logp_xu = gamma[r]#[xu_token_ids]
+                            logp_xu = self.sebm.pseudolikelihood(gamma[r], xu_[r], xo['input'][r]) #gamma[r]: Size(50, 31), xu[r]: Size(50), xo[r]: Size(50)
+                            if self.contrast:
+                                logp_xu = self.sebm.pseudolikelihood(gamma[r], neg_xu[r], xo['input'][r])
                         if (logp_xu == None):# or (logp_xu == -1): #not ebm #############################TODO: gpt需要加上后边的condition; bert要去掉后边的
                             continue #batch内该row fully unmasked, 不计算loss
                         xu_label = xu[r][xu_token_ids]
@@ -349,39 +373,51 @@ class SequentialEBMsTrainer:
                             f'\nlogp_xu.shape: {logp_xu.shape}, xu_label.shape: {xu_label.shape}'
                         logp_xu_list.append(logp_xu.unsqueeze(0))
                         xu_list.append(xu_label.unsqueeze(0))
+                        if self.contrast:
+                            neg_xu_label = neg_xu[r][xu_token_ids]
+                            neg_logp_xu_list.append(neg_logp_xu.unsqueeze(0))
+                            neg_xu_list.append(neg_xu_label.unsqueeze(0))
                         # print(f'logp_xu.shape: {logp_xu.shape}, xu_label.shape({xu_label.shape}): {xu_label}')
                         # if r == 0:
                         #     print(f'xu_token_ids: {xu_token_ids}, \nxu_label: {xu_label}')
                         
-                        # #___________sum over batch: contrast loss_______________
-                        # contrast_loss = contrast_loss + self.sebm.calculate_contrast_loss(
-                        #     gamma[r], gamma[r], #use the same latent
-                        #     xu[r], neg_xu[r],
-                        #     xo[r], neg_xo[r]
-                        # )
-                        # #_____________________________
+                        # 2-2. Contrast-loss
+                        #___________sum over batch: contrast loss_______________
+                        if self.contrast:
+                            contrast_loss = contrast_loss + self.sebm.calculate_contrast_loss(
+                                gamma[r], gamma[r], xu[r], neg_xu[r], xo[r], xo[r],
+                                form="reg", threshold=2)
+                        #_____________________________
+                        
                     #end of row iter
                     batch_logp_xu = torch.cat(logp_xu_list, dim=1).squeeze(0) #flattened: Size(sum of |u'| within the batch, num_classes)
                     batch_xu = torch.cat(xu_list, dim=1).view(-1) #flattened: Size(sum of |u'| within the batch) 
                     assert batch_logp_xu.dim(), f'k = {k}, early_stop = {early_stop}, logp_xu_list is empty!: {logp_xu_list}, '
                     # print(f'\nbatch_logp_xu.shape:{batch_logp_xu.shape}, batch_xu.shape: {batch_xu.shape}')
-                    # 2-2. Contrast-loss
-                    # print(f'k: {k}, ce_loss input: \n - batch_logp_xu({batch_logp_xu.shape}): {batch_logp_xu}\n - batch_xu({batch_xu.shape}): {batch_xu}')
-                    # assert torch.equal(mlm_output.view(-1, mlm_output.size(-1)), batch_logp_xu), f'mlm_output: {mlm_output.view(-1, mlm_output.size(-1))}, \nbatch_logp_xu: {batch_logp_xu}'
-                    # assert torch.equal(xu.view(-1), batch_xu), f'mlm label: {xu.view(-1)}, ce label: {batch_xu}'
                     ce_loss = self.criterion(batch_logp_xu, batch_xu)
-                    loss_is_nan = torch.isnan(ce_loss.clone().detach()).any()
-                    assert loss_is_nan == False, f'\nce_loss becomes NaN! '\
-                        f'\nce_loss: {ce_loss}, is_nan: {loss_is_nan}\n' \
-                        f'batch_logp_xu: \n{batch_logp_xu}, \nbatch_xu: \n{batch_xu}, \ngamma[r]: \n{gamma[r]}'
-                            
+                    contrast_loss = contrast_loss / xu.size(0) #mean over the batch
+                    
+                    
+                    ce_is_nan = torch.isnan(ce_loss.clone().detach()).any()
+                    contrast_is_nan = torch.isnan(contrast_loss.clone().detach()).any()
+                    assert ce_is_nan == False, f'\nce_loss becomes NaN! '\
+                        f'\nce_loss: {ce_loss}, is_nan: {ce_is_nan}\n' \
+                        f'contrast_loss: {contrast_loss}, is_nan: {contrast_is_nan}\n' \
+                        f'batch_logp_xu: \n{batch_logp_xu}, \ngamma[r]: \n{gamma[r]}'
+
                     loss = ce_loss + contrast_loss
                     # loss = mlm_loss
                     if self.train_wandb:
-                        wandb.log({"l_ce": ce_loss, "l_contrast": contrast_loss, "loss": org_loss, "mlm_loss": mlm_loss}) #loss: loss
+                        ce_losses[k] = ce_loss
+                        contrast_losses[k] = contrast_loss
+                        total_losses[k] = loss
+                        if k == early_stop - 1: # last k (可能会因为每个sample的K不同而报错)
+                            cal_spent = time() - cal_t
+                            wandb.log({"l_ce": ce_losses, "l_contrast": contrast_losses, \
+                            "l_total": total_losses, "time": cal_spent}) #loss: loss #"l_mlm": mlm_loss, \
                     # #_________mlm__________
                     if i % 50 == 0:
-                        print(f'i={i}, k={k}, ce_loss: {ce_loss}, mlm_loss: {mlm_loss}')
+                        print(f'i={i}, k={k}, ce_loss: {ce_loss}, contrast_loss: {contrast_loss}, loss: {loss}')
                     # if i % 100 == 0:
                     #     pred = mlm_output.argmax(dim=-1)
                     #     correct = self.eval_metric(pred, data['bert_label'])
@@ -577,7 +613,7 @@ class SequentialEBMsTrainer:
         # ) 
         if train:
             print(f'\n\nFinished training.')
-            ckpts_path = f'./ire_reasoning/ebm_ckpts/{self.sebm.task_name}_{self.sebm.param_type}{self.sebm.d_model}_{stage}_ebm_noshuffle.pth' #w_mask_inverse_test
+            ckpts_path = f'./ire_reasoning/ebm_ckpts/{self.sebm.task_name}_{self.sebm.param_type}{self.sebm.d_model}_{stage}_ebm_reg.pth' #w_mask_inverse_test
             torch.save(self.sebm.model.state_dict(), ckpts_path)
             print(f'\nmodel saved to {ckpts_path}')
         elif (not train) and (schedule is not None):
@@ -609,7 +645,8 @@ def main(config):
         stage='inference',#config.train.stage, #这里声明了stage: pretrain / sft
         max_len=max_len,
         train_batch_size=config.train.batch_size, 
-        val_batch_size=config.sampling.batch_size
+        val_batch_size=config.sampling.batch_size,
+        contrast=config.train.contrast
     )
     print(f'param type: {config.param_type}')
     print(f'\nLoaded datasets for task: {config.task_name}, max_len: {max_len}, ' \
@@ -654,6 +691,7 @@ def main(config):
         sampler=config.sampling.sampler,
         test_wandb=config.sampling.wandb,
         is_ebm=config.is_ebm,
+        contrast=config.train.contrast,
         sampling_times=config.sampling.times,
         device=config.device
     )
@@ -687,7 +725,7 @@ def main(config):
         # ckpts_path = f'./ebm_ckpts/{task_config.name}_{config.param_type}' \
         #     f'{config.models[config.param_type].d_model}_diffusion.pth' # _w_mask_inverse.pth # _mlm_test # _w_mask #_diffusion
         # ckpts_path = './ire_reasoning/ebm_ckpts/countdown_bert384_sft.pth'
-        ckpts_path = f'./ire_reasoning/ebm_ckpts/{task_config.name}_{config.param_type}{config.models[config.param_type].d_model}_{config.train.stage}_ebm_noshuffle.pth'
+        ckpts_path = f'./ire_reasoning/ebm_ckpts/{task_config.name}_{config.param_type}{config.models[config.param_type].d_model}_{config.train.stage}_ebm_reg.pth'
         print(f'\n3. Loading checkpoints from {ckpts_path}...')
         sebm_trainer.load_model(ckpts_path)##########################
         

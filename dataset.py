@@ -71,7 +71,7 @@ class SudokuDataset(Dataset):
         return _rescale(self.features[idx].reshape(-1)), _rescale(self.labels[idx].reshape(-1)), self.cond_entry[idx].reshape(-1)
 
 class CountDownDataset(Dataset):
-    def __init__(self, data_pair, tokenizer, stage, max_len=256):
+    def __init__(self, data_pair, tokenizer, stage, max_len=256, contrast=False):
         '''
         Init params:
             - data_pair: a list of (x, y) pairs, where x and y are strings, and words are separated by blank spaces
@@ -82,7 +82,7 @@ class CountDownDataset(Dataset):
         self.corpus_lines = len(data_pair)
         self.lines = data_pair #  line: ('44,2,54,64', '2*54=108,108-44=64')
         self.stage = stage
-        self.is_pos = True
+        self.contrast = contrast
         
     def __len__(self):
         return self.corpus_lines
@@ -95,7 +95,6 @@ class CountDownDataset(Dataset):
         return: output_dict:
             - input: masked context tensor of Size(max_len)
             - label: padded label tensor of Size(max_len)
-            - is_positive: bool, indicating whether is positive or not 
         '''
         # print(f'\ninside _getitem_(), raw data: \n{self.lines[item]}')
         t2_all_zero = True
@@ -105,7 +104,9 @@ class CountDownDataset(Dataset):
             if t == 0:
                 t = 0.05
             # get pos / neg sentence pair
-            t1, t2 = self.get_sent(item, self.is_pos)
+            t1, t2 = self.get_sent(item, is_pos=True)
+            if self.contrast:
+                neg_t2 = self.get_sent(item, is_pos=False) #same t1, but neg_t2
             # print(f'Inside __getitem__(), original t1: \n{t1}, \nt2: \n{t2}')
             # randomly mask t1 and t2 with a uniformly sampled masking rate t
             if self.stage == 'pretrain':
@@ -119,6 +120,14 @@ class CountDownDataset(Dataset):
             elif self.stage == 'inference': 
                 # (t1, t1_label), (t2, t2_label) = self.mask(t1, 0), self.mask(t2, 1)
                 (t1, t1_mask), (t2, t2_mask) = self.encode(t1), self.encode(t2) 
+                if self.contrast:
+                    neg_t2, neg_t2_mask = self.encode(neg_t2)
+                    longer = len(neg_t2) - len(t2)
+                    if longer>=0:
+                        neg_t2 = neg_t2[:len(t2)]
+                    else:
+                        neg_t2 = neg_t2 + [neg_t2[-1]]*(-1*longer)
+                    assert len(neg_t2) == len(t2), f'len(neg_t2): {len(neg_t2)}, len(t2): {len(t2)}'
                 t2_all_zero = False
             else:
                 raise NotImplementedError
@@ -136,26 +145,40 @@ class CountDownDataset(Dataset):
         label_padding = [IGNORE_INDEX] * (self.max_len - len(input)) #self.tokenizer.pad_token_id
         attn_padding = [0] * (self.max_len - len(input))
         input.extend(input_padding), label.extend(label_padding), attn.extend(attn_padding)
-        
+        if self.contrast:
+            neg_label = (t1_mask + [self.tokenizer.sep_token_id] + neg_t2 \
+            + [self.tokenizer.eos_token_id])[:self.max_len]
+            neg_label.extend(label_padding)
         
         output = {
             'input': input,
             'label': label,
             'attention': attn,
         }
+        if self.contrast:
+            output['neg_label'] = neg_label
         # print(f'final:\nraw line[idx]: \n{self.lines[item]}\nbert_input: \n{bert_input}, \nbert_label: \n{bert_label}') # \nsegment_label: \n{segment_label}
         output = {k: torch.tensor(v) for k, v in output.items()}
-        output['is_positive'] = self.is_pos
+        output['contrast'] = self.contrast
         
         return output
     
     def get_sent(self, idx, is_pos):
         if is_pos:
             t1, t2 = self.lines[idx][0], self.lines[idx][1]
+            return t1, t2
         else:
-            t1, t2 = self.lines[idx][0], self.lines[rand.randrange(len(self.lines))][1]
-            
-        return t1, t2
+            # method1: random pair (meaningful negative target)
+            while True: #ensure the t2 is negative
+                t2 = self.lines[rand.randrange(len(self.lines))][1]
+                if t2 != self.lines[idx][1]:
+                    break
+            # # method2: random token_id (meaningless negative target)
+            # t2_len = len(self.encode(self.lines[idx][1])[0])
+            # t2_ids = [rand.randint(5,20) for _ in range(t2_len)]
+            # t2 = self.tokenizer.decode(t2_ids)
+            # # print(f'neg t2: {t2}')
+            return t2
     
     def mask(self, sentence, t):
         tokens = sentence.split() #only useful for textual sentences
@@ -284,8 +307,8 @@ def load_gpt_data(task, max_len, train_batch_size, test_batch_size):
                     entry = json.loads(line.strip())
                     pairs.append((entry['input'], entry['output']))
             print(f'\n{split} set size: {len(pairs)}')
-
-        train_data, test_data = CountDownDataset(train_pairs, max_len=max_len, tokenizer=tokenizer), \
+        # additional negative samples for the train set
+        train_data, test_data = CountDownDataset(train_pairs, max_len=max_len, tokenizer=tokenizer, is_pos=False), \
             CountDownDataset(test_pairs, max_len=max_len, tokenizer=tokenizer) #max_new_tokens default = 32
         train_loader, test_loader = DataLoader(train_data, batch_size=train_batch_size, shuffle=True, pin_memory=True), \
             DataLoader(test_data, batch_size=test_batch_size, shuffle=True, pin_memory=True)
@@ -294,7 +317,7 @@ def load_gpt_data(task, max_len, train_batch_size, test_batch_size):
     print(f'train_data[0]: \n{train_data[0]}')
     return train_loader, test_loader, len(train_data), len(test_data)
 
-def load_data(task, stage, max_len, train_batch_size, val_batch_size):
+def load_data(task, stage, max_len, train_batch_size, val_batch_size, contrast=False):
     test_count = 0
     '''
     params:
@@ -357,7 +380,7 @@ def load_data(task, stage, max_len, train_batch_size, val_batch_size):
                     entry = json.loads(line.strip())
                     pairs.append((entry['input'], entry['output']))
             print(f'\n{split} set size: {len(pairs)}')
-        train_data = CountDownDataset(train_pairs, stage=stage, max_len=max_len, tokenizer=tokenizer)
+        train_data = CountDownDataset(train_pairs, stage=stage, max_len=max_len, tokenizer=tokenizer, contrast=contrast)
         test_data = CountDownDataset(test_pairs, stage=stage, max_len=max_len, tokenizer=tokenizer)
     else:
         raise NotImplementedError
