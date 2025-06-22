@@ -97,9 +97,11 @@ class SequentialEBMsTrainer:
         test_wandb=False,
         is_ebm=True,
         contrast=False,
-        device='cpu' ########debugging
+        device='cpu', ########debugging
+        parallel=False,
     ):
         self.device = device
+        self.parallel = parallel
         self.sebm = sebm
         self.is_ebm = is_ebm
         self.contrast = contrast
@@ -139,7 +141,7 @@ class SequentialEBMsTrainer:
             raise NotImplementedError
         else:
             self.iteration(1, self.test_data, stage=stage, train=False, \
-                schedule=t_list)
+                schedule=t_list, parallel=self.parallel)
         
     def add_schedule(self, data, schedule):
         '''
@@ -246,14 +248,14 @@ class SequentialEBMsTrainer:
         # print(f'\nk={order_label}, xo: \n{partial_data["bert_input"][0]}, xu: \n{partial_data["bert_label"][0]}')
         return partial_data        
         
-    def to_device(self, data_dict):
+    def to_device(self, data_dict): #暂时废了
         for k,v in data_dict.items():
             if torch.is_tensor(v):
                 v.to(self.device)
         return data_dict
     
     def iteration(self, epoch, data_loader, stage, train=True, schedule=None, \
-                  is_ebm=True, visual_ebms=None):
+                  is_ebm=True, visual_ebms=None, parallel=False):
         '''
         Algorithm core function (exclude sampling details)
         Performs train / test / evaluation iterations during different stages
@@ -273,12 +275,15 @@ class SequentialEBMsTrainer:
             evalfile.write('')#, trainfile.write('')
 
         # progress bar
-        data_iter = tqdm(
-            enumerate(data_loader),
-            desc="EP_%s_%s:%d" % (mode, stage, epoch),
-            total=len(data_loader),
-            bar_format="{l_bar}{r_bar}"
-        )
+        if not parallel:
+            data_iter = tqdm(
+                enumerate(data_loader),
+                desc="EP_%s_%s:%d" % (mode, stage, epoch),
+                total=len(data_loader),
+                bar_format="{l_bar}{r_bar}"
+            )
+        else:
+            data_iter = enumerate(data_loader)
         
         if self.sebm.task_name == 'countdown':
             special_tokens = {0,1,2,3,4}
@@ -386,7 +391,7 @@ class SequentialEBMsTrainer:
                         if self.contrast:
                             contrast_loss = contrast_loss + self.sebm.calculate_contrast_loss(
                                 gamma[r], gamma[r], xu[r], neg_xu[r], xo[r], xo[r],
-                                form="reg", threshold=2)
+                                form="l2", threshold=2)
                         #_____________________________
                         
                     #end of row iter
@@ -412,11 +417,13 @@ class SequentialEBMsTrainer:
                         contrast_losses[k] = contrast_loss
                         total_losses[k] = loss
                         if k == early_stop - 1: # last k (可能会因为每个sample的K不同而报错)
+                            if self.parallel and self.device != 0:
+                                continue
                             cal_spent = time() - cal_t
                             wandb.log({"l_ce": ce_losses, "l_contrast": contrast_losses, \
                             "l_total": total_losses, "time": cal_spent}) #loss: loss #"l_mlm": mlm_loss, \
                     # #_________mlm__________
-                    if i % 50 == 0:
+                    if i % 50 == 0 and self.device == 0:
                         print(f'i={i}, k={k}, ce_loss: {ce_loss}, contrast_loss: {contrast_loss}, loss: {loss}')
                     # if i % 100 == 0:
                     #     pred = mlm_output.argmax(dim=-1)
@@ -601,7 +608,7 @@ class SequentialEBMsTrainer:
             # if i % self.log_freq == 0: ###############
             #     data_iter.write(str(post_fix)) ##################
                 
-            # break ###############test
+            break ###############test
             # if i == 10:
             #     break ###############test
         #end of batch iter
@@ -613,9 +620,15 @@ class SequentialEBMsTrainer:
         # ) 
         if train:
             print(f'\n\nFinished training.')
-            ckpts_path = f'./ire_reasoning/ebm_ckpts/{self.sebm.task_name}_{self.sebm.param_type}{self.sebm.d_model}_{stage}_ebm_reg.pth' #w_mask_inverse_test
-            torch.save(self.sebm.model.state_dict(), ckpts_path)
-            print(f'\nmodel saved to {ckpts_path}')
+            ckpts_path = f'./ire_reasoning/ebm_ckpts/{self.sebm.task_name}_{self.sebm.param_type}{self.sebm.d_model}_{stage}_test.pth' #w_mask_inverse_test
+            if not self.parallel:
+                torch.save(self.sebm.model.state_dict(), ckpts_path)
+                print(f'\nmodel saved to {ckpts_path}')
+            else: #if parallel, save the checkpoints from one of the processes
+                torch.distributed.barrier()
+                if self.device == 0:
+                    torch.save(self.sebm.model.module.state_dict(), ckpts_path)
+                    print(f'\nmodel saved to {ckpts_path}')
         elif (not train) and (schedule is not None):
             final_acc = round(total_correct*100/total_samples, 2)
             print(f'\nFinished sampling (inference), '\
@@ -646,7 +659,8 @@ def main(config):
         max_len=max_len,
         train_batch_size=config.train.batch_size, 
         val_batch_size=config.sampling.batch_size,
-        contrast=config.train.contrast
+        contrast=config.train.contrast,
+        parallel=config.parallel,
     )
     print(f'param type: {config.param_type}')
     print(f'\nLoaded datasets for task: {config.task_name}, max_len: {max_len}, ' \
@@ -693,7 +707,8 @@ def main(config):
         is_ebm=config.is_ebm,
         contrast=config.train.contrast,
         sampling_times=config.sampling.times,
-        device=config.device
+        device=config.device,
+        parallel=config.parallel,
     )
 
     # return ##############
@@ -725,7 +740,7 @@ def main(config):
         # ckpts_path = f'./ebm_ckpts/{task_config.name}_{config.param_type}' \
         #     f'{config.models[config.param_type].d_model}_diffusion.pth' # _w_mask_inverse.pth # _mlm_test # _w_mask #_diffusion
         # ckpts_path = './ire_reasoning/ebm_ckpts/countdown_bert384_sft.pth'
-        ckpts_path = f'./ire_reasoning/ebm_ckpts/{task_config.name}_{config.param_type}{config.models[config.param_type].d_model}_{config.train.stage}_ebm_reg.pth'
+        ckpts_path = f'./ire_reasoning/ebm_ckpts/{task_config.name}_{config.param_type}{config.models[config.param_type].d_model}_{config.train.stage}_test.pth'
         print(f'\n3. Loading checkpoints from {ckpts_path}...')
         sebm_trainer.load_model(ckpts_path)##########################
         

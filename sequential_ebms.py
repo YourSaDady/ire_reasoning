@@ -23,6 +23,7 @@ os.environ['WANDB_API_KEY'] = '3c06642500f1527ecd0328870ff61d36b5c17193'
 from transformers import AutoTokenizer, PreTrainedTokenizer, AutoModelForCausalLM, GenerationConfig, AutoConfig
 # from transformers.modeling_outputs import CausalLMOutput
 from models.custom_tokenizer import CustomTokenizer
+from models.bert import PositionalEmbedding
 
 from utils import convert_time, VisualizeEBMs, check_grad
 from typing import Optional, Union, Callable
@@ -559,6 +560,7 @@ class BERTSequentialEBMs():
         self.heads = heads
         self.device = device ###########for debugging
         self.criterion = nn.CrossEntropyLoss()
+        self.pe = PositionalEmbedding(d_model=self.vocab_size, max_len=self.max_len) #for energy
         
         self._build_model()
         
@@ -580,7 +582,7 @@ class BERTSequentialEBMs():
             return self.model.forward(bert_input, segment_label, is_ebm), 0.0
         
     def energy(self, idx:int, val: bool, rest_idx: torch.Tensor, latent: torch.Tensor, \
-        batchalize=False) -> torch.Tensor:
+        pe=True, batchalize=False) -> torch.Tensor:
         '''
         E(x_ui (=val) ; rest_idx)
         
@@ -593,7 +595,7 @@ class BERTSequentialEBMs():
             val: whether the predict value "x_{u'_i}" is given, determines what to return
             rest_idx: the conditional values (include pos i!), represented by a 2D tensor of Size(|x_{u'_{<=i}}|, 1)
             latent: the value source for energy calculation, represented by a 2D tensor of Size(|x_{u'_{<=i}}|, num_classes) 
-            
+            pe: whether add positional embedding to the latent before calculating the energy
         return:
                 energy: Size(1), if specified val;
                 energy vector: Size(vocab_size), otherwise
@@ -620,7 +622,13 @@ class BERTSequentialEBMs():
                 # print(f'\nrest_idx: \n{rest_idx}, \nexpanded_idx: \n{expanded_idx}')
             expanded_idx = expanded_idx.to(torch.long).to(self.device)
             energy = torch.gather(input=latent, dim=-1, index=expanded_idx) #Size(out_len, num_classes)
-                
+              
+        if pe:
+            print(f'\nInside energy(), before sum, energy with val({val}).shape: {energy.shape}\n') #torch.Size([13, 31])
+            # TODO: add pe (require_grad=False / function) before sum
+            # 考察下inference需不需要改
+            
+            raise  
         return -1 * torch.sum(energy, dim=-2) #sum along all ui positions #-1 *
         
     def gibbs_dist(self, energy_dist: torch.Tensor, energy_clip=True):
@@ -1011,8 +1019,9 @@ class BERTSequentialEBMs():
             pos_e, neg_e = torch.cat(pos_eis, dim=0), torch.cat(neg_eis, dim=0)
             assert pos_e.size(0) == neg_e.size(0) == len(u_primes[1]), f'energy tensors\' length mismatch! pos_e.size: {pos_e.size()}, neg_e.size(): {neg_e.size()}, |u\'|: {len(u_primes[1])}' #|u'|
             l2 = contrast_criterion(pos_e, neg_e)
+            reg = torch.sum(alpha * (torch.pow(pos_e, 2) + torch.pow(neg_e, 2)))
             # print(f'pos_e.size: {pos_e.size()}, neg_e.size(): {neg_e.size()}, l2 contrast_loss: {contrast_loss.size()}')
-            contrast_loss = torch.pow(torch.clamp(threshold - l2, min=0.0), 2)
+            contrast_loss = torch.pow(torch.clamp(threshold - l2, min=0.0), 2) # + reg
         elif form == 'hinge':
             contrast_criterion = nn.MultiMarginLoss(margin=5, reduction='mean')
             pos_e_dist = torch.cat(pos_ei_dists, dim=0) #Size(|u'|, num_classes)

@@ -1,0 +1,183 @@
+'''
+Multi-GPUs Parallel version of main.py
+'''
+import torch
+import torch.nn as nn
+import torch.optim as optim
+import numpy as np
+import argparse
+import sys
+import os
+import os.path as osp
+from tqdm import tqdm
+sys.path.append('/home/yichuan/HKU/EBM/ire_reasoning')
+os.chdir('/home/yichuan/HKU/EBM/ire_reasoning')
+# print(f'The current working directory: {os.getcwd()}')
+import hydra
+from sequential_ebms import BERTSequentialEBMs, GPTSequentialEBMs
+from main import unmasking_schedule, ScheduledOptim, SequentialEBMsTrainer
+from dataset import load_data
+from utils import convert_time, VisualizeEBMs
+import random as rand
+import wandb
+from time import time
+import json
+
+IGNORE_INDEX = -100
+
+# parallel-related
+import torch.distributed as dist
+import torch.multiprocessing as mp
+from torch.nn.parallel import DistributedDataParallel as DDP
+
+def setup(rank, world_size):
+    os.environ['MASTER_ADDR'] = 'localhost'
+    os.environ['MASTER_PORT'] = '12344'
+    torch.cuda.set_device(rank)
+    dist.init_process_group("nccl", rank=rank, world_size=world_size)
+
+def cleanup():
+    dist.destroy_process_group()
+    
+    
+class ParallelSequentialEBMsTrainer(SequentialEBMsTrainer):
+    def __init__(
+        self,
+        sebm,
+        train_dataloader,
+        test_dataloader,
+        lr=1e-4,
+        # weight_decay=0.01,
+        # betas=(0.9, 0.999),
+        # warmup_steps=10000,
+        # log_freq=10,
+        train_wandb=True,
+        test_wandb=False,
+        sampler='gibbs',
+        sampling_times=10,
+        is_ebm=True,
+        contrast=False,
+        device=None,
+    ):
+        super().__init__(sebm, 
+            train_dataloader, 
+            test_dataloader, 
+            lr,
+            sampler=sampler,
+            train_wandb=train_wandb,
+            test_wandb=test_wandb,
+            is_ebm=is_ebm,
+            contrast=contrast,
+            sampling_times=sampling_times,
+            device=device,
+            parallel=True,
+        )
+        
+        # Wrap the model with DistributedDataParallel
+        self.sebm.model = DDP(self.sebm.model, \
+            device_ids=[self.device])
+
+
+
+
+'''
+Parallel version of main()
+'''
+def train(rank, world_size, config):
+    '''0. Set up parallel environment'''
+    setup(rank, world_size)
+    
+    '''1. Load task datasets'''
+    if config.task_name == 'countdown':
+        max_len = config.tasks[config.task_name].max_len
+    else:
+        raise NotImplementedError(f'{config.task_name} is not specified!')
+    train_loader, test_loader, train_size, test_size, tokenizer = load_data(
+        config.task_name, 
+        stage='inference',#config.train.stage, #这里声明了stage: pretrain / sft
+        max_len=max_len,
+        train_batch_size=config.train.batch_size, 
+        val_batch_size=config.sampling.batch_size,
+        contrast=config.train.contrast,
+        parallel=config.parallel,
+    )
+    print(f'param type: {config.param_type}')
+    print(f'\nLoaded datasets for task: {config.task_name}, max_len: {max_len}, ' \
+        f'train:test={train_size}:{test_size} (before batching)...')
+    # return ##############
+    
+    '''2. Initialize sequential EBMs'''
+    print(f'\nInitializing EBMs...')
+    task_config = config.tasks[config.task_name]
+    model_config = config.models[config.param_type]
+    if task_config.name.startswith('binary'):
+        print(f'inp_len: {task_config.inp_len}, out_len: {task_config.out_len}, num_classes: {task_config.num_classes}')
+    if config.param_type == 'bert':
+        d_model = config.models[config.param_type].d_model
+        n_layers = config.models[config.param_type].n_layers
+        heads = config.models[config.param_type].heads
+        sebm = BERTSequentialEBMs( #fixed input and output lengths
+            tokenizer=tokenizer,
+            task_config=task_config,
+            d_model=d_model, #######32 hidden_size
+            n_layers=n_layers,
+            heads=heads,
+            device=rank
+            )
+        # assert all(param.device.type == rank for param in sebm.model.parameters()), \
+        #     f'{[param.device.type for param in sebm.model.parameters()]}'
+    elif config.param_type == 'gpt': #gpt2-6m-scratch from diffu-vs-ar paper
+        sebm = GPTSequentialEBMs( #flexible input and output length
+            tokenizer,
+            task_config,
+            model_config=None, #TODO: other configs, if necessary
+            device=rank,
+        )
+    else:
+        raise NotImplementedError
+    
+    '''3. Initialize Trainer'''
+    sebm_trainer = ParallelSequentialEBMsTrainer(
+        sebm, 
+        train_loader, 
+        test_loader, 
+        lr=config.train.lr,
+        train_wandb=config.train.wandb,
+        sampler=config.sampling.sampler,
+        test_wandb=config.sampling.wandb,
+        is_ebm=config.is_ebm,
+        contrast=config.train.contrast,
+        sampling_times=config.sampling.times,
+        device=rank
+    )
+    
+    if config.train.wandb and sebm_trainer.device == 0:
+        print(f'\n\n\nStart training...')
+        wandb.login()
+        run = wandb.init(
+            project=f'EBM_train-{task_config.name}_{config.param_type}_rank0',  # Specify your project
+            config={                        # Track hyperparameters and metadata
+                "learning_rate": config.train.lr,
+                "epochs": config.train.epochs,
+            },
+        )
+    for epoch in range(config.train.epochs):
+        #make shuffling work properly across multiple epochs
+        sebm_trainer.train_data.sampler.set_epoch(epoch)
+        sebm_trainer.train(epoch, config.train.stage)
+    
+    cleanup()
+
+
+
+
+@hydra.main(version_base=None, config_path='./configs', config_name='config')
+def main(config):
+    world_size = torch.cuda.device_count()
+    mp.spawn(train, args=(world_size, config), nprocs=world_size, join=True)
+
+
+if __name__ == "__main__":
+    main()
+    
+

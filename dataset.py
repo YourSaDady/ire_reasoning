@@ -6,6 +6,7 @@ import torch
 import itertools
 import random as rand
 from torch.utils.data  import Dataset, DataLoader
+from torch.utils.data.distributed import DistributedSampler
 import pandas as pd
 import numpy as np
 sys.path.append('/home/yichuan/HKU/EBM')
@@ -317,7 +318,7 @@ def load_gpt_data(task, max_len, train_batch_size, test_batch_size):
     print(f'train_data[0]: \n{train_data[0]}')
     return train_loader, test_loader, len(train_data), len(test_data)
 
-def load_data(task, stage, max_len, train_batch_size, val_batch_size, contrast=False):
+def load_data(task, stage, max_len, train_batch_size, val_batch_size, contrast=False, parallel=False):
     test_count = 0
     '''
     params:
@@ -385,10 +386,15 @@ def load_data(task, stage, max_len, train_batch_size, val_batch_size, contrast=F
     else:
         raise NotImplementedError
     
-    train_loader, test_loader = DataLoader(train_data, batch_size=train_batch_size, shuffle=True, pin_memory=True), \
-        DataLoader(test_data, batch_size=val_batch_size, shuffle=True, pin_memory=True)
-        
     print(f'train_data[0]: \n{train_data[0]}')
-    # print(f'\ntrain_loader[0]: \n{train_loader[0]}')
-        
-    return train_loader, test_loader, len(train_pairs), len(test_pairs), tokenizer
+    
+    if not parallel:
+        train_loader, test_loader = DataLoader(train_data, batch_size=train_batch_size, shuffle=True, pin_memory=True), \
+            DataLoader(test_data, batch_size=val_batch_size, shuffle=True, pin_memory=True)
+        return train_loader, test_loader, len(train_pairs), len(test_pairs), tokenizer
+    
+    else: #effective batch size is 32 * nprocs
+        train_loader, test_loader = DataLoader(train_data, batch_size=32, shuffle=False, \
+            sampler=DistributedSampler(train_data)), DataLoader(test_data, batch_size=32, \
+            shuffle=False, sampler=DistributedSampler(test_data))
+        return train_loader, test_loader, len(train_pairs), len(test_pairs), tokenizer
