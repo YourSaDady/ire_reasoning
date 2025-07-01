@@ -1,10 +1,11 @@
 '''
 Train and Evaluate sequential EBMs
 '''
-
+import tempfile
 import torch
 import torch.nn as nn
 import torch.optim as optim
+import torch.distributed as dist
 import numpy as np
 import argparse
 import sys
@@ -24,6 +25,17 @@ from time import time
 import json
 
 IGNORE_INDEX = -100
+
+def remove_module_prefix(state_dict):
+    """Remove 'module.' prefix from keys in state_dict."""
+    new_state_dict = {}
+    for key, value in state_dict.items():
+        if key.startswith("module."):
+            new_key = key[len("module."):]  # Remove "module." prefix
+        else:
+            new_key = key
+        new_state_dict[new_key] = value
+    return new_state_dict
 
 def test(model, test_data):
     '''
@@ -120,9 +132,11 @@ class SequentialEBMsTrainer:
         self.train_wandb = train_wandb
         self.test_wandb = test_wandb
         print(f"Total Parameters: {sum([p.nelement() for p in self.sebm.model.parameters()])}, is_ebm: {self.is_ebm}")
+        self.ckpts_path = f'./ire_reasoning/ebm_ckpts/{self.sebm.task_name}_{self.sebm.param_type}{self.sebm.d_model}_ebm_order.pth' #w_mask_inverse_test
     
-    def load_model(self, ckpts_path):
-        state_dict = torch.load(ckpts_path)
+    def load_model(self, ckpts_path, device='cuda'):
+        state_dict = torch.load(ckpts_path, map_location=device)
+        state_dict = remove_module_prefix(state_dict)
         self.sebm.model.load_state_dict(state_dict)
         
     def train(self, epoch, stage):
@@ -290,11 +304,28 @@ class SequentialEBMsTrainer:
             self.sebm.special_tok_size = len(special_tokens)
         else:
             raise NotImplementedError(f'special tokens for task {self.sebm.task_name} not specified!!')
-
+ 
         # for i, (pos_data, neg_data) in data_iter: #batch
         for i, data in data_iter: #batch
             # data = self.to_device(data)
             if train:
+                # Save model checkpoints every 2 iterations
+                if (i % 10 == 0) and self.parallel:
+                    # CHECKPOINT_PATH = tempfile.gettempdir() + "/model.checkpoint"
+                    if self.device == 0:
+                        torch.save(self.sebm.model.state_dict(), self.ckpts_path)
+                        print(f'{i}-iter ckpt saved by rank[0] to path: {self.ckpts_path}')
+                        
+                    # print(f'rank [{self.device}] waiting...')
+                    # dist.barrier()
+                    # print(f'synchronized.')
+                    
+                    # # configure map_location properly
+                    # map_location = {'cuda:%d' % self.device: 'cuda:%d' % self.device}
+                    # self.sebm.model.load_state_dict(
+                    #     torch.load(self.ckpts_path, map_location=map_location, weights_only=True))
+                    # print(f'rank ({self.deivce}) loaded {i}-iter ckpt')
+                
                 if stage == 'inference': #########for tesing
                     K = 10
                     t_list = unmasking_schedule(K+2, 'cosine')[1:-1]
@@ -302,7 +333,6 @@ class SequentialEBMsTrainer:
                     # print(f'\nscheduled_data: \n{scheduled_data}')
                 else:
                     early_stop = 1
-                    
                 ce_losses, contrast_losses, total_losses = {}, {}, {} #for storing each k-th EBM's losses for pretty wandb visualization
                 for k in range(early_stop):
                     if stage == 'inference': #########for tesing
@@ -373,6 +403,13 @@ class SequentialEBMsTrainer:
                                 logp_xu = self.sebm.pseudolikelihood(gamma[r], neg_xu[r], xo['input'][r])
                         if (logp_xu == None):# or (logp_xu == -1): #not ebm #############################TODO: gpt需要加上后边的condition; bert要去掉后边的
                             continue #batch内该row fully unmasked, 不计算loss
+                        # '''ordered, non-zero xo and xu'''
+                        # label = xo[r]
+                        # label[xu_token_ids] = xu[r][xu_token_ids]
+                        # label_ids = label.nonzero(as_tuple=True)[0]
+                        # label = label[label_ids]
+                        # xu_label = label
+                        # '''inordered, indexed xu'''
                         xu_label = xu[r][xu_token_ids]
                         assert logp_xu.size(0) == xu_label.size(0), \
                             f'\nlogp_xu.shape: {logp_xu.shape}, xu_label.shape: {xu_label.shape}'
@@ -391,10 +428,10 @@ class SequentialEBMsTrainer:
                         if self.contrast:
                             contrast_loss = contrast_loss + self.sebm.calculate_contrast_loss(
                                 gamma[r], gamma[r], xu[r], neg_xu[r], xo[r], xo[r],
-                                form="l2", threshold=2)
+                                form="l2", threshold=4)
                         #_____________________________
-                        
                     #end of row iter
+                    
                     batch_logp_xu = torch.cat(logp_xu_list, dim=1).squeeze(0) #flattened: Size(sum of |u'| within the batch, num_classes)
                     batch_xu = torch.cat(xu_list, dim=1).view(-1) #flattened: Size(sum of |u'| within the batch) 
                     assert batch_logp_xu.dim(), f'k = {k}, early_stop = {early_stop}, logp_xu_list is empty!: {logp_xu_list}, '
@@ -441,15 +478,15 @@ class SequentialEBMsTrainer:
                     # #______________________
             
                     # 3. backward and optimization only in train
+                    # print(f'rank[{self.device}] start back-prop at k={k}...')
+                    # print(f'rank[{self.device}] at k[{k}] waiting for back-prop...')
+                    # dist.barrier()
                     self.optim_schedule.zero_grad()
                     loss.backward()
                     # Clip gradients
                     max_norm = 1.0
                     torch.nn.utils.clip_grad_norm_(self.sebm.model.parameters(), max_norm)
                     self.optim_schedule.step_and_update_lr()
-
-                    # next sentence prediction accuracy
-                    # correct = next_sent_output.argmax(dim=-1).eq(data["is_next"]).sum().item()
                     avg_loss += loss.cpu().item()
                     # total_correct += correct
                     # total_samples += data["is_next"].nelement()
@@ -460,7 +497,11 @@ class SequentialEBMsTrainer:
                         # "avg_acc": total_correct / total_samples * 100,
                         "loss": loss.item()
                     }
+                    # print(f'rank[{self.device}] at k[{k}] finished back-prop.')
                 #end of k (schedule) iter (if any)
+                # if self.parallel:
+                #     dist.barrier()
+                #     print(f'Finished k iter, synchronized.')
                 
             elif (not train) and stage == 'inference':
                 '''inference with scheduled t and sequential EBMs sampling'''
@@ -598,37 +639,31 @@ class SequentialEBMsTrainer:
                     stats['label'] = data['labels'].cpu().tolist()[0]
                 with open(eval_path, 'a') as statsfile:
                     statsfile.write(json.dumps(stats)+'\n')
-                
-            
+
             else:
                 '''test the MLM training effectiveness and sampling'''
                 # TODO 或许没用？
                 raise NotImplementedError
-
-            # if i % self.log_freq == 0: ###############
-            #     data_iter.write(str(post_fix)) ##################
                 
-            break ###############test
+            # break ###############test
             # if i == 10:
             #     break ###############test
         #end of batch iter
-        
-        # print(
-        #     f"EP{epoch}, {mode}: \
-        #     avg_loss={avg_loss / len(data_iter)}, \
-        #     total_acc={total_correct * 100.0 / total_samples}"
-        # ) 
+
+
         if train:
             print(f'\n\nFinished training.')
-            ckpts_path = f'./ire_reasoning/ebm_ckpts/{self.sebm.task_name}_{self.sebm.param_type}{self.sebm.d_model}_{stage}_test.pth' #w_mask_inverse_test
+            # ckpts_path = f'./ire_reasoning/ebm_ckpts/{self.sebm.task_name}_{self.sebm.param_type}{self.sebm.d_model}_{stage}_ebm_test.pth' #w_mask_inverse_test
             if not self.parallel:
-                torch.save(self.sebm.model.state_dict(), ckpts_path)
-                print(f'\nmodel saved to {ckpts_path}')
+                torch.save(self.sebm.model.state_dict(), self.ckpts_path)
+                print(f'\nmodel saved to {self.ckpts_path}')
             else: #if parallel, save the checkpoints from one of the processes
-                torch.distributed.barrier()
+                print(f'\nrank({self.device}) finished training! waiting...')
+                dist.barrier()
+                print(f'synchronized...')
                 if self.device == 0:
-                    torch.save(self.sebm.model.module.state_dict(), ckpts_path)
-                    print(f'\nmodel saved to {ckpts_path}')
+                    torch.save(self.sebm.model.state_dict(), self.ckpts_path)
+                    print(f'\nrank[0] model finally saved ckpt to {self.ckpts_path}')
         elif (not train) and (schedule is not None):
             final_acc = round(total_correct*100/total_samples, 2)
             print(f'\nFinished sampling (inference), '\
@@ -686,7 +721,8 @@ def main(config):
             heads=heads,
             device=config.device
             )
-        assert all(param.device.type == config.device for param in sebm.model.parameters())
+        # assert all(param.device.type == config.device for param in sebm.model.parameters()), \
+        #     f'All param devices: \n{[param.device.type for param in sebm.model.parameters()]}'
     elif config.param_type == 'gpt': #gpt2-6m-scratch from diffu-vs-ar paper
         sebm = GPTSequentialEBMs( #flexible input and output length
             tokenizer,
@@ -740,9 +776,10 @@ def main(config):
         # ckpts_path = f'./ebm_ckpts/{task_config.name}_{config.param_type}' \
         #     f'{config.models[config.param_type].d_model}_diffusion.pth' # _w_mask_inverse.pth # _mlm_test # _w_mask #_diffusion
         # ckpts_path = './ire_reasoning/ebm_ckpts/countdown_bert384_sft.pth'
-        ckpts_path = f'./ire_reasoning/ebm_ckpts/{task_config.name}_{config.param_type}{config.models[config.param_type].d_model}_{config.train.stage}_test.pth'
+        ckpts_path = sebm_trainer.ckpts_path
+        # ckpts_path = f'./ire_reasoning/ebm_ckpts/{task_config.name}_{config.param_type}{config.models[config.param_type].d_model}_{config.train.stage}_ebm_test.pth'
         print(f'\n3. Loading checkpoints from {ckpts_path}...')
-        sebm_trainer.load_model(ckpts_path)##########################
+        sebm_trainer.load_model(ckpts_path, config.device)##########################
         
         if config.continue_train: #further tune the mlm model with fully masked t2 ('sft' stage)
             print(f'Continue train on {config.train.stage}...')

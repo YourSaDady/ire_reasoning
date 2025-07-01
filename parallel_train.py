@@ -32,7 +32,7 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 
 def setup(rank, world_size):
     os.environ['MASTER_ADDR'] = 'localhost'
-    os.environ['MASTER_PORT'] = '12344'
+    os.environ['MASTER_PORT'] = '12374'
     torch.cuda.set_device(rank)
     dist.init_process_group("nccl", rank=rank, world_size=world_size)
 
@@ -86,6 +86,7 @@ Parallel version of main()
 def train(rank, world_size, config):
     '''0. Set up parallel environment'''
     setup(rank, world_size)
+    print(f'rank: {rank}, pid: {os.getpid()}')
     
     '''1. Load task datasets'''
     if config.task_name == 'countdown':

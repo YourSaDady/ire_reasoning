@@ -45,6 +45,7 @@ class PositionalEmbedding(nn.Module):
 
         # include the batch size
         self.pe = pe.unsqueeze(0)   
+        # print(f'\nInside PositionalEmbedding, d_model: {d_model}, max_len: {max_len}, self.pe.shape: {self.pe.shape}\n')
         # self.register_buffer('pe', pe)
 
     def forward(self, x):

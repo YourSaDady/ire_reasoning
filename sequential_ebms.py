@@ -560,7 +560,7 @@ class BERTSequentialEBMs():
         self.heads = heads
         self.device = device ###########for debugging
         self.criterion = nn.CrossEntropyLoss()
-        self.pe = PositionalEmbedding(d_model=self.vocab_size, max_len=self.max_len) #for energy
+        self.pe = PositionalEmbedding(self.vocab_size+1, max_len=self.max_len) #torch.Size([1, 50, 384])
         
         self._build_model()
         
@@ -582,7 +582,7 @@ class BERTSequentialEBMs():
             return self.model.forward(bert_input, segment_label, is_ebm), 0.0
         
     def energy(self, idx:int, val: bool, rest_idx: torch.Tensor, latent: torch.Tensor, \
-        pe=True, batchalize=False) -> torch.Tensor:
+        pe=True, batchalize=False, pos_ids=None) -> torch.Tensor:
         '''
         E(x_ui (=val) ; rest_idx)
         
@@ -624,11 +624,18 @@ class BERTSequentialEBMs():
             energy = torch.gather(input=latent, dim=-1, index=expanded_idx) #Size(out_len, num_classes)
               
         if pe:
-            print(f'\nInside energy(), before sum, energy with val({val}).shape: {energy.shape}\n') #torch.Size([13, 31])
-            # TODO: add pe (require_grad=False / function) before sum
-            # 考察下inference需不需要改
-            
-            raise  
+            # print(f'\nInside energy(), before sum, energy with val({val}).shape: {energy.shape}\n') #torch.Size([14, 31])
+            # 考察下inference需不需要改 
+            pos_emd = self.pe(energy).squeeze(0).to(self.device)
+            # print(f'pos_emd.shape: {pos_emd.shape}')
+            # print(f'latent.device: {latent.device}, pos_emd.device: {pos_emd.device}, pos_ids.device: {pos_ids.device}')
+            pe_oui = pos_emd[pos_ids, :-1]
+            # print(f'pe_oui.shape: {pe_oui.shape}') 
+            if val:
+                pe_oui = torch.gather(pe_oui, dim=-1, index=rest_idx)
+            assert energy.shape == pe_oui.shape, \
+                f'energy.shape({energy.shape}) does not match positional embedding\'s shape({pe_oui.shape})'
+            energy = energy + pe_oui
         return -1 * torch.sum(energy, dim=-2) #sum along all ui positions #-1 *
         
     def gibbs_dist(self, energy_dist: torch.Tensor, energy_clip=True):
@@ -684,6 +691,9 @@ class BERTSequentialEBMs():
                 yo = previous_pred[yo_idx]
                 # print(f'yo({yo.shape}): \n{yo}')
                 model_input = sample_batch['input'][b].clone()
+                inp_idx = model_input.nonzero(as_tuple=True)[0].to(self.device)
+                inp = model_input[inp_idx].to(self.device)
+                inp_len = inp.size(0)
                 
                 # # Initialize Method1: fully random
                 # model_input[model_input == 3] = 0 #replace the MASK with 0
@@ -696,6 +706,19 @@ class BERTSequentialEBMs():
                 
                 # print(f"\norder_label={order_label}, bert_input: {sample_batch['bert_input'][b]}\nprevious_pred: {previous_pred}"\
                 #     f"\nmodel_input: {model_input}")
+                
+                '''ordered, non-zero length'''
+                full_val = model_input
+                full_val[yo_idx] = yo
+                full_idx = full_val.nonzero(as_tuple=True)[0]
+                full_val = full_val[full_idx]
+                
+                '''inordered, indexed xo+xu'''
+                # full_val = torch.cat([inp.view(1, -1), yo.view(1, -1)], dim=1).squeeze(0) #Size(|o+u|) 
+                # full_idx = torch.cat([inp_idx.view(1, -1), yo_idx.view(1, -1)], dim=1).squeeze(0) #|o+u|
+                
+                # yo_energy = self.energy(idx=0, val=True, rest_idx=yo.unsqueeze(-1), \
+                #     latent=gamma[yo_idx, :], batchalize=False, pos_ids=yo_idx)
                 for t in range(sampling_times):
                     # print(f'\n____\nStart t={t}-th sampling...\n')
                     # print(f'forward input.shape: {model_input.unsqueeze(0)}')
@@ -703,40 +726,74 @@ class BERTSequentialEBMs():
                         None, is_ebm=True).view(-1, self.vocab_size) # sample_batch['segment_label'][b].unsqueeze(0)
                     # print(f'after reshape, gamma({gamma.shape})') #30,6
                     # print(f'\nenergy inputs: rest_idx.shape={yo.unsqueeze(-1)}, latent.shape={gamma[yo_idx, :].shape}')
-                    yo_energy = self.energy(idx=0, val=True, rest_idx=yo.unsqueeze(-1), \
-                        latent=gamma[yo_idx, :], batchalize=False)
+                    
+                    yo_energy = self.energy(
+                        idx=inp_len+0, #random...
+                        val=True, 
+                        rest_idx=full_val.unsqueeze(-1), 
+                        latent=gamma[full_idx, :], 
+                        batchalize=False, 
+                        pos_ids=full_idx,
+                    )
+                    new_full_val = full_val.clone()
+                    new_yo = yo.clone()
                     # print(f'yo_energy: {yo_energy}')
                     
                     # if b == 0 and t == 0:
                     #     energies.append(round(yo_energy.item(), 2)) #initial energy
                     
-                    # 2. gibbs sampling on each masked position
-                    yo_prime = yo.clone()
+                    # 2. gibbs sampling on each masked position (update on full_val!)
+                    # yo_prime = yo.clone()
                     for i in range(yo_idx.size(0)): #iter |o|
+                        removed_zeros = (new_full_val[:yo_idx[i]+1] == 0).nonzero(as_tuple=True)[0] #the disgarded zeros in this partial input during nonzero()
+                        if removed_zeros.dim() == 0:
+                            removed_zeros = 0 #or 1?
+                        else:
+                            removed_zeros = removed_zeros.size(0) 
+                        
                         # sample on position i
                         # print(f'inputs to the energy: yo_prime: {yo_prime}, gamma[yo_idx,:]: {gamma[yo_idx, :]}')
-                        ei_dist = self.energy(idx=i, val=False, rest_idx=yo_prime.unsqueeze(-1), \
-                            latent=gamma[yo_idx, :], batchalize=False)
-                        p_oi = self.gibbs_dist(ei_dist.unsqueeze(0)) #Size(1,6)
+                        ei_dist = self.energy(
+                            idx=yo_idx[i]-removed_zeros, 
+                            val=False, 
+                            rest_idx=new_full_val.unsqueeze(-1), 
+                            latent=gamma[full_idx, :], 
+                            batchalize=False, 
+                            pos_ids=full_idx
+                        )
+                        print(f'ei_dist: \n{ei_dist}')
+                        p_oi = self.gibbs_dist(ei_dist.unsqueeze(0), energy_clip=False) #Size(1,6) #has to clip (otherwise NaN)
                         
                         #_________forcing ignoring/considering the special tokens_______
                         # print(f'p_oi({p_oi.shape}): \n{p_oi},\n ei_dist({ei_dist.shape}): \n{ei_dist}')
-                        y_oi_prime = torch.multinomial(p_oi[:,self.special_tok_size:], 1) + self.special_tok_size
+                        # y_oi_prime = torch.multinomial(p_oi[:,self.special_tok_size:], 1) + self.special_tok_size #sample
+                        print(f'\ninside Gibbs sampling, p_oi: {p_oi}, self.special_tok_size: {self.special_tok_size}')
+                        raise
+                        y_oi_prime = torch.max(p_oi[:,self.special_tok_size:]) + self.special_tok_size #max (trivial case)
                         # y_oi_prime = torch.multinomial(p_oi, 1)
                         #___________________________________________________
                         
-                        # update the sampled  yo'_i to yo'
-                        yo_prime[i] = y_oi_prime.squeeze()
+                        # update the sampled  yo'_i to previous_full_val (nonzero full vals)
+                        new_full_val[yo_idx[i]-removed_zeros] = y_oi_prime.squeeze()
+                        new_yo[i] = y_oi_prime.squeeze()
                         # print(f'i={i}: \n- y_oi\': {y_oi_prime.item()}, \n- ei_dist: {ei_dist}, \n- logits: {gamma[yo_idx[i], :]}')
                     # 3. update yo with yo' if the energy decreases
-                    yo_prime_energy = self.energy(idx=0, val=True, rest_idx=yo_prime.unsqueeze(-1), \
-                        latent=gamma[yo_idx, :], batchalize=False)
+                    yo_prime_energy = self.energy(
+                        idx=inp_len+0, #random... 
+                        val=True, 
+                        rest_idx=new_full_val.unsqueeze(-1), 
+                        latent=gamma[full_idx, :], 
+                        batchalize=False, 
+                        pos_ids=full_idx
+                    )
                     # print(f'yo\' energy: {yo_prime_energy}')
                     if yo_prime_energy.item() < yo_energy.item():
-                        yo = yo_prime
+                        # yo = yo_prime
+                        full_val = new_full_val
                         # update model input as well
                         # print(f'yo\' energy is smaller, before update, previous_pred: {previous_pred}')
-                        previous_pred[yo_idx] = yo #?
+                        # previous_pred[yo_idx] = yo #?
+                        previous_pred[full_idx] = full_val
                         # print(f'after update, previous_pred: {previous_pred}, \nbert_input: {sample_batch["bert_input"][b]}')
                         model_input = sample_batch['input'][b].clone()
                         model_input[previous_pred != 0] = previous_pred[previous_pred != 0]
@@ -792,7 +849,7 @@ class BERTSequentialEBMs():
                     # print(f'k={order_label}, gamma: \n{gamma}')
                     loss = self.criterion(gamma[yo_idx, :], sample_batch['label'][b][yo_idx])
                     yo_energy = self.energy(idx=0, val=True, rest_idx=yo.unsqueeze(-1), \
-                        latent=gamma[yo_idx, :], batchalize=False)
+                        latent=gamma[yo_idx, :], batchalize=False, pos_ids=yo_idx)
                     losses.append(round(loss.item(),2))
                     energies.append(round(yo_energy.item(),2))
             # end of inner-batch iter
@@ -949,7 +1006,7 @@ class BERTSequentialEBMs():
             return updated_partial_pred, loss_list
         
     def calculate_contrast_loss(self, pos_latent, neg_latent, pos_label, neg_label, \
-        pos_input, neg_input, form='softmax', threshold=3, alpha=0.2):
+        pos_input, neg_input, form='softmax', threshold=2, alpha=0.2):
         '''
         Non-batchalized, calcualte the contrast loss based on Eq.(2), take sum from all classes
         All tensor parameters: Size(max_len)
@@ -985,17 +1042,45 @@ class BERTSequentialEBMs():
         pos_ei_dists, neg_ei_dists = [], []
         pos_label, neg_label, pos_input, neg_input = pos_label.unsqueeze(-1), \
             neg_label.unsqueeze(-1), pos_input.unsqueeze(-1), neg_input.unsqueeze(-1)
-        for i in range(len(u_primes[1])):
+        for i in range(len(u_primes[1])): #TODO: 优化 complexity
             for is_neg, (o, u_prime, pi, input, label, latent) in enumerate(zip(os_, u_primes, pis, \
                 [pos_input, neg_input], [pos_label, neg_label], [pos_latent, neg_latent])):
                 # print(f'\ninput({input.shape}): \n{input}, \no({o.shape}): \n{o}')
-                full_vals = torch.cat([input[o, :], label[u_prime[:i+1], :]], dim=0)
-                full_latent = torch.cat([latent[o, :], latent[u_prime[:i+1], :]], dim=0)
-            
-                ei = self.energy(idx=o_len+pi[i], val=True, \
-                    rest_idx=full_vals, latent=full_latent) #Size(1)
-                ei_dist = self.energy(idx=o_len+pi[i], val=False, \
-                    rest_idx=full_vals, latent=full_latent) #Size(1, num_classes)
+                u_prime, o, latent = u_prime.to(self.device), o.to(self.device), latent.to(self.device)
+                
+                '''ordered non-zero o and u tokens'''
+                full_vals = input.clone()
+                full_vals[u_prime[:i+1], :] = label[u_prime[:i+1], :]
+                pos_ids = full_vals.nonzero(as_tuple=True)[0].squeeze(-1)
+                full_vals = full_vals[pos_ids, :]
+                full_latent = latent[pos_ids, :]
+                removed_zeros = (full_vals[:u_prime[i]+1, :].squeeze(-1) == 0).nonzero(as_tuple=True)[0] #the disgarded zeros in this partial input during nonzero()
+                if removed_zeros.dim() == 0:
+                    removed_zeros = 0
+                else:
+                    removed_zeros = removed_zeros.size(0) 
+                
+                '''inordered concatenation'''
+                # full_vals = torch.cat([input[o, :], label[u_prime[:i+1], :]], dim=0)
+                # full_latent = torch.cat([latent[o, :], latent[u_prime[:i+1], :]], dim=0)
+                # pos_ids = torch.cat([o.view(1, -1), u_prime[:i+1].view(1, -1)], dim=1).squeeze()
+                
+                
+                ei = self.energy(
+                    idx=u_prime[i]-removed_zeros, #o_len+pi[i], 
+                    val=True, 
+                    rest_idx=full_vals, 
+                    latent=full_latent, 
+                    pos_ids=pos_ids
+                ) #Size(1)
+                ei_dist = self.energy(
+                    idx=u_prime[i]-removed_zeros, #o_len+pi[i], 
+                    val=False, 
+                    rest_idx=full_vals, 
+                    latent=full_latent,
+                    pos_ids=pos_ids
+                ) #Size(1, num_classes)
+                
                 if is_neg:
                     neg_eis.append(ei)
                     neg_ei_dists.append(ei_dist) 
@@ -1086,22 +1171,41 @@ class BERTSequentialEBMs():
             return None
         assert len(u_prime), f'u_prime is empty!! mlm_label: {mlm_label}, u: {u}, pi: {pi}'
         # print(f'\nu: {u}, \nu_prime: {u_prime}, \no: {o}')
+        u_prime, o, latent = u_prime.to(self.device), o.to(self.device), latent.to(self.device)
         for i in range(len(u_prime)): #iter through |u'| EBMs
             condition_vals = mlm_label[u_prime[:i+1], :] #inclusive x_{u'_i} 121??
             condition_latent = latent[u_prime[:i+1], :]
             #note that MASK state is also included in the full_latent, the original tokens order is not maintained, but still matched
             #we found that including MASK state can give better performance? 
-            '''ordered, full length'''
-            # full_vals, full_latent = mlm_input.clone(), latent
-            # full_vals[u_prime[:i+1], :] = condition_vals
+            '''ordered, non-zero length'''
+            full_vals = mlm_input.squeeze(-1).clone()
+            full_vals[u_prime[:i+1]] = mlm_label.squeeze(-1)[u_prime[:i+1]]
+            pos_ids = (full_vals).nonzero(as_tuple=True)[0] # ordered o and ui (not concatenated！)
+            full_vals = full_vals[pos_ids].unsqueeze(-1)
+            full_latent = latent[pos_ids, :]
+            removed_zeros = (full_vals[:u_prime[i]+1, :].squeeze(-1) == 0).nonzero(as_tuple=True)[0] #the disgarded zeros in this partial input during nonzero()
+            if removed_zeros.dim() == 0:
+                removed_zeros = 0
+            else:
+                removed_zeros = removed_zeros.size(0) 
+            
             '''inordered, indexed xo+xu'''
-            full_vals = torch.cat([mlm_input[o, :], condition_vals], dim=0)
-            full_latent = torch.cat([latent[o, :], condition_latent], dim=0)
+            # full_vals = torch.cat([mlm_input[o, :], condition_vals], dim=0)
+            # full_latent = torch.cat([latent[o, :], condition_latent], dim=0)
+            # pos_ids = torch.cat([o.view(1, -1), u_prime[:i+1].view(1, -1)], dim=1).squeeze()
+            
+            # print(f'\npos_ids.shape: {pos_ids.shape}\n') #14
             # print(f'\ni: {i}, full_vals({full_vals.shape}): \n{full_vals.squeeze(-1)}\nfull_latent.shape: {full_latent.shape}')
             
             # ei_dist = self.energy(idx=pi[i], val=False, rest_idx=condition_vals, latent=condition_latent)
             # ei_dist = self.energy(idx=self.inp_len+2+pi[i], val=False, rest_idx=full_vals, latent=full_latent)
-            ei_dist = self.energy(idx=o_len+pi[i], val=False, rest_idx=full_vals, latent=full_latent)
+            ei_dist = self.energy(
+                idx=u_prime[i]-removed_zeros, #o_len+pi[i], 
+                val=False, 
+                rest_idx=full_vals, 
+                latent=full_latent,
+                pos_ids=pos_ids,
+            )
             
             # ei = self.energy(idx=pi[i], val=True, rest_idx=condition_vals, latent=condition_latent)
             # perform logits normalization to avoid nan z_ui

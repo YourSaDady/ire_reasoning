@@ -4,10 +4,10 @@ param_type: bert # mlp, transformer, bert, gpt
 is_ebm: False
 # max_len: 128
 # special_tokens: ['<mask>']
-load_ebm_ckpts: False ###########
+load_ebm_ckpts: True ###########
 continue_train: False #######for further training with fully masked t2 (inference) after trained on mlm
 parallel: False ########currently only supports training with parallel_train.py
-device: cuda #cpu, cuda
+device: cuda:3 #cpu, cuda
 
 
 # 这个参数暂时无用
@@ -80,15 +80,15 @@ train:
   lr: 3e-4 #3e-4 #有用: init optimizer
   early_stop_threshold: 0.01 #没用?
   contrast: True
-  batch_size:  1 #200 #100 #sudoku must be 1
+  batch_size:  800 #200 #100 #sudoku must be 1
   visualize: True
-  wandb: False ####################### 
+  wandb: True ####################### 
 
 sampling:
   stage: inference #sft(default mask rate is t),inference(fully mask, depend on sampler)
   epochs: 1
   batch_size: 1 #4
-  times: 4
+  times: 10
   steps: 1
   sampler: gibbs #argmin_energy(traditional loss), gibbs(ebm method)
   wandb: False
