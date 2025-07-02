@@ -14,6 +14,10 @@ import os.path as osp
 import time
 import random
 import json
+import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
+import plotly.graph_objects as go
+from dash import Dash, dcc, html
 sys.path.append('/home/yichuan/HKU/EBM/ire_reasoning')
 os.chdir('/home/yichuan/HKU/EBM/ire_reasoning')
 os.environ['WANDB_API_KEY'] = '3c06642500f1527ecd0328870ff61d36b5c17193'
@@ -659,10 +663,106 @@ class BERTSequentialEBMs():
         p_i = torch.exp(-1*energy_dist) / expanded_zi #Size(batch_size, num_classes)
         
         return p_i
+    
+    def draw_landscape(self, sample_id, k, t, output_latent, full_val, yo_idx, full_idx, groundtruth):
+        '''
+        At each time step, calculate and visualize the energy landscape with paths of inference and groundtruth.
+        params:
+        - sample_id
+        - k: k-th EBM
+        - t: t-th time step
+        - output_latent: Size(full_len, vocab_size)
+        - full_val: Size(|o + u_<i|), the sampling path
+        - yo_idx: Size(|u_<i|)
+        - full_idx: Size(|o + u_<i|), positional indices
+        - groundtruth: Size(full_len)
+        '''
+        # 1. calculate the energy landscape
+        tok_len = yo_idx.size(0) #output only
+        landscape = []
+        argmin = torch.empty(yo_idx.size()) #the greedy pred from the energy dist
+        for i in range(yo_idx.size(0)):
+            removed_zeros = (full_val[:yo_idx[i]+1] == self.tokenizer.mask_token_id).nonzero(as_tuple=True)[0]
+            removed_zeros = removed_zeros.numel()
+            ei_dist = self.energy(
+                idx=yo_idx[i]-removed_zeros, 
+                val=False, 
+                rest_idx=full_val.unsqueeze(-1), 
+                latent=output_latent[full_idx, :], 
+                batchalize=False, 
+                pos_ids=full_idx
+            )
+            landscape.append(ei_dist.unsqueeze(0))
+            p_oi = self.gibbs_dist(ei_dist.unsqueeze(0), energy_clip=True)
+            y_oi_prime = torch.argmax(p_oi[:,self.special_tok_size:]) + self.special_tok_size #max (trivial case)
+            argmin[i] = y_oi_prime.squeeze()
+        landscape = torch.cat(landscape, dim=0) #Size(tok_len, vocab_size)
+        # print(f'\nlandscape.shape:{landscape.shape}, out_len(tok_len): {yo_idx.size(0)}, full_idx_len: {full_val.size(0)}')        
+        
+        # 2. visaulize the energy ladnscape
+        tok_num, vocab_size = landscape.size(0), landscape.size(1)
+        landscape = landscape.detach().cpu().numpy()
+        pred_route = full_val[-tok_len:].detach().cpu().numpy().astype(int)
+        gold_route = groundtruth[yo_idx].detach().cpu().numpy().astype(int)
+        argmin = argmin.detach().cpu().numpy().astype(int)
+        X, Y = np.meshgrid(np.arange(tok_num), np.arange(vocab_size))
+        fig = go.Figure(data=[go.Surface(z=landscape, x=X, y=Y, colorscale='Viridis')])
+        # Plot the sampled curve (curve1)
+        curve_x = np.arange(tok_len)
+        curve1_y = pred_route
+        curve1_z = landscape[np.arange(tok_len), pred_route]
+        fig.add_trace(go.Scatter3d(
+            x=curve_x, y=curve1_y, z=curve1_z,
+            mode='lines',
+            line=dict(color='blue', width=5),
+            name='sampled'
+        ))
+        # Plot the argmin curve (curve2)
+        curve2_y = argmin
+        curve2_z = landscape[np.arange(tok_len), argmin]
+        fig.add_trace(go.Scatter3d(
+            x=curve_x, y=curve2_y, z=curve2_z,
+            mode='lines',
+            line=dict(color='red', width=5),
+            name='argmin energy'
+        ))
+        # Plot the groundtruth curve (curve3)
+        curve3_y = gold_route
+        curve3_z = landscape[np.arange(tok_len), gold_route]
+        fig.add_trace(go.Scatter3d(
+            x=curve_x, y=curve3_y, z=curve3_z,
+            mode='lines',
+            line=dict(color='green', width=5),
+            name='groundtruth'
+        ))
+        # Set labels and title
+        title = f'Landscape at k={k}, t={t}' 
+        fig.update_layout(
+            scene=dict(
+                xaxis_title='Token Position',
+                yaxis_title='Token ID',
+                zaxis_title='Energy',
+            ),
+            title=title
+        )
+        # visuzlize in a Dash HTML app (view in webpage)
+        app = Dash()
+        app.layout = html.Div([
+            dcc.Graph(figure=fig)
+        ])
+        # app.run(debug=True, use_reloader=False)  # Turn off reloader if inside Jupyter
+        host_name = '10.64.199.251' #ssh_client env var
+        port = 8848
+        app.run(host=host_name, port=port, debug=True)
+        print(f'Finished... Mayber you can open this webpage: \nhttp://{host_name}:{port}')
+        raise
+
+        
+        
         
     '''simplified(corrected?) non-batchalized version'''
     def sampling(self, order_label:int, partial_pred: torch.Tensor, sample_batch:dict, \
-        sampler='gibbs', sampling_times=10, visual_ebms=None, compare='argmin_energy'):
+        sampler='gibbs', sampling_times=10, visualize=False, groundtruth=None, batch_id=None):
         '''
         Sampling on a partially masked sample batch. Gibbs sampling by default.
         
@@ -680,6 +780,7 @@ class BERTSequentialEBMs():
         batch_size = sample_batch['input'].size(0)
         losses = []
         energies = []
+        landscapes = {}
         pred = []
         if sampler == 'gibbs':
             for b in range(batch_size):
@@ -719,13 +820,29 @@ class BERTSequentialEBMs():
                 
                 # yo_energy = self.energy(idx=0, val=True, rest_idx=yo.unsqueeze(-1), \
                 #     latent=gamma[yo_idx, :], batchalize=False, pos_ids=yo_idx)
+                
+                gamma = self.model.forward(model_input.unsqueeze(0), \
+                        None, is_ebm=True).view(-1, self.vocab_size) # sample_batch['segment_label'][b].unsqueeze(0)
+                
                 for t in range(sampling_times):
                     # print(f'\n____\nStart t={t}-th sampling...\n')
                     # print(f'forward input.shape: {model_input.unsqueeze(0)}')
-                    gamma = self.model.forward(model_input.unsqueeze(0), \
-                        None, is_ebm=True).view(-1, self.vocab_size) # sample_batch['segment_label'][b].unsqueeze(0)
+                    # gamma = self.model.forward(model_input.unsqueeze(0), \
+                    #     None, is_ebm=True).view(-1, self.vocab_size) # sample_batch['segment_label'][b].unsqueeze(0)
                     # print(f'after reshape, gamma({gamma.shape})') #30,6
                     # print(f'\nenergy inputs: rest_idx.shape={yo.unsqueeze(-1)}, latent.shape={gamma[yo_idx, :].shape}')
+                    if b==0 and visualize: #only calculate each first sample within a batch
+                        landscape = self.draw_landscape(
+                            sample_id=batch_id*batch_size, #first sample in each batch
+                            k=order_label,
+                            t=t,
+                            output_latent=gamma, 
+                            full_val=full_val, 
+                            yo_idx=yo_idx, 
+                            full_idx=full_idx, 
+                            groundtruth=groundtruth,
+                        )
+                        landscapes[t] = landscape
                     
                     yo_energy = self.energy(
                         idx=inp_len+0, #random...
@@ -745,11 +862,8 @@ class BERTSequentialEBMs():
                     # 2. gibbs sampling on each masked position (update on full_val!)
                     # yo_prime = yo.clone()
                     for i in range(yo_idx.size(0)): #iter |o|
-                        removed_zeros = (new_full_val[:yo_idx[i]+1] == 0).nonzero(as_tuple=True)[0] #the disgarded zeros in this partial input during nonzero()
-                        if removed_zeros.dim() == 0:
-                            removed_zeros = 0 #or 1?
-                        else:
-                            removed_zeros = removed_zeros.size(0) 
+                        removed_zeros = (new_full_val[:yo_idx[i]+1] == self.tokenizer.mask_token_id).nonzero(as_tuple=True)[0] #the disgarded zeros in this partial input during nonzero()
+                        removed_zeros = removed_zeros.numel()
                         
                         # sample on position i
                         # print(f'inputs to the energy: yo_prime: {yo_prime}, gamma[yo_idx,:]: {gamma[yo_idx, :]}')
@@ -761,15 +875,15 @@ class BERTSequentialEBMs():
                             batchalize=False, 
                             pos_ids=full_idx
                         )
-                        print(f'ei_dist: \n{ei_dist}')
-                        p_oi = self.gibbs_dist(ei_dist.unsqueeze(0), energy_clip=False) #Size(1,6) #has to clip (otherwise NaN)
+                        # print(f'ei_dist: \n{ei_dist}')
+                        p_oi = self.gibbs_dist(ei_dist.unsqueeze(0), energy_clip=True) #Size(1,6) #has to clip (otherwise NaN)
                         
                         #_________forcing ignoring/considering the special tokens_______
-                        # print(f'p_oi({p_oi.shape}): \n{p_oi},\n ei_dist({ei_dist.shape}): \n{ei_dist}')
-                        # y_oi_prime = torch.multinomial(p_oi[:,self.special_tok_size:], 1) + self.special_tok_size #sample
-                        print(f'\ninside Gibbs sampling, p_oi: {p_oi}, self.special_tok_size: {self.special_tok_size}')
-                        raise
-                        y_oi_prime = torch.max(p_oi[:,self.special_tok_size:]) + self.special_tok_size #max (trivial case)
+                        # print(f'p_oi({p_oi.shape}): \n{p_oi},\n ei_dist({ei_dist.shape}): \n{ei_dist}') 
+                        y_oi_prime = torch.multinomial(p_oi[:,self.special_tok_size:], 1) + self.special_tok_size #sample
+                        # print(f'\ninside Gibbs sampling, p_oi: {p_oi}, self.special_tok_size: {self.special_tok_size}')
+                        # raise
+                        # y_oi_prime = torch.argmax(p_oi[:,self.special_tok_size:]) + self.special_tok_size #max (trivial case)
                         # y_oi_prime = torch.multinomial(p_oi, 1)
                         #___________________________________________________
                         
@@ -860,7 +974,11 @@ class BERTSequentialEBMs():
         pred = torch.cat(pred, dim=0)
         # print(f'sampled pred[0] ({pred.shape}): {pred[0]}')
         
-        return pred, {'losses': losses, 'energies': energies}
+        stat = {'losses': losses, 'energies': energies}
+        if visualize: 
+            stat['landscapes'] = landscapes
+        
+        return pred, stat
     
     
     '''Batchalized version of sampling (ineffective: single latent generation; repeated sampling input)'''
@@ -1054,11 +1172,8 @@ class BERTSequentialEBMs():
                 pos_ids = full_vals.nonzero(as_tuple=True)[0].squeeze(-1)
                 full_vals = full_vals[pos_ids, :]
                 full_latent = latent[pos_ids, :]
-                removed_zeros = (full_vals[:u_prime[i]+1, :].squeeze(-1) == 0).nonzero(as_tuple=True)[0] #the disgarded zeros in this partial input during nonzero()
-                if removed_zeros.dim() == 0:
-                    removed_zeros = 0
-                else:
-                    removed_zeros = removed_zeros.size(0) 
+                removed_zeros = (full_vals[:u_prime[i]+1, :].squeeze(-1) == self.tokenizer.mask_token_id).nonzero(as_tuple=True)[0] #the disgarded zeros in this partial input during nonzero()
+                removed_zeros = removed_zeros.numel()
                 
                 '''inordered concatenation'''
                 # full_vals = torch.cat([input[o, :], label[u_prime[:i+1], :]], dim=0)
@@ -1183,11 +1298,9 @@ class BERTSequentialEBMs():
             pos_ids = (full_vals).nonzero(as_tuple=True)[0] # ordered o and ui (not concatenated！)
             full_vals = full_vals[pos_ids].unsqueeze(-1)
             full_latent = latent[pos_ids, :]
-            removed_zeros = (full_vals[:u_prime[i]+1, :].squeeze(-1) == 0).nonzero(as_tuple=True)[0] #the disgarded zeros in this partial input during nonzero()
-            if removed_zeros.dim() == 0:
-                removed_zeros = 0
-            else:
-                removed_zeros = removed_zeros.size(0) 
+            removed_zeros = (full_vals[:u_prime[i]+1, :].squeeze(-1) == self.tokenizer.mask_token_id).nonzero(as_tuple=True)[0] #the disgarded zeros in this partial input during nonzero()
+            # print(f'\ninside pseudolikelihood(), i: {i}, removed_zeros: {removed_zeros}, full_vals: {full_vals.squeeze()}, u_prime[i]: {u_prime[i]}\n')
+            removed_zeros = removed_zeros.numel()
             
             '''inordered, indexed xo+xu'''
             # full_vals = torch.cat([mlm_input[o, :], condition_vals], dim=0)
@@ -1328,7 +1441,7 @@ class GPTSequentialEBMs():
         return p_i
     
     def sampling(self, order_label:int, partial_pred: torch.Tensor, sample_batch:dict, \
-        sampler='gibbs', sampling_times=10, visual_ebms=None, compare='argmin_energy'):
+        sampler='gibbs', sampling_times=10, visual_ebms=None):
         '''
         Sampling on a partially masked sample batch.
         

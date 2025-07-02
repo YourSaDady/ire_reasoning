@@ -7,7 +7,8 @@ is_ebm: False
 load_ebm_ckpts: True ###########
 continue_train: False #######for further training with fully masked t2 (inference) after trained on mlm
 parallel: False ########currently only supports training with parallel_train.py
-device: cuda:3 #cpu, cuda
+device: cuda #cpu, cuda
+visualize: True ###########
 
 
 # 这个参数暂时无用
@@ -77,7 +78,7 @@ tasks:
 train:
   stage: inference #pretrain (mm_energy), sft (), inference
   epochs: 1 #1 #40 #same as diffusion-vs-ar ########
-  lr: 3e-4 #3e-4 #有用: init optimizer
+  lr: 3e-4  #有用: init optimizer
   early_stop_threshold: 0.01 #没用?
   contrast: True
   batch_size:  800 #200 #100 #sudoku must be 1
@@ -88,12 +89,12 @@ sampling:
   stage: inference #sft(default mask rate is t),inference(fully mask, depend on sampler)
   epochs: 1
   batch_size: 1 #4
-  times: 10
+  times: 4
   steps: 1
   sampler: gibbs #argmin_energy(traditional loss), gibbs(ebm method)
   wandb: False
   # temperature: 1.0cd
 
-visualize:
-  batch_step: 10 #visualize per <batch_step> number of batches
-  time_step: 2 #the time step between consecutive screenshots 
+# visualize:
+#   batch_step: 10 #visualize per <batch_step> number of batches
+#   time_step: 2 #the time step between consecutive screenshots 

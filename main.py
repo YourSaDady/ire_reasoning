@@ -132,7 +132,7 @@ class SequentialEBMsTrainer:
         self.train_wandb = train_wandb
         self.test_wandb = test_wandb
         print(f"Total Parameters: {sum([p.nelement() for p in self.sebm.model.parameters()])}, is_ebm: {self.is_ebm}")
-        self.ckpts_path = f'./ire_reasoning/ebm_ckpts/{self.sebm.task_name}_{self.sebm.param_type}{self.sebm.d_model}_ebm_order.pth' #w_mask_inverse_test
+        self.ckpts_path = f'./ire_reasoning/ebm_ckpts/{self.sebm.task_name}_{self.sebm.param_type}{self.sebm.d_model}_ebm_order2.pth' #w_mask_inverse_test
     
     def load_model(self, ckpts_path, device='cuda'):
         state_dict = torch.load(ckpts_path, map_location=device)
@@ -151,11 +151,8 @@ class SequentialEBMsTrainer:
         '''
         t_list = unmasking_schedule(k+2, scheduler)[1:-1]
         print(f't_list: {t_list}')
-        if visualize:
-            raise NotImplementedError
-        else:
-            self.iteration(1, self.test_data, stage=stage, train=False, \
-                schedule=t_list, parallel=self.parallel)
+        self.iteration(1, self.test_data, stage=stage, train=False, \
+            schedule=t_list, parallel=self.parallel, visualize=visualize)
         
     def add_schedule(self, data, schedule):
         '''
@@ -269,7 +266,7 @@ class SequentialEBMsTrainer:
         return data_dict
     
     def iteration(self, epoch, data_loader, stage, train=True, schedule=None, \
-                  is_ebm=True, visual_ebms=None, parallel=False):
+                  is_ebm=True, visualize=False, parallel=False):
         '''
         Algorithm core function (exclude sampling details)
         Performs train / test / evaluation iterations during different stages
@@ -536,10 +533,12 @@ class SequentialEBMsTrainer:
                         scheduled_data, 
                         self.sampler,
                         self.sampling_times,
-                        visual_ebms=visual_ebms,
+                        visualize=visualize,
+                        groundtruth=scheduled_data['label'][0], #the first sample's label for visualizing the landscape
+                        batch_id=i,
                     )
                     # print(f'{k}-th partial_pred: \n{partial_pred},\nloss_list: {sth}')
-                    if visual_ebms == None:
+                    if not visualize:
                         k_losses[str(k)], k_energies[str(k)] = sth['losses'], sth['energies']
                     if k+1 == early_stop: #fully unmasked before reaching k
                         break
@@ -645,7 +644,7 @@ class SequentialEBMsTrainer:
                 # TODO 或许没用？
                 raise NotImplementedError
                 
-            # break ###############test
+            break ###############test
             # if i == 10:
             #     break ###############test
         #end of batch iter
@@ -813,7 +812,7 @@ def main(config):
     print(f'\n\n\n4. Start evaluation...')
     if config.sampling.stage == 'inference':
         print(f'sampler: "{config.sampling.stage}"')
-    sebm_trainer.evaluate(k, stage=config.sampling.stage, visualize=False)
+    sebm_trainer.evaluate(k, stage=config.sampling.stage, visualize=config.visualize)
 
 
 # Example usage
