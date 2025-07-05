@@ -4,11 +4,11 @@ param_type: bert # mlp, transformer, bert, gpt
 is_ebm: False
 # max_len: 128
 # special_tokens: ['<mask>']
-load_ebm_ckpts: True ###########
+load_ebm_ckpts: False ###########
 continue_train: False #######for further training with fully masked t2 (inference) after trained on mlm
-parallel: False ########currently only supports training with parallel_train.py
+parallel: True ########currently only supports training with parallel_train.py
 device: cuda #cpu, cuda
-visualize: True ###########
+visualize: False ###########
 
 
 # 这个参数暂时无用

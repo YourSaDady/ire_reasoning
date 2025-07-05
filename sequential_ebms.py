@@ -558,7 +558,14 @@ class BERTSequentialEBMs():
         else:
             self.max_len = task_config.max_len #countdown: 50
         self.vocab_size = task_config.num_classes
-        self.special_tok_size = 1
+        self.special_token_ids = {
+            self.tokenizer.pad_token_id, 
+            self.tokenizer.sep_token_id,
+            self.tokenizer.eos_token_id,
+            self.tokenizer.mask_token_id,
+            self.tokenizer.unk_token_id, 
+        }
+        self.special_tok_size = len(self.special_token_ids)
         self.d_model = d_model
         self.n_layers = n_layers
         self.heads = heads
@@ -664,98 +671,165 @@ class BERTSequentialEBMs():
         
         return p_i
     
-    def draw_landscape(self, sample_id, k, t, output_latent, full_val, yo_idx, full_idx, groundtruth):
+    def draw_landscape(self, sample_id, k, t, full_latent, full_val, out_idx, groundtruth):
         '''
         At each time step, calculate and visualize the energy landscape with paths of inference and groundtruth.
         params:
         - sample_id
         - k: k-th EBM
         - t: t-th time step
-        - output_latent: Size(full_len, vocab_size)
-        - full_val: Size(|o + u_<i|), the sampling path
-        - yo_idx: Size(|u_<i|)
-        - full_idx: Size(|o + u_<i|), positional indices
+        - full_latent: Size(full_len, vocab_size)
+        - full_val: Size(full_len), previous pred
+        - out_idx: Size(|u_<i|)
         - groundtruth: Size(full_len)
         '''
-        # 1. calculate the energy landscape
-        tok_len = yo_idx.size(0) #output only
+        
+        '''
+        partial_pred: 
+        tensor([ 7,  8, 20,  7, 11, 20,  7, 10, 20,  7,  7,  1,  2,  2,  2,  2,  2,  2,
+         2,  2,  2,  2,  2,  2,  2,  2,  2,  3,  0,  0,  0,  0,  0,  0,  0,  0,
+         0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0],
+        '''
+        # print(f'full_val: \n{full_val},\nsep_token_id: {self.tokenizer.sep_token_id}, eos_token_id: {self.tokenizer.eos_token_id}')
+        sep_id = (full_val == self.tokenizer.sep_token_id).nonzero(as_tuple=True)[0].item()
+        eos_id = (full_val == self.tokenizer.eos_token_id).nonzero(as_tuple=True)[0].item()
+        print(f'full output range: {sep_id+1}:{eos_id}')
+        print(f'full_val: \n{full_val}')
+        # 1. calculate the energy landscape (global landscape with full output length)
+        full_len = full_val.size(0)
+        # partial_out_len = out_idx.size(0) #output only
+        # inp_len = full_idx.size(0) - partial_out_len
+        # full_out_len = full_len - inp_len
         landscape = []
-        argmin = torch.empty(yo_idx.size()) #the greedy pred from the energy dist
-        for i in range(yo_idx.size(0)):
-            removed_zeros = (full_val[:yo_idx[i]+1] == self.tokenizer.mask_token_id).nonzero(as_tuple=True)[0]
-            removed_zeros = removed_zeros.numel()
+        argmin = [] #the greedy pred from the energy dist
+        for i in range(sep_id+1, eos_id): #full output len
             ei_dist = self.energy(
-                idx=yo_idx[i]-removed_zeros, 
+                idx=i, 
                 val=False, 
                 rest_idx=full_val.unsqueeze(-1), 
-                latent=output_latent[full_idx, :], 
+                latent=full_latent, 
                 batchalize=False, 
-                pos_ids=full_idx
+                pos_ids=torch.arange(full_len)
             )
             landscape.append(ei_dist.unsqueeze(0))
-            p_oi = self.gibbs_dist(ei_dist.unsqueeze(0), energy_clip=True)
-            y_oi_prime = torch.argmax(p_oi[:,self.special_tok_size:]) + self.special_tok_size #max (trivial case)
-            argmin[i] = y_oi_prime.squeeze()
-        landscape = torch.cat(landscape, dim=0) #Size(tok_len, vocab_size)
-        # print(f'\nlandscape.shape:{landscape.shape}, out_len(tok_len): {yo_idx.size(0)}, full_idx_len: {full_val.size(0)}')        
+            if torch.any(torch.eq(out_idx, i)):
+                # print(f'find token to be unmasked at i={i}')
+                p_oi = self.gibbs_dist(ei_dist.unsqueeze(0), energy_clip=True)
+                y_oi_prime = torch.argmax(p_oi[:,self.special_tok_size:]) + self.special_tok_size #max (trivial case)
+                argmin.append(int(y_oi_prime.squeeze()))
+        landscape = torch.cat(landscape, dim=0) #Size(tok_len, vocab_size) 需要transpose一下以便显示
         
         # 2. visaulize the energy ladnscape
         tok_num, vocab_size = landscape.size(0), landscape.size(1)
         landscape = landscape.detach().cpu().numpy()
-        pred_route = full_val[-tok_len:].detach().cpu().numpy().astype(int)
-        gold_route = groundtruth[yo_idx].detach().cpu().numpy().astype(int)
-        argmin = argmin.detach().cpu().numpy().astype(int)
-        X, Y = np.meshgrid(np.arange(tok_num), np.arange(vocab_size))
-        fig = go.Figure(data=[go.Surface(z=landscape, x=X, y=Y, colorscale='Viridis')])
-        # Plot the sampled curve (curve1)
-        curve_x = np.arange(tok_len)
-        curve1_y = pred_route
-        curve1_z = landscape[np.arange(tok_len), pred_route]
-        fig.add_trace(go.Scatter3d(
-            x=curve_x, y=curve1_y, z=curve1_z,
-            mode='lines',
-            line=dict(color='blue', width=5),
-            name='sampled'
-        ))
-        # Plot the argmin curve (curve2)
-        curve2_y = argmin
-        curve2_z = landscape[np.arange(tok_len), argmin]
-        fig.add_trace(go.Scatter3d(
-            x=curve_x, y=curve2_y, z=curve2_z,
-            mode='lines',
-            line=dict(color='red', width=5),
-            name='argmin energy'
-        ))
+        pred_route = out_idx.detach().cpu().numpy()#.astype(int)
+        gold_route = groundtruth[sep_id+1:eos_id].detach().cpu().numpy()#.astype(int)
+        argmin = np.array(argmin)
+        print(f'\ntok_num: {tok_num}, vocab_size: {vocab_size}') #16, 31
+        print(f'landscape({landscape.shape}): \n{landscape}, \npred_route: {pred_route}, \ngold_route: {gold_route}, \nargmin: {argmin}')
+        print(f'out_idx: {out_idx}')
+        # raise
+        X, Y = np.meshgrid(np.arange(tok_num), np.arange(vocab_size)) #X: (31,16), Y: (31,16)
+        # print(f'X: \n{X}, Y: \n{Y}')
+        # print(f'X: ({len(X)},{len(X[0])}), Y: ({len(Y)},{len(Y[0])})')
+        fig = go.Figure(data=[go.Surface(z=landscape.T, x=X, y=Y, colorscale='Hot', \
+            opacity=0.2)]) #other colorscale: Viridis
+        
+        
+        print(f'pred_route: {pred_route}, gold_route: {gold_route}, argmin: {argmin}')
+        # curve_x = np.arange(out_idx.size(0))
+        curve_x = (out_idx-(sep_id+1)).cpu().detach().numpy()
+        print(f'curve_x: {curve_x}')
+        if len(pred_route) == 1:
+            # Plot the sampled marker (marker1)
+            curve1_y = pred_route
+            curve1_z = landscape[np.arange(out_idx.size(0)), pred_route]
+            fig.add_trace(go.Scatter3d(
+                x=curve_x, y=curve1_y, z=curve1_z,
+                mode='markers',  # Use 'markers' to plot a single point
+                marker=dict(color='blue', size=6),  # Customize the marker
+                name='sampled'
+            ))
+            # Plot the argmin marker (marker2)
+            curve2_y = argmin
+            curve2_z = landscape[np.arange(out_idx.size(0)), argmin]
+            # print(f'curve2_x: {curve_x}, curve2_y: {curve2_y}, curve2_z: {curve2_z}')
+            fig.add_trace(go.Scatter3d(
+                x=curve_x, y=curve2_y, z=curve2_z,
+                mode='markers',
+                marker=dict(color='red', size=6),
+                name='argmin energy'
+            ))
+        else:
+            # Plot the sampled curve (curve1)
+            curve1_y = pred_route
+            curve1_z = landscape[curve_x, pred_route]
+            fig.add_trace(go.Scatter3d(
+                x=curve_x, y=curve1_y, z=curve1_z,
+                mode='lines',
+                line=dict(color='blue', width=2),
+                name='sampled'
+            ))
+            # Plot the argmin curve (curve2)
+            curve2_y = argmin
+            curve2_z = landscape[curve_x, argmin]
+            fig.add_trace(go.Scatter3d(
+                x=curve_x, y=curve2_y, z=curve2_z,
+                mode='lines',
+                line=dict(color='red', width=5),
+                name='argmin energy'
+            ))
         # Plot the groundtruth curve (curve3)
+        curve3_x = np.arange(eos_id-sep_id-1)
         curve3_y = gold_route
-        curve3_z = landscape[np.arange(tok_len), gold_route]
+        curve3_z = landscape[np.arange(eos_id-sep_id-1), gold_route]
+        print(f'curve3_x: {curve3_x}, curve3_y: {curve3_y}, curve3_z: {curve3_z}')
         fig.add_trace(go.Scatter3d(
-            x=curve_x, y=curve3_y, z=curve3_z,
+            x=curve3_x, y=curve3_y, z=curve3_z,
             mode='lines',
-            line=dict(color='green', width=5),
+            line=dict(color='green', width=6),
             name='groundtruth'
         ))
+        
         # Set labels and title
-        title = f'Landscape at k={k}, t={t}' 
+        title = f'Sample{sample_id}\'s Landscape at k={k}, t={t}' 
         fig.update_layout(
             scene=dict(
-                xaxis_title='Token Position',
-                yaxis_title='Token ID',
+                xaxis=dict(range=[0, tok_num-1], title='Token Position'),
+                yaxis=dict(range=[0, vocab_size-1], title='Token ID'),
                 zaxis_title='Energy',
             ),
-            title=title
+            title=title,
+            legend=dict(
+                orientation="h",  # Horizontal orientation
+                y=-0.2,  # Position below the plot
+                x=0.5,  # Centered horizontally
+                xanchor="center",
+                yanchor="top"
+            ),
+            coloraxis_colorbar=dict(
+                len=0.5,  # Length of the color bar
+                y=-0.1,  # Position below the plot
+                yanchor="bottom",
+                x=0.5,  # Centered horizontally
+                xanchor="center"
+            )
         )
-        # visuzlize in a Dash HTML app (view in webpage)
-        app = Dash()
-        app.layout = html.Div([
-            dcc.Graph(figure=fig)
-        ])
-        # app.run(debug=True, use_reloader=False)  # Turn off reloader if inside Jupyter
-        host_name = '10.64.199.251' #ssh_client env var
-        port = 8848
-        app.run(host=host_name, port=port, debug=True)
-        print(f'Finished... Mayber you can open this webpage: \nhttp://{host_name}:{port}')
+        
+        fig.show()
+        
         raise
+        # # visuzlize in a Dash HTML app (view in webpage)
+        # app = Dash()
+        # app.layout = html.Div([
+        #     dcc.Graph(figure=fig)
+        # ])
+        # # app.run(debug=True, use_reloader=False)  # Turn off reloader if inside Jupyter
+        # host_name = '10.64.199.251' #ssh_client env var
+        # port = 8848
+        # app.run(host=host_name, port=port, debug=True)
+        # print(f'Finished... Mayber you can open this webpage: \nhttp://{host_name}:{port}')
+        # raise
 
         
         
@@ -809,10 +883,16 @@ class BERTSequentialEBMs():
                 #     f"\nmodel_input: {model_input}")
                 
                 '''ordered, non-zero length'''
-                full_val = model_input
-                full_val[yo_idx] = yo
-                full_idx = full_val.nonzero(as_tuple=True)[0]
-                full_val = full_val[full_idx]
+                curr_state = model_input.to(self.device)
+                curr_state[yo_idx] = yo
+                print(f'curr_state: \n{curr_state}, \nself.special_tok_size: {self.special_tok_size}')
+                print(f'yo_idx: {yo_idx}, yo: {yo}')
+                inp_mask = (curr_state > self.special_tok_size)
+                yo_mask = torch.isin(torch.arange(curr_state.size(0)).to(self.device), yo_idx)
+                full_idx_mask = (inp_mask | yo_mask) #whether tokens are observable (the initial yo tokens are [MASK] but observable)
+                full_idx = (full_idx_mask).nonzero(as_tuple=True)[0]
+                full_val = curr_state[full_idx]
+                print(f'full_idx: {full_idx}, full_val: {full_val}')
                 
                 '''inordered, indexed xo+xu'''
                 # full_val = torch.cat([inp.view(1, -1), yo.view(1, -1)], dim=1).squeeze(0) #Size(|o+u|) 
@@ -831,15 +911,16 @@ class BERTSequentialEBMs():
                     #     None, is_ebm=True).view(-1, self.vocab_size) # sample_batch['segment_label'][b].unsqueeze(0)
                     # print(f'after reshape, gamma({gamma.shape})') #30,6
                     # print(f'\nenergy inputs: rest_idx.shape={yo.unsqueeze(-1)}, latent.shape={gamma[yo_idx, :].shape}')
-                    if b==0 and visualize: #only calculate each first sample within a batch
+                    if b==0 and visualize and order_label==3 and t==0: #only calculate each first sample within a batch
+                        print(f"Inside sampling(), schedule_label: \n{sample_batch['schedule_label'][b]}, \ninput: \n{sample_batch['input'][b]}, \nyo_idx: {yo_idx}")
+                        print(f'self.special_tok_size: {self.special_tok_size}')
                         landscape = self.draw_landscape(
                             sample_id=batch_id*batch_size, #first sample in each batch
                             k=order_label,
                             t=t,
-                            output_latent=gamma, 
-                            full_val=full_val, 
-                            yo_idx=yo_idx, 
-                            full_idx=full_idx, 
+                            full_latent=gamma,  #full length
+                            full_val=curr_state, #full length previous pred
+                            out_idx=yo_idx,  
                             groundtruth=groundtruth,
                         )
                         landscapes[t] = landscape
@@ -852,17 +933,12 @@ class BERTSequentialEBMs():
                         batchalize=False, 
                         pos_ids=full_idx,
                     )
-                    new_full_val = full_val.clone()
+                    new_full_val = full_val.clone() #full_val和new_full_val是不断迭代T次的（略显繁琐
                     new_yo = yo.clone()
-                    # print(f'yo_energy: {yo_energy}')
-                    
-                    # if b == 0 and t == 0:
-                    #     energies.append(round(yo_energy.item(), 2)) #initial energy
                     
                     # 2. gibbs sampling on each masked position (update on full_val!)
-                    # yo_prime = yo.clone()
                     for i in range(yo_idx.size(0)): #iter |o|
-                        removed_zeros = (new_full_val[:yo_idx[i]+1] == self.tokenizer.mask_token_id).nonzero(as_tuple=True)[0] #the disgarded zeros in this partial input during nonzero()
+                        removed_zeros = (new_full_val[:yo_idx[i]] == self.tokenizer.mask_token_id).nonzero(as_tuple=True)[0] #the disgarded zeros in this partial input during nonzero()
                         removed_zeros = removed_zeros.numel()
                         
                         # sample on position i
@@ -888,7 +964,9 @@ class BERTSequentialEBMs():
                         #___________________________________________________
                         
                         # update the sampled  yo'_i to previous_full_val (nonzero full vals)
-                        new_full_val[yo_idx[i]-removed_zeros] = y_oi_prime.squeeze()
+                        print(f'i: {i}, yo_idx[i]: {yo_idx[i]}')
+                        print(f'removed_zeros: {removed_zeros}')
+                        new_full_val[i] = y_oi_prime.squeeze()
                         new_yo[i] = y_oi_prime.squeeze()
                         # print(f'i={i}: \n- y_oi\': {y_oi_prime.item()}, \n- ei_dist: {ei_dist}, \n- logits: {gamma[yo_idx[i], :]}')
                     # 3. update yo with yo' if the energy decreases
@@ -904,6 +982,7 @@ class BERTSequentialEBMs():
                     if yo_prime_energy.item() < yo_energy.item():
                         # yo = yo_prime
                         full_val = new_full_val
+                        curr_state[full_idx] = full_val
                         # update model input as well
                         # print(f'yo\' energy is smaller, before update, previous_pred: {previous_pred}')
                         # previous_pred[yo_idx] = yo #?
@@ -1122,8 +1201,71 @@ class BERTSequentialEBMs():
             return updated_partial_pred, visual_ebms.ebm_log
         else:
             return updated_partial_pred, loss_list
-        
+    
+    
     def calculate_contrast_loss(self, pos_latent, neg_latent, pos_label, neg_label, \
+        pos_input, neg_input, form='softmax', threshold=2, alpha=0.2):
+        # 1. Prepare all the computing factors needed
+        us = []
+        pis = []
+        for _, (label, input) in enumerate(zip([pos_label, neg_label], \
+            [pos_input, neg_input])):
+            u = torch.nonzero(label != self.tokenizer.pad_token_id).squeeze() #Size(|u|)
+            if u.dim():
+                pi = torch.arange(u.size(0))
+            else:
+                pi = torch.tensor([0])
+                u = torch.tensor([u])
+            us.append(u), pis.append(pi)
+        pos_eis, neg_eis = [], []
+        pos_ei_dists, neg_ei_dists = [], []
+        for i in range(len(us[1])): #TODO: 优化 complexity
+            for is_neg, (u, pi, input, label, latent) in enumerate(zip(us, pis, \
+                [pos_input, neg_input], [pos_label, neg_label], [pos_latent, neg_latent])):
+                u, latent = u.to(self.device), latent.to(self.device)
+                full_vals = input.clone()
+                full_vals[u[:i+1]] = label[u[:i+1]]         
+                ei_dist = self.energy(
+                    idx=u[i], #o_len+pi[i], 
+                    val=False, 
+                    rest_idx=full_vals.view(-1, 1), 
+                    latent=latent,
+                    pos_ids=torch.arange(full_vals.size(0))
+                ) #Size(1, num_classes)
+                ei = ei_dist[full_vals[u[i]]].view(1, -1)
+                if is_neg:
+                    neg_eis.append(ei), neg_ei_dists.append(ei_dist) 
+                else:
+                    pos_eis.append(ei), pos_ei_dists.append(ei_dist)
+        assert len(pos_eis) != 0 and len(neg_eis) != 0 and len(pos_eis) == len(neg_eis), f'u: {u}\npos_label({pos_label.shape}): {pos_label}, \nneg_label({neg_label.shape}): {neg_label}'
+        # 2. Compute contrast losses of different functional forms
+        if form == 'l2':
+            contrast_criterion = nn.MSELoss(reduction='mean')
+            pos_e, neg_e = torch.cat(pos_eis, dim=0), torch.cat(neg_eis, dim=0)
+            assert pos_e.size(0) == neg_e.size(0) == len(us[1]), f'energy tensors\' length mismatch! pos_e.size: {pos_e.size()}, neg_e.size(): {neg_e.size()}, |u\'|: {len(us[1])}' #|u'|
+            l2 = contrast_criterion(pos_e, neg_e)
+            reg = torch.sum(alpha * (torch.pow(pos_e, 2) + torch.pow(neg_e, 2)))
+            # print(f'pos_e.size: {pos_e.size()}, neg_e.size(): {neg_e.size()}, l2 contrast_loss: {contrast_loss.size()}')
+            contrast_loss = torch.pow(torch.clamp(threshold - l2, min=0.0), 2) # + reg
+        elif form == 'hinge':
+            contrast_criterion = nn.MultiMarginLoss(margin=5, reduction='mean')
+            pos_e_dist = torch.cat(pos_ei_dists, dim=0) #Size(|u'|, num_classes)
+            neg_e_dist = torch.cat(neg_ei_dists, dim=0) #Size(|u'|)
+            assert pos_e_dist.size() == neg_e_dist.size(), print(f'Mismatch!! pos_e_dist: {pos_e_dist.size()}, neg_e_dist: {neg_e_dist.size()}')
+            # print(f'inputs to the hinge loss: pos_e_dist: {pos_e_dist.shape}, pos_e_dist: {pos_e_dist.shape}, neg_pred: {torch.argmax(neg_e_dist, dim=0)}')
+            # take the mean of the two hinge losses after interchange the pos and neg tensors
+            
+            # contrast_loss = contrast_criterion(pos_e_dist, torch.argmax(neg_e_dist, dim=0))
+            contrast_loss = (contrast_criterion(pos_e_dist, torch.argmax(neg_e_dist, dim=0)) + \
+                contrast_criterion(neg_e_dist, torch.argmax(pos_e_dist, dim=0))) / 2
+        elif form == 'reg':
+            pos_e, neg_e = torch.cat(pos_eis, dim=0), torch.cat(neg_eis, dim=0)
+            contrast_loss = torch.sum(alpha * (torch.pow(pos_e, 2) + torch.pow(neg_e, 2)))
+            
+        contrast_loss = (contrast_loss).squeeze()
+        return contrast_loss
+    
+    def calculate_contrast_loss_old(self, pos_latent, neg_latent, pos_label, neg_label, \
         pos_input, neg_input, form='softmax', threshold=2, alpha=0.2):
         '''
         Non-batchalized, calcualte the contrast loss based on Eq.(2), take sum from all classes
@@ -1134,6 +1276,7 @@ class BERTSequentialEBMs():
             - L2: compute the batch-averaged L2 loss between positive and negative energy tensors
             - hinge: compute the multiclass Hinge loss between the positive energy-based distribution and an argmax negative energy label
         '''
+        raise
         # 1. Prepare all the computing factors needed
         os_ = []
         u_primes = []
@@ -1169,10 +1312,15 @@ class BERTSequentialEBMs():
                 '''ordered non-zero o and u tokens'''
                 full_vals = input.clone()
                 full_vals[u_prime[:i+1], :] = label[u_prime[:i+1], :]
-                pos_ids = full_vals.nonzero(as_tuple=True)[0].squeeze(-1)
+                inp_mask = (full_vals > self.special_tok_size)
+                # yo_mask = torch.isin(torch.arange(full_vals.size(0)).to(self.device), u_prime[:i+1])
+                yo_mask = (label.view(-1) > 0).to(self.device)
+                full_idx_mask = (inp_mask | yo_mask) #whether tokens are observable (the initial yo tokens are [MASK] but observable)
+                
+                pos_ids = (full_idx_mask).nonzero(as_tuple=True)[0].squeeze(-1) #full_vals
                 full_vals = full_vals[pos_ids, :]
                 full_latent = latent[pos_ids, :]
-                removed_zeros = (full_vals[:u_prime[i]+1, :].squeeze(-1) == self.tokenizer.mask_token_id).nonzero(as_tuple=True)[0] #the disgarded zeros in this partial input during nonzero()
+                removed_zeros = (full_vals[:u_prime[i], :].squeeze(-1) == self.tokenizer.mask_token_id).nonzero(as_tuple=True)[0] #the disgarded zeros in this partial input during nonzero()
                 removed_zeros = removed_zeros.numel()
                 
                 '''inordered concatenation'''
@@ -1240,7 +1388,45 @@ class BERTSequentialEBMs():
         contrast_loss = (contrast_loss).squeeze()
         return contrast_loss
     
+    # simplified 
     def pseudolikelihood(self, latent, mlm_label, mlm_input):
+        assert latent.size(0) == mlm_label.size(0) == mlm_input.size(0)
+        u = torch.nonzero(mlm_label != self.tokenizer.pad_token_id).squeeze() #Size(|u|)
+        if u.dim():
+            pi = torch.arange(u.size(0))
+        else: # u is a single value
+            pi = torch.tensor([0])
+            u = torch.tensor([u])
+        logp_xu = []
+        if len(u) == 0:
+            print(f'u is None, mlm_label: {mlm_label}')
+            return None
+        u, latent = u.to(self.device), latent.to(self.device)
+        for i in range(len(u)):
+            '''ordered, non-zero length'''
+            full_vals = mlm_input.clone()
+            full_vals[u[:i+1]] = mlm_label[u[:i+1]]
+            # print(f'Inside pseudolikelihood(), full vals: \n{full_vals}, \nfull_len: {full_vals.size(0)}')
+            ei_dist = self.energy( #full length processing
+                idx=u[i],
+                val=False, 
+                rest_idx=full_vals.view(-1, 1), 
+                latent=latent,
+                pos_ids=torch.arange(full_vals.size(0)),
+            )
+            max_energy = ei_dist.max() 
+            ei_dist = ei_dist - max_energy
+            z_ui = torch.sum(torch.exp(-1*ei_dist), dim=-1) #Size(1)
+            expanded_z_ui = z_ui.unsqueeze(0).expand_as(ei_dist) #Size(num_classes)?
+            logp_xui = torch.log(torch.exp(-1*ei_dist) / expanded_z_ui)
+            assert torch.isnan(logp_xui).any() == False, f'logp_xui is NaN!! ei_dist: \n{ei_dist}, \nlatent: \n{latent}\nmlm_input: \n{mlm_input.squeeze()}\ni: {i}'
+            logp_xu.append(logp_xui.unsqueeze(0)) #Eq.(0), with sum replaced by concatenation
+        #end of u iter
+        logp_xu = torch.cat(logp_xu, dim=0) #Size(|u|, num_classes) 
+        
+        return logp_xu
+    
+    def pseudolikelihood_old(self, latent, mlm_label, mlm_input):
         '''
         Non-batchalized! (single sample)
         
@@ -1252,6 +1438,7 @@ class BERTSequentialEBMs():
         return:
             - lop_xu: the conditional logprob distribution, Size(seq_len, num_classes)
         '''
+        raise
         assert latent.size(0) == mlm_label.size(0) == mlm_input.size(0), \
             f'latent.shape: {latent.shape}, ' \
             f'mlm_label({mlm_label.shape}): {mlm_label}, ' \
@@ -1295,10 +1482,14 @@ class BERTSequentialEBMs():
             '''ordered, non-zero length'''
             full_vals = mlm_input.squeeze(-1).clone()
             full_vals[u_prime[:i+1]] = mlm_label.squeeze(-1)[u_prime[:i+1]]
-            pos_ids = (full_vals).nonzero(as_tuple=True)[0] # ordered o and ui (not concatenated！)
+            inp_mask = (full_vals > self.special_tok_size)
+            yo_mask = (mlm_label.view(-1) > 0).to(self.device)
+            full_idx_mask = (inp_mask | yo_mask) #whether tokens are observable (the initial yo tokens are [MASK] but observable)
+            
+            pos_ids = (full_idx_mask).nonzero(as_tuple=True)[0] # ordered o and ui (not concatenated！) #full_vals
             full_vals = full_vals[pos_ids].unsqueeze(-1)
             full_latent = latent[pos_ids, :]
-            removed_zeros = (full_vals[:u_prime[i]+1, :].squeeze(-1) == self.tokenizer.mask_token_id).nonzero(as_tuple=True)[0] #the disgarded zeros in this partial input during nonzero()
+            removed_zeros = (full_vals[:u_prime[i], :].squeeze(-1) == self.tokenizer.mask_token_id).nonzero(as_tuple=True)[0] #the disgarded zeros in this partial input during nonzero()
             # print(f'\ninside pseudolikelihood(), i: {i}, removed_zeros: {removed_zeros}, full_vals: {full_vals.squeeze()}, u_prime[i]: {u_prime[i]}\n')
             removed_zeros = removed_zeros.numel()
             

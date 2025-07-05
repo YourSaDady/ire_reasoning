@@ -132,7 +132,7 @@ class SequentialEBMsTrainer:
         self.train_wandb = train_wandb
         self.test_wandb = test_wandb
         print(f"Total Parameters: {sum([p.nelement() for p in self.sebm.model.parameters()])}, is_ebm: {self.is_ebm}")
-        self.ckpts_path = f'./ire_reasoning/ebm_ckpts/{self.sebm.task_name}_{self.sebm.param_type}{self.sebm.d_model}_ebm_order2.pth' #w_mask_inverse_test
+        self.ckpts_path = f'./ire_reasoning/ebm_ckpts/{self.sebm.task_name}_{self.sebm.param_type}{self.sebm.d_model}_full_len.pth' #_ebm_order 
     
     def load_model(self, ckpts_path, device='cuda'):
         state_dict = torch.load(ckpts_path, map_location=device)
@@ -425,7 +425,7 @@ class SequentialEBMsTrainer:
                         if self.contrast:
                             contrast_loss = contrast_loss + self.sebm.calculate_contrast_loss(
                                 gamma[r], gamma[r], xu[r], neg_xu[r], xo[r], xo[r],
-                                form="l2", threshold=4)
+                                form="l2", threshold=2)
                         #_____________________________
                     #end of row iter
                     
@@ -644,7 +644,7 @@ class SequentialEBMsTrainer:
                 # TODO 或许没用？
                 raise NotImplementedError
                 
-            break ###############test
+            # break ###############test
             # if i == 10:
             #     break ###############test
         #end of batch iter
