@@ -831,12 +831,84 @@ class BERTSequentialEBMs():
         # print(f'Finished... Mayber you can open this webpage: \nhttp://{host_name}:{port}')
         # raise
 
-        
-        
+    '''Simplified version of sampling'''
+    def sampling_new(self, order_label, partial_pred, sample_batch, sampler='gibbs', \
+        sampling_times=10, visualize=False, batch_id=None):
+        batch_size = sample_batch['input'].size(0)
+        pred = []
+        landscapes = {}
+        if sampler == 'gibbs':
+            for b in range(batch_size):
+                yo_idx = ((sample_batch['schedule_label'][b] > 0) & \
+                    (sample_batch['schedule_label'][b] <= order_label)).\
+                    nonzero(as_tuple=True)[0].to(self.device)
+                # print(f'yo_idx: {yo_idx}')
+                # print(f'partial_pred: {partial_pred}')
+                full_val = partial_pred[b]
+                yo = full_val[yo_idx]
+                sep_id = (full_val == self.tokenizer.sep_token_id).nonzero(as_tuple=True)[0].item()
+                gamma = self.model.forward(full_val.unsqueeze(0), None, is_ebm=True)\
+                    .view(-1, self.vocab_size)
+                for t in range(sampling_times):
+                    if b == 0 and visualize and order_label == 3 and t == 0:
+                        landscape = self.draw_landscape(
+                            sample_id=batch_id*batch_size,
+                            k=order_label,
+                            t=t,
+                            full_latent=gamma,
+                            full_val=full_val.unsqueeze(-1),
+                            out_idx=torch.arange(full_val.size(0)),
+                            groundtruth=sample_batch['label'][b], #full_length label
+                        )
+                        landscapes[t] = landscape
+                    
+                    yo_energy = self.energy(
+                        idx=sep_id+0,
+                        val=True,
+                        rest_idx=full_val.unsqueeze(-1),
+                        latent=gamma,
+                        batchalize=False,
+                        pos_ids=torch.arange(full_val.size(0))
+                    )
+                    
+                    full_val_cand, yo_cand = full_val.clone(), yo.clone()
+                    for i in range(yo_idx.size(0)):
+                        ei_dist = self.energy(
+                            idx=yo_idx[i],
+                            val=False,
+                            rest_idx=full_val_cand.unsqueeze(-1),
+                            latent=gamma,
+                            pos_ids=torch.arange(full_val_cand.size(0))
+                        )
+                        p_oi = self.gibbs_dist(ei_dist.unsqueeze(0), energy_clip=True)
+                        y_oi_cand = torch.multinomial(p_oi[:,self.special_tok_size:], 1) + self.special_tok_size
+                        # y_oi_cand = torch.argmax(p_oi[:,self.special_tok_size:]) + self.special_tok_size
+                        full_val_cand[yo_idx[i]] = y_oi_cand.squeeze()
+                    yo_cand_energy = self.energy(
+                        idx=sep_id+0,
+                        val=True,
+                        rest_idx=full_val_cand.unsqueeze(-1),
+                        latent=gamma,
+                        batchalize=False,
+                        pos_ids=torch.arange(full_val_cand.size(0))
+                    )
+                    if yo_cand_energy.item() < yo_energy.item():
+                        full_val = full_val_cand
+                # end of t iter
+                pred.append(full_val.view(1, -1))
+            # end of batch iter
+            pred = torch.cat(pred, dim=0)
+            stat = {}
+            if visualize:
+                stat['landscapes'] = landscapes     
+        else:
+            raise NotImplementedError   
+    
+        return pred, stat
         
     '''simplified(corrected?) non-batchalized version'''
     def sampling(self, order_label:int, partial_pred: torch.Tensor, sample_batch:dict, \
-        sampler='gibbs', sampling_times=10, visualize=False, groundtruth=None, batch_id=None):
+        sampler='gibbs', sampling_times=10, visualize=False, batch_id=None):
         '''
         Sampling on a partially masked sample batch. Gibbs sampling by default.
         
@@ -866,9 +938,10 @@ class BERTSequentialEBMs():
                 yo = previous_pred[yo_idx]
                 # print(f'yo({yo.shape}): \n{yo}')
                 model_input = sample_batch['input'][b].clone()
-                inp_idx = model_input.nonzero(as_tuple=True)[0].to(self.device)
-                inp = model_input[inp_idx].to(self.device)
-                inp_len = inp.size(0)
+                # inp_idx = model_input.nonzero(as_tuple=True)[0].to(self.device)
+                sep_id = (model_input == self.tokenizer.sep_token_id).nonzero(as_tuple=True)[0].item()              
+                # inp = model_input[inp_idx].to(self.device)
+                # inp_len = inp.size(0)
                 
                 # # Initialize Method1: fully random
                 # model_input[model_input == 3] = 0 #replace the MASK with 0
@@ -879,8 +952,8 @@ class BERTSequentialEBMs():
                         (sample_batch['schedule_label'][b] < order_label)).nonzero(as_tuple=True)[0]
                     model_input[history_yo_idx] = previous_pred[history_yo_idx]
                 
-                # print(f"\norder_label={order_label}, bert_input: {sample_batch['bert_input'][b]}\nprevious_pred: {previous_pred}"\
-                #     f"\nmodel_input: {model_input}")
+                print(f"\norder_label={order_label}, bert_input: {sample_batch['bert_input'][b]}\nprevious_pred: {previous_pred}"\
+                    f"\nmodel_input: {model_input}")
                 
                 '''ordered, non-zero length'''
                 curr_state = model_input.to(self.device)
@@ -888,32 +961,21 @@ class BERTSequentialEBMs():
                 print(f'curr_state: \n{curr_state}, \nself.special_tok_size: {self.special_tok_size}')
                 print(f'yo_idx: {yo_idx}, yo: {yo}')
                 inp_mask = (curr_state > self.special_tok_size)
-                yo_mask = torch.isin(torch.arange(curr_state.size(0)).to(self.device), yo_idx)
+                yo_mask = (sample_batch['schedule_label'][b] > 0) & (sample_batch['schedule_label'][b] <= order_label)
                 full_idx_mask = (inp_mask | yo_mask) #whether tokens are observable (the initial yo tokens are [MASK] but observable)
                 full_idx = (full_idx_mask).nonzero(as_tuple=True)[0]
                 full_val = curr_state[full_idx]
                 print(f'full_idx: {full_idx}, full_val: {full_val}')
                 
-                '''inordered, indexed xo+xu'''
-                # full_val = torch.cat([inp.view(1, -1), yo.view(1, -1)], dim=1).squeeze(0) #Size(|o+u|) 
-                # full_idx = torch.cat([inp_idx.view(1, -1), yo_idx.view(1, -1)], dim=1).squeeze(0) #|o+u|
-                
-                # yo_energy = self.energy(idx=0, val=True, rest_idx=yo.unsqueeze(-1), \
-                #     latent=gamma[yo_idx, :], batchalize=False, pos_ids=yo_idx)
                 
                 gamma = self.model.forward(model_input.unsqueeze(0), \
                         None, is_ebm=True).view(-1, self.vocab_size) # sample_batch['segment_label'][b].unsqueeze(0)
                 
                 for t in range(sampling_times):
-                    # print(f'\n____\nStart t={t}-th sampling...\n')
-                    # print(f'forward input.shape: {model_input.unsqueeze(0)}')
-                    # gamma = self.model.forward(model_input.unsqueeze(0), \
-                    #     None, is_ebm=True).view(-1, self.vocab_size) # sample_batch['segment_label'][b].unsqueeze(0)
-                    # print(f'after reshape, gamma({gamma.shape})') #30,6
-                    # print(f'\nenergy inputs: rest_idx.shape={yo.unsqueeze(-1)}, latent.shape={gamma[yo_idx, :].shape}')
+                    print(f'\n____\nStart t={t}-th sampling...\n')
                     if b==0 and visualize and order_label==3 and t==0: #only calculate each first sample within a batch
-                        print(f"Inside sampling(), schedule_label: \n{sample_batch['schedule_label'][b]}, \ninput: \n{sample_batch['input'][b]}, \nyo_idx: {yo_idx}")
-                        print(f'self.special_tok_size: {self.special_tok_size}')
+                        # print(f"Inside sampling(), schedule_label: \n{sample_batch['schedule_label'][b]}, \ninput: \n{sample_batch['input'][b]}, \nyo_idx: {yo_idx}")
+                        # print(f'self.special_tok_size: {self.special_tok_size}')
                         landscape = self.draw_landscape(
                             sample_id=batch_id*batch_size, #first sample in each batch
                             k=order_label,
@@ -921,12 +983,12 @@ class BERTSequentialEBMs():
                             full_latent=gamma,  #full length
                             full_val=curr_state, #full length previous pred
                             out_idx=yo_idx,  
-                            groundtruth=groundtruth,
+                            groundtruth=sample_batch['label'][b],
                         )
                         landscapes[t] = landscape
                     
                     yo_energy = self.energy(
-                        idx=inp_len+0, #random...
+                        idx=sep_id+1, #random...
                         val=True, 
                         rest_idx=full_val.unsqueeze(-1), 
                         latent=gamma[full_idx, :], 
@@ -964,14 +1026,14 @@ class BERTSequentialEBMs():
                         #___________________________________________________
                         
                         # update the sampled  yo'_i to previous_full_val (nonzero full vals)
-                        print(f'i: {i}, yo_idx[i]: {yo_idx[i]}')
-                        print(f'removed_zeros: {removed_zeros}')
+                        # print(f'i: {i}, yo_idx[i]: {yo_idx[i]}')
+                        # print(f'removed_zeros: {removed_zeros}')
                         new_full_val[i] = y_oi_prime.squeeze()
                         new_yo[i] = y_oi_prime.squeeze()
                         # print(f'i={i}: \n- y_oi\': {y_oi_prime.item()}, \n- ei_dist: {ei_dist}, \n- logits: {gamma[yo_idx[i], :]}')
                     # 3. update yo with yo' if the energy decreases
                     yo_prime_energy = self.energy(
-                        idx=inp_len+0, #random... 
+                        idx=sep_id+1, #random... 
                         val=True, 
                         rest_idx=new_full_val.unsqueeze(-1), 
                         latent=gamma[full_idx, :], 
@@ -1059,150 +1121,7 @@ class BERTSequentialEBMs():
         
         return pred, stat
     
-    
-    '''Batchalized version of sampling (ineffective: single latent generation; repeated sampling input)'''
-    def sampling_old(self, order_label:int, partial_pred: torch.Tensor, sample_batch:dict, \
-        sampler='gibbs', sampling_times=10, visual_ebms=None):
-        '''
-        Sampling on a partially masked sample batch. Gibbs sampling by default.
-        
-        params: 
-            order_label: k (1-indexed)
-            partial_pred: Size(bacth_size, seq_len)
-            sample_batch: dict
-        return:
-            updated_partial_pred: Size(batch_size, seq_len)
-            sth: loss_list or visual_ebms.log 
-        '''
-        batch_size = sample_batch['bert_input'].size(0)
-        model_input = sample_batch['bert_input'] + partial_pred
-        model_input[model_input > self.vocab_size] -= (self.special_tok_size-1) #subtract the MASK value (3), since added by the unmasked value
-        # print(f"\nmodel_input: \n{model_input},\nprevious partial_pred: \n{partial_pred}")
-        log_step = 1 #TODO
-        if visual_ebms:
-            log_step=visual_ebms.time_step #1
-        loss_list = []
-        criterion = nn.CrossEntropyLoss()
-        if sampler == 'gibbs':
-            '''1. generate latent'''
-            with torch.no_grad():
-                gamma = self.model.forward(model_input, None, is_ebm=True) # sample_batch['segment_label']
-                # print(f'gamma.shape: {gamma.shape}') # Size(batch_size, seq_len, vocab_size) #includes special tokens
-            # print(f'\norder_label: {order_label}')
-            full_val = [] #x_ou, dim=2
-            unmask_idx = [] # new x_u's indeices, dim=2
-            full_idx = [] # x_ou's indices, dim=2
-            for bid in range(batch_size):
-                unmask = ((sample_batch['schedule_label'][bid] >=1) & \
-                    (sample_batch['schedule_label'][bid] <= order_label)).nonzero(as_tuple=True)[0]
-                full = (sample_batch['schedule_label'][bid] <= order_label).nonzero(as_tuple=True)[0]
-                context = sample_batch['bert_input'][bid][full]
-                if bid == 0:
-                    yo_idx = (context == (self.special_tok_size-1)).nonzero(as_tuple=True)[0]#.tolist()
-                full_val.append(context.view(1, -1))
-                full_idx.append(full.view(1, -1))
-                unmask_idx.append(unmask.view(1, -1))
-            full_val = torch.cat(full_val, dim=0)
-            full_idx = torch.cat(full_idx, dim=0)
-            unmask_idx = torch.cat(unmask_idx, dim=0)
-            #randomly initialize yo (exclide 4 special tokens, 4-indexed)
-            yo = torch.randint(low=4, high=self.vocab_size, \
-                size=unmask_idx.size()).to(self.device) #unmask_idx
-            # print(f'\nbefore fillng yo, full_val: \n{full_val}\nyo_idx: ({yo_idx.shape})\n{yo_idx}')
-            try:
-                full_val[:, yo_idx] = yo #random initialize
-            except:
-                print(f"IndexError: sample_batch['bert_input']: \n{sample_batch['bert_input']}\nfull: \n{full}, context: \n{context},\nyo_idx: \n{yo_idx}, \nxu_idx: \n{xu_idx}")
-            # print(f'\nafter fillng yo, full_val: \n{full_val}')
-            full_val = torch.unsqueeze(full_val, -1)
-            # print(f'full_idx({full_idx.shape}): \n{full_idx}')
-            full_latent = torch.cat([gamma[r, full_idx[r], :].unsqueeze(0) for r in range(batch_size)],dim=0)
-            # print(f'energy inputs: rest_idx({full_val.shape}), full_latent.shape: \n{full_latent.shape}')
-            '''2. t steps of sampling'''
-            for t in range(sampling_times): 
-                yo_energy = self.energy(
-                    idx=0, 
-                    val=True, 
-                    rest_idx=full_val,  #4,22,1
-                    latent=full_latent, #4,22,6
-                    batchalize=True    
-                )
-                yo_prime = yo.clone() #4,|u|
-                if visual_ebms:
-                    energy_landscape = torch.zeros((yo_prime.size(1), self.num_classes), \
-                        device=self.device) # first sample in each batch!
-                loss = torch.zeros(yo_prime.size(1))
-                for i in range(yo_prime.size(1)): # iter through |u'|
-                    ei_dist = self.energy( #Size(batch_size, num_classes) 4,6
-                        idx=i,
-                        val=False,
-                        rest_idx=full_val,
-                        latent=full_latent,
-                        batchalize=True
-                    ) 
-                    p_oi = self.gibbs_dist(ei_dist) #Size(batch_size, num_classes) 4,6
-                    try:
-                        y_oi_prime = torch.multinomial(p_oi, num_samples=1) #Size(batch_size, 1) 4,1
-                    except: #gradient explode / vanish
-                        raise RuntimeError(f'multinomial() input: p_oi seems contains nan.\n' \
-                            f'p_oi({p_oi.shape}): \n{p_oi}\n' \
-                            f'ei_dist({ei_dist.shape}): \n{ei_dist}\ngamma[unmask_idx]'\
-                            f'({gamma[unmask_idx].shape}): \n{gamma[unmask_idx]}\n'\
-                            f'gamma({gamma.shape}): \n{gamma}\n'\
-                            f'model_input({model_input.shape}): \n{model_input}')
-                    # print(f'y_oi_prime({y_oi_prime.shape}): \n{y_oi_prime}')
-                    # print(f'before update at i({i}), yo\': \n{yo_prime}')
-                    yo_prime[:, i] = y_oi_prime.squeeze()
-                    # print(f'after update at i({i}), yo\': \n{yo_prime}')
-                    if t % log_step == 0:
-                        if visual_ebms:
-                            energy_landscape[i, :] = ei_dist[0, :]
-                        yi = sample_batch['bert_label'][0, unmask_idx[0,i]].view(-1).to(torch.long)
-                        loss[i] = criterion(p_oi[0:1, :], yi)
-                #end of pos iter
-                # print(f'\n\nafter all updates, yo\': \n{yo_prime}') #4,2
-                full_val = full_val.squeeze(-1)
-                # print(f'before update, full_val: \n{full_val}')
-                full_val[:, yo_idx] = yo_prime
-                # print(f'after update, full_val: \n{full_val}')
-                full_val = full_val.unsqueeze(-1)
-                yo_prime_energy = self.energy(
-                    idx=0, 
-                    val=True, 
-                    rest_idx=full_val, 
-                    latent=full_latent,
-                    batchalize=True    
-                ) #Size(batch_size, 1)
-                '''Check if the energy decreases after a single Gibbs step'''
-                mask = yo_prime_energy < yo_energy
-                # print(f'yo_energy: \n{yo_energy}, \nyo_prime_energy: \n{yo_prime_energy}\nmask({mask.shape}): \n{mask}')
-                expanded_mask = mask.expand_as(yo) #Size(batch_size, k, 1)
-                yo[expanded_mask] = yo_prime[expanded_mask]
-                if t % log_step == 0:
-                    if visual_ebms:
-                        visual_ebms.screenshot(
-                            unmask_idx.size(1), 
-                            t+1, 
-                            energy_landscape,
-                            torch.mean(losses.cpu()).item() 
-                        )
-                    else:
-                        loss_list.append(round(torch.mean(loss).item(), 2))
-            #end of t iter
-            updated_partial_pred = partial_pred.clone()
-            # print(f'\npartial_pred({partial_pred.shape}): \n{partial_pred}\nunmask_idx.shape: {unmask_idx.shape},\nyo.shape: {yo.shape}')
-            for b in range(batch_size):
-                updated_partial_pred[b][unmask_idx[b]] = yo[b]
-            # print(f'after t-times sampling, updated_partial_pred: \n{updated_partial_pred}')
-        #end gibbs
-        else:
-            raise NotImplementedError
-        if visual_ebms:
-            return updated_partial_pred, visual_ebms.ebm_log
-        else:
-            return updated_partial_pred, loss_list
-    
-    
+       
     def calculate_contrast_loss(self, pos_latent, neg_latent, pos_label, neg_label, \
         pos_input, neg_input, form='softmax', threshold=2, alpha=0.2):
         # 1. Prepare all the computing factors needed
@@ -1244,9 +1163,13 @@ class BERTSequentialEBMs():
             pos_e, neg_e = torch.cat(pos_eis, dim=0), torch.cat(neg_eis, dim=0)
             assert pos_e.size(0) == neg_e.size(0) == len(us[1]), f'energy tensors\' length mismatch! pos_e.size: {pos_e.size()}, neg_e.size(): {neg_e.size()}, |u\'|: {len(us[1])}' #|u'|
             l2 = contrast_criterion(pos_e, neg_e)
-            reg = torch.sum(alpha * (torch.pow(pos_e, 2) + torch.pow(neg_e, 2)))
+            
+            # pos_e_dist = torch.cat(pos_ei_dists, dim=0) #Size(|u'|, num_classes)
+            # pos_e_dist = pos_e_dist - torch.min(pos_e_dist)
+            # pos_reg = torch.mean(-1*pos_e_dist)
+            # reg = torch.sum(alpha * (torch.pow(pos_e, 2) + torch.pow(neg_e, 2)))
             # print(f'pos_e.size: {pos_e.size()}, neg_e.size(): {neg_e.size()}, l2 contrast_loss: {contrast_loss.size()}')
-            contrast_loss = torch.pow(torch.clamp(threshold - l2, min=0.0), 2) # + reg
+            contrast_loss = torch.pow(torch.clamp(threshold - l2, min=0.0), 2) #+ pos_reg # + reg
         elif form == 'hinge':
             contrast_criterion = nn.MultiMarginLoss(margin=5, reduction='mean')
             pos_e_dist = torch.cat(pos_ei_dists, dim=0) #Size(|u'|, num_classes)
@@ -1392,10 +1315,7 @@ class BERTSequentialEBMs():
     def pseudolikelihood(self, latent, mlm_label, mlm_input):
         assert latent.size(0) == mlm_label.size(0) == mlm_input.size(0)
         u = torch.nonzero(mlm_label != self.tokenizer.pad_token_id).squeeze() #Size(|u|)
-        if u.dim():
-            pi = torch.arange(u.size(0))
-        else: # u is a single value
-            pi = torch.tensor([0])
+        if u.dim() == 0:
             u = torch.tensor([u])
         logp_xu = []
         if len(u) == 0:
@@ -1414,12 +1334,12 @@ class BERTSequentialEBMs():
                 latent=latent,
                 pos_ids=torch.arange(full_vals.size(0)),
             )
-            max_energy = ei_dist.max() 
-            ei_dist = ei_dist - max_energy
-            z_ui = torch.sum(torch.exp(-1*ei_dist), dim=-1) #Size(1)
-            expanded_z_ui = z_ui.unsqueeze(0).expand_as(ei_dist) #Size(num_classes)?
-            logp_xui = torch.log(torch.exp(-1*ei_dist) / expanded_z_ui)
-            assert torch.isnan(logp_xui).any() == False, f'logp_xui is NaN!! ei_dist: \n{ei_dist}, \nlatent: \n{latent}\nmlm_input: \n{mlm_input.squeeze()}\ni: {i}'
+            stable_dist = (-1*ei_dist) - (-1*ei_dist).max() - 1 #subtract the max value for -1*ei_dist (log-sum-exp trick)
+            z_ui = torch.sum(torch.exp(stable_dist), dim=-1) #Size(1)
+            expanded_z_ui = z_ui.unsqueeze(0).expand_as(stable_dist) #Size(num_classes)?
+            logp_xui = torch.log(torch.exp(stable_dist) / expanded_z_ui)
+            assert (stable_dist != 0).any(), f'ei_dist contains zero!!'
+            assert torch.isnan(logp_xui).any() == False, f'logp_xui is NaN!! ei_dist: \n{ei_dist}, \nlatent: \n{latent}\nmlm_input: \n{mlm_input.squeeze()}\nz_ui: {z_ui}\ntorch.exp(-1*ei_dist): {torch.exp(-1*ei_dist)}\ni: {i}'
             logp_xu.append(logp_xui.unsqueeze(0)) #Eq.(0), with sum replaced by concatenation
         #end of u iter
         logp_xu = torch.cat(logp_xu, dim=0) #Size(|u|, num_classes) 

@@ -132,7 +132,7 @@ class SequentialEBMsTrainer:
         self.train_wandb = train_wandb
         self.test_wandb = test_wandb
         print(f"Total Parameters: {sum([p.nelement() for p in self.sebm.model.parameters()])}, is_ebm: {self.is_ebm}")
-        self.ckpts_path = f'./ire_reasoning/ebm_ckpts/{self.sebm.task_name}_{self.sebm.param_type}{self.sebm.d_model}_full_len.pth' #_ebm_order 
+        self.ckpts_path = f'./ire_reasoning/ebm_ckpts/{self.sebm.task_name}_{self.sebm.param_type}{self.sebm.d_model}_mlm.pth' #_ebm_order2 _full_len
     
     def load_model(self, ckpts_path, device='cuda'):
         state_dict = torch.load(ckpts_path, map_location=device)
@@ -352,14 +352,10 @@ class SequentialEBMsTrainer:
                         # neg_gamma = self.sebm.forward(neg_xo, None, is_ebm=True)
                         neg_xu = data['neg_label']
                         
-                    # neg_xo, neg_xu = neg_data['bert_input'], neg_data['bert_label']
-                    # print(f'\nxo({xo.shape}): \n{xo}\nxu({xu.shape}): \n{xu}\n') # both Size([4, 45])
-                    # 1. Forward MLM to generate the gamma for calculating the energy landscapes
-                    # gamma = self.sebm.forward(xo, data['segment_label'], is_ebm=True) 
-                    gamma = self.sebm.forward(xo, None, is_ebm=True) #4,50,31
-                    # neg_gamma = self.sebm.model.forward(xo, neg_data['segment_label'], is_ebm=True) 
                     
-                    # #_________________test: BERT mlm_loss___________________
+                    gamma = self.sebm.forward(xo, None, is_ebm=True) #4,50,31 
+                    
+                    # # #_________________test: BERT mlm_loss___________________
                     # # print(f'\nxo.shape: {xo.shape}') #4,50
                     # mlm_output, org_loss = self.sebm.forward(xo, None, is_ebm=False) #xo is partially unmasked 'bert_input'
                     # # print(f'mlm_output.shape: {mlm_output.shape}') #Size(batch_size, |u'|, num_classes)
@@ -367,7 +363,7 @@ class SequentialEBMsTrainer:
                     # # print(f'k: {k}, mlm_loss input: \n - mlm_output({mlm_output.view(-1, mlm_output.size(-1)).shape}): {mlm_output.view(-1, mlm_output.size(-1))}\n - label({xu.view(-1).shape}): {xu.view(-1)}')
                     # mlm_loss = mlm_criterion(mlm_output.view(-1, mlm_output.size(-1)), xu.view(-1))
                     # # print(f'\nmlm_loss: {mlm_loss}, loss: {org_loss}')
-                    # #———————————————————————————————————————————————————————
+                    # # #———————————————————————————————————————————————————————
                     
                     # print(f'\ngamma shape: {gamma.shape}') #Size(batch_size, seq_len, num_classes)
                     
@@ -425,7 +421,7 @@ class SequentialEBMsTrainer:
                         if self.contrast:
                             contrast_loss = contrast_loss + self.sebm.calculate_contrast_loss(
                                 gamma[r], gamma[r], xu[r], neg_xu[r], xo[r], xo[r],
-                                form="l2", threshold=2)
+                                form="l2", threshold=1)
                         #_____________________________
                     #end of row iter
                     
@@ -438,11 +434,10 @@ class SequentialEBMsTrainer:
                     
                     
                     ce_is_nan = torch.isnan(ce_loss.clone().detach()).any()
-                    contrast_is_nan = torch.isnan(contrast_loss.clone().detach()).any()
+                    has_zero = (batch_logp_xu > 0).any()
                     assert ce_is_nan == False, f'\nce_loss becomes NaN! '\
-                        f'\nce_loss: {ce_loss}, is_nan: {ce_is_nan}\n' \
-                        f'contrast_loss: {contrast_loss}, is_nan: {contrast_is_nan}\n' \
-                        f'batch_logp_xu: \n{batch_logp_xu}, \ngamma[r]: \n{gamma[r]}'
+                        f'logp_xu: \n{batch_logp_xu[0]}, \nlogp_xu contains zero: {has_zero}\ngamma[r]: \n{gamma[r]}' \
+                        f'batch_logp_xu contains nan: {torch.isnan(batch_logp_xu.clone().detach()).any()}'
 
                     loss = ce_loss + contrast_loss
                     # loss = mlm_loss
@@ -527,19 +522,19 @@ class SequentialEBMsTrainer:
                     #     continue
                     
                     # print(f'\n_________\nk = {k}:\n')
-                    partial_pred, sth = self.sebm.sampling( #sth: loss_list
+                    partial_pred, sth = self.sebm.sampling_new( #sth: loss_list
                         k+1, #1-indexed unmasking order label
                         partial_pred,
                         scheduled_data, 
                         self.sampler,
                         self.sampling_times,
                         visualize=visualize,
-                        groundtruth=scheduled_data['label'][0], #the first sample's label for visualizing the landscape
+                        # groundtruth=scheduled_data['label'][0], #the first sample's label for visualizing the landscape
                         batch_id=i,
                     )
                     # print(f'{k}-th partial_pred: \n{partial_pred},\nloss_list: {sth}')
-                    if not visualize:
-                        k_losses[str(k)], k_energies[str(k)] = sth['losses'], sth['energies']
+                    # if not visualize:
+                    #     k_losses[str(k)], k_energies[str(k)] = sth['losses'], sth['energies']
                     if k+1 == early_stop: #fully unmasked before reaching k
                         break
                 pred = partial_pred

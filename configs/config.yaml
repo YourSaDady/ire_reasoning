@@ -6,7 +6,7 @@ is_ebm: False
 # special_tokens: ['<mask>']
 load_ebm_ckpts: False ###########
 continue_train: False #######for further training with fully masked t2 (inference) after trained on mlm
-parallel: True ########currently only supports training with parallel_train.py
+parallel: False ########currently only supports training with parallel_train.py
 device: cuda #cpu, cuda
 visualize: False ###########
 
@@ -80,7 +80,7 @@ train:
   epochs: 1 #1 #40 #same as diffusion-vs-ar ########
   lr: 3e-4  #有用: init optimizer
   early_stop_threshold: 0.01 #没用?
-  contrast: True
+  contrast: False ##############
   batch_size:  800 #200 #100 #sudoku must be 1
   visualize: True
   wandb: True ####################### 
