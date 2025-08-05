@@ -16,7 +16,7 @@ sys.path.append('/home/yichuan/HKU/EBM/ire_reasoning')
 os.chdir('/home/yichuan/HKU/EBM/ire_reasoning')
 # print(f'The current working directory: {os.getcwd()}')
 import hydra
-from sequential_ebms import BERTSequentialEBMs, GPTSequentialEBMs
+from sequential_ebms import BERTSequentialEBMs, GPTSequentialEBMs, FastSequentialEBMs
 from dataset import load_data
 from utils import convert_time, VisualizeEBMs
 import random as rand
@@ -132,7 +132,7 @@ class SequentialEBMsTrainer:
         self.train_wandb = train_wandb
         self.test_wandb = test_wandb
         print(f"Total Parameters: {sum([p.nelement() for p in self.sebm.model.parameters()])}, is_ebm: {self.is_ebm}")
-        self.ckpts_path = f'./ire_reasoning/ebm_ckpts/{self.sebm.task_name}_{self.sebm.param_type}{self.sebm.d_model}_mlm.pth' #_ebm_order2 _full_len
+        self.ckpts_path = f'./ire_reasoning/ebm_ckpts/{self.sebm.task_name}_{self.sebm.param_type}{self.sebm.d_model}.pth' # _ebm8.9 (sota with sampling_new())
     
     def load_model(self, ckpts_path, device='cuda'):
         state_dict = torch.load(ckpts_path, map_location=device)
@@ -140,7 +140,10 @@ class SequentialEBMsTrainer:
         self.sebm.model.load_state_dict(state_dict)
         
     def train(self, epoch, stage):
-        self.iteration(epoch, self.train_data, stage, is_ebm=self.is_ebm)
+        if self.sebm.param_type == 'fast':
+            self.fast_iteration(epoch, self.train_data, stage)
+        else:
+            self.iteration(epoch, self.train_data, stage, is_ebm=self.is_ebm)
 
     def test(self, epoch, stage): #暂时无用
         self.iteration(epoch, self.test_data, stage, train=False)
@@ -219,7 +222,55 @@ class SequentialEBMsTrainer:
                 f"valid_labels={valid_labels}, \nlabel: \n{data['label']}, '\
                     f'\nschedule_label: n\{schedule_label}"
         return scheduled_data, iters_count
-                        
+      
+    def add_schedule_new(self, data, schedule):
+        '''
+        For batchalized scheduling. PAD and EOS can be subject to unmask.
+        Each sample within a batch has the same number of tokens to be unmasked.
+        '''
+        # take the number of tokens in the longest output sequence within a batch as the subject for scheduling.
+        scheduled_data = data
+        batch_size, full_len = scheduled_data['label'].size()
+        schedule_label = torch.zeros(batch_size, full_len)
+        # find the max output length within a batch
+        max_out_len = 0
+        for b in range(batch_size):
+            out_len = torch.count_nonzero(data['label'][b]).item()
+            if out_len > max_out_len:
+                max_out_len = out_len
+        unmask_num = max_out_len
+        # determine the number of tokens to be unmasked for each time stamp (k)
+        K = 0
+        for mask_rate in schedule:
+            K += 1
+            u_num = max(1, int((1-mask_rate)*unmask_num))
+            labeled_num = torch.count_nonzero(schedule_label[0]).item()
+            sample_num = u_num - labeled_num
+            # print(f'unmask_num: {unmask_num}')
+            # print(f'sample_num: {sample_num}, u_num: {u_num}, labeled_num: {labeled_num}')
+            for b in range(batch_size):
+                unlabeled_pos = [pos for pos in range(len(schedule_label[b])) \
+                    if (schedule_label[b][pos] == 0 and data['label'][b][pos] >= self.sebm.special_tok_size)]
+                unmask_pos = rand.sample(unlabeled_pos, min(len(unlabeled_pos), sample_num))
+                # if the tokens left are insufficient for batchalized scheduling, we randomly take the padding tokens 
+                # print(f'b: {b}, schedule_label: {schedule_label}, \nlabel: {data["label"]}')
+                # print(f'unlabeled_pos: {unlabeled_pos}, \nunmask_pos: {unmask_pos}')
+                if len(unlabeled_pos) < sample_num:
+                    # print(f'here!')
+                    padding_pos = (data['label'][b] == IGNORE_INDEX).\
+                        nonzero(as_tuple=True)[0].tolist()
+                    # print(f'unlabeled_pos < sample_num: {unlabeled_pos} < {sample_num}, \npadding_pos: {padding_pos}')
+                    unmask_pad = rand.sample(padding_pos, sample_num-len(unlabeled_pos))
+                    unmask_pos.extend(unmask_pad)
+                    scheduled_data['label'][b][unmask_pad] = self.sebm.tokenizer.unk_token_id #replace the PADs to be unmasked temperorily with UNK
+                schedule_label[b][unmask_pos] = K
+            out_mask = (data['label'] >= self.sebm.special_tok_size)
+            zero_remains = (schedule_label[out_mask] == 0).sum().item()
+            if zero_remains == 0:
+                break
+        scheduled_data['schedule_label'] = schedule_label
+        return scheduled_data, K
+                          
     def eval_metric(self, pred, label, metric="acc"):
         '''Calcualte the evaluation metrics for a batch pair of predictions and labels'''
         if metric == 'acc':
@@ -237,11 +288,10 @@ class SequentialEBMsTrainer:
             'input': scheduled_data['input'].clone(),
             'label': torch.zeros(scheduled_data['label'].size(), dtype=scheduled_data['label'].dtype),
             # 'segment_label': scheduled_data['segment_label'].clone().to(scheduled_data['segment_label'].dtype),
-            'contrast': scheduled_data['contrast']
         }
-        if self.contrast:
-            partial_data['neg_input'] = partial_data['input'].clone()
-            partial_data['neg_label'] = partial_data['label'].clone()
+        # if self.contrast:
+        #     partial_data['neg_input'] = partial_data['input'].clone()
+        #     partial_data['neg_label'] = partial_data['label'].clone()
         for b in range(scheduled_data['schedule_label'].size(0)):
             history_idx = ((scheduled_data['schedule_label'][b] > 0) & \
                 (scheduled_data['schedule_label'][b] < order_label)).nonzero(as_tuple=True)[0]
@@ -249,11 +299,11 @@ class SequentialEBMsTrainer:
                 (scheduled_data['schedule_label'][b] <= order_label)).nonzero(as_tuple=True)[0]
             partial_data['input'][b][history_idx] = scheduled_data['label'][b][history_idx]
             partial_data['label'][b][current_idx] = scheduled_data['label'][b][current_idx] 
-            if self.contrast:
-                partial_data['neg_input'][b][history_idx] = \
-                    scheduled_data['label'][b][history_idx] 
-                partial_data['neg_label'][b][current_idx] = \
-                    scheduled_data['neg_label'][b][current_idx]
+            # if self.contrast:
+            #     partial_data['neg_input'][b][history_idx] = \
+            #         scheduled_data['label'][b][history_idx] 
+            #     partial_data['neg_label'][b][current_idx] = \
+            #         scheduled_data['neg_label'][b][current_idx]
             
             
         # print(f'\nk={order_label}, xo: \n{partial_data["bert_input"][0]}, xu: \n{partial_data["bert_label"][0]}')
@@ -570,16 +620,17 @@ class SequentialEBMsTrainer:
                     statsfile.write(json.dumps(post_fix)+'\n')
             
             elif (not train) and stage == 'sft':
+                data['input'], data['label'] = data['input'].to(self.device), data['label'].to(self.device)
                 # print(f'data: \n{data}')
                 if self.sebm.param_type == 'bert':
-                    logits, _ = self.sebm.forward(data['bert_input'], None, is_ebm=False) # data['segment_label']
-                    loss = self.criterion(logits.view(-1, logits.size(-1)), data['bert_label'].view(-1)) #flattened (batch_size * seq_len)
+                    logits, _ = self.sebm.forward(data['input'], None, is_ebm=False) # data['segment_label']
+                    loss = self.criterion(logits.view(-1, logits.size(-1)), data['label'].view(-1)) #flattened (batch_size * seq_len)
                     # print(f'logits({logits.shape}): \n{logits}')
                     pred = logits.argmax(dim=-1) #argmin for "_mlm_test.pth"(训反了, energy漏加-); argmax for "_w_mask.pth"?
-                    invalid_pos = data['bert_label'] < len(special_tokens)
-                    pred[invalid_pos] = data['bert_label'][invalid_pos]
+                    invalid_pos = data['label'] < len(special_tokens)
+                    pred[invalid_pos] = data['label'][invalid_pos]
                     # print(f"logits.shape: {logits.shape}, label.shape: {data['bert_label'].shape}")
-                    correct = self.eval_metric(pred, data['bert_label'])
+                    correct = self.eval_metric(pred, data['label'])
                     # print(f"pred: \n{pred}, \nlabel: \n{data['bert_label']},\ncorrrect: {correct}")
                     # # ______decode______ 
                     # label = data['bert_label'][0].clone()
@@ -611,7 +662,7 @@ class SequentialEBMsTrainer:
                 avg_loss += loss.item()
                 total_correct += correct
                 if self.sebm.param_type == 'bert':
-                    total_samples += data['bert_input'].size(0)
+                    total_samples += data['input'].size(0)
                 elif self.sebm.param_type == 'gpt':
                     total_samples += data['input_ids'].size(0)
                 if self.test_wandb:
@@ -628,7 +679,7 @@ class SequentialEBMsTrainer:
                     'logits': [[round(ele, 2) for ele in row] for row in logits.cpu().tolist()[0]]
                 }
                 if self.sebm.param_type == 'bert':
-                    stats['label'] = data['bert_label'].cpu().tolist()[0]
+                    stats['label'] = data['label'].cpu().tolist()[0]
                 elif self.sebm.param_type == 'gpt':
                     stats['label'] = data['labels'].cpu().tolist()[0]
                 with open(eval_path, 'a') as statsfile:
@@ -666,7 +717,139 @@ class SequentialEBMsTrainer:
                 statsfile.write(f'\nFinal Accuracy: {final_acc}\n')
             print(f'\nStats written to path: {eval_path}')
                 
+    def fast_iteration(self, epoch, data_loader, stage, train=True, visualize=False):
+        '''
+        Faster training featured with new sequential EBM and batchalized pseudolikelihood function
+        '''   
+        if train:
+            mode = 'train'
+        else:
+            mode = 'inference'
+        data_iter = data_iter = tqdm(
+            enumerate(data_loader),
+            desc="EP_%s_%s:%d" % (mode, stage, epoch),
+            total=len(data_loader),
+            bar_format="{l_bar}{r_bar}"
+            )
+        if self.sebm.task_name == 'countdown':
+            special_tokens = {0, 1, 2, 3, 4}
+            self.sebm.special_tok_size = len(special_tokens)
+        else:
+            raise NotImplementedError
+        if (not train) and stage == 'inference':
+            total_correct, total_samples = 0, 0
+            # initialize stat file
+            eval_path = f'./ire_reasoning/stats/evaluate/{self.sebm.task_name}_' \
+                        f'{self.sebm.param_type}_{self.sebm.d_model}_{stage}_stat.jsonl'
+            with open(eval_path, 'w') as evalfile: 
+                evalfile.write('')
                 
+        for i, data in data_iter:
+            # prepare unmasking schedule
+            max_K = 10
+            t_list = unmasking_schedule(max_K+2, 'cosine')[1:-1]
+            scheduled_data, K = self.add_schedule_new(data, t_list)
+            # print(f"schedule_label: \n{scheduled_data['schedule_label']}")
+            # raise
+            if (not train) and stage == 'inference':
+                partial_pred = scheduled_data['input'].clone()
+                partial_pred[partial_pred == IGNORE_INDEX] = self.sebm.tokenizer.pad_token_id
+                
+            # iter through the K EBMs
+            ce_losses, contrast_losses, total_losses = {}, {}, {}
+            for k in range(K):
+                # if i < 10:
+                #     print(f'\n___________k={k}___________\n')
+                if train:
+                    torch.autograd.set_detect_anomaly(True)
+                    assert self.contrast, f'Fast iteration requires enabling contrast loss!'
+                    data = self.prepare_partial_data(scheduled_data, k+1) #AR-like, the previously unmasked tokens won't be predicted again
+                    data = {k:v.to(self.device) for k,v in data.items()}
+                    xo, xu = data['input'], data['label']
+                    xu[xu == IGNORE_INDEX] = self.sebm.tokenizer.pad_token_id #reset the IGNORE tokens back to PAD
+                    # print(f'\nxo({xo.shape}): {xo}\nxu({xu.shape}): {xu}')
+                    cal_t = time()
+                    logp_xu = self.sebm.pseudolikelihood_batched(xo, xu) #Size(batch_size, vocab_size, |u|)
+                    # calculate losses
+                    u = self.sebm.get_2D_indices( #just to remove the zero paddings
+                        array=xu,
+                        val=self.sebm.tokenizer.pad_token_id,
+                        type='remove_pad',
+                    ) #Size(batch_size, |u|)
+                    # print(f'u.shape: {u.shape}')
+                    # TODO: flattened 好像暂时没用?
+                    # # flatten the batch: logp:Size(batch_size*|u|, vocab_size), label:Size(batch_size*|u|)
+                    # flattened_logp = logp_xu.view(-1, self.sebm.vocab_size)
+                    # flattened_pos_label = xu.gather(dim=1, index=u).view(-1)
+                    # print(f'xu.gather(dim=1, index=u).shape: {xu.gather(dim=1, index=u).shape}')
+                        
+                    ce_loss = self.criterion(logp_xu, xu.gather(dim=1, index=u))
+                    # if i < 10:
+                    #     print(f'ce_loss({ce_loss.shape}): {ce_loss}')
+                    contrast_loss = self.sebm.fast_contrast_loss(xo, xu, loss_type='l2', threshold=2)
+                    # if i < 10:
+                    #     print(f'contrast_loss({contrast_loss.shape}): {contrast_loss}')
+                    loss = ce_loss + contrast_loss
+                    
+                    # logging
+                    if self.train_wandb:
+                        ce_losses[k], contrast_losses[k], total_losses[k] = ce_loss, contrast_loss, loss
+                        if k == K-1: #last k
+                            cal_spent = time() - cal_t
+                            wandb.log({'ce_loss': ce_losses, 'contrast_loss': contrast_losses, \
+                                'loss':total_losses, 'time': cal_spent})
+                    self.optim_schedule.zero_grad()
+                    loss.backward()
+                    # clip gradients
+                    max_norm = 1.0
+                    torch.nn.utils.clip_grad_norm_(self.sebm.model.parameters(), max_norm)
+                    self.optim_schedule.step_and_update_lr()
+                elif (not train) and stage == 'inference':
+                    partial_pred, sth = self.sebm.sampling(
+                        k+1, 
+                        partial_pred,
+                        scheduled_data,
+                        self.sampler,
+                        self.sampling_times,
+                        visualize=visualize,
+                        batch_id=i,
+                    )
+            # end K (EBM) iter
+            if (not train) and stage == 'inference': # decode and logging
+                pred = partial_pred
+                invalid_pos = scheduled_data['label'] < len(special_tokens)
+                pred[invalid_pos] = scheduled_data['label'][invalid_pos]
+                correct = self.eval_metric(pred, scheduled_data['label']) #TODO: add bachalization
+                total_correct += correct
+                total_samples = (i+1)*scheduled_data['input'].size(0)
+                label = scheduled_data['label'][0].clone()
+                label[label == IGNORE_INDEX] = self.sebm.tokenizer.pad_token_id
+                pred[0][pred[0] == IGNORE_INDEX] = self.sebm.tokenizer.pad_token_id
+                decoded_label = self.sebm.tokenizer.decode(label.tolist(), skip_special_tokens=True)
+                decoded_pred = self.sebm.tokenizer.decode(pred[0].tolist(), slip_special_tokens=True)
+                if i < 10:
+                    print(f'i: {i}, \ndecoded label: {decoded_label}, \ndecoded pred: \n{decoded_pred}, \ncorrect: {correct}')
+                stat = {
+                    'batch_id': i,
+                    'correct': correct,
+                    'label': decoded_label,
+                    'pred': decoded_pred
+                }
+                with open(eval_path, 'a') as statfile:
+                    statfile.write(json.dumps(stat)+'\n')
+            # break #################test
+        # end of batch iter
+        if train: #save checkpoints
+            print(f'\n\nFinished training!')
+            torch.save(self.sebm.model.state_dict(), self.ckpts_path)
+            print(f'\nmodel saved to {self.ckpts_path}.')
+        elif (not train): #show inference performance
+            final_acc = round(total_correct*100/total_samples, 2)
+            print(f'\n\nFinished sampling!'\
+                f'\nFinal accuracy: {final_acc}')
+            with open(eval_path, 'a') as statfile:
+                statfile.write(f'\nFinal Accuracy: {final_acc}\n')
+            print(f'\nStats written to path: {eval_path}')
                 
                 
                 
@@ -700,7 +883,6 @@ def main(config):
     '''2. Initialize and train EBMs'''
     print(f'\nInitializing EBMs...')
     task_config = config.tasks[config.task_name]
-    model_config = config.models[config.param_type]
     if task_config.name.startswith('binary'):
         print(f'inp_len: {task_config.inp_len}, out_len: {task_config.out_len}, num_classes: {task_config.num_classes}')
     if config.param_type == 'bert':
@@ -723,6 +905,18 @@ def main(config):
             task_config,
             model_config=None, #TODO: other configs, if necessary
             device=config.device, #TODO
+        )
+    elif config.param_type == 'fast': #largely the same hyper params as bert sebm
+        d_model = config.models['bert'].d_model
+        n_layers = config.models['bert'].n_layers
+        heads = config.models['bert'].heads
+        sebm = FastSequentialEBMs(
+            tokenizer=tokenizer,
+            task_config=task_config,
+            d_model=d_model,
+            n_layers=n_layers,
+            heads=heads,
+            device=config.device,
         )
     else:
         raise NotImplementedError
@@ -749,9 +943,6 @@ def main(config):
         # # test(sebm, val_data[0]) 
         # k=10
         # sebm_trainer.evaluate(k, stage=config.sampling.stage, visualize=False)
-        
-        # return##############
-        
         print(f'\n\n\n3. Start training...')
         if config.train.wandb:
             wandb.login()
@@ -764,7 +955,6 @@ def main(config):
             )
         for epoch in range(config.train.epochs):
             sebm_trainer.train(epoch, config.train.stage)
-        
         # return##############
     else:
         # ckpts_path = f'./ebm_ckpts/{task_config.name}_{config.param_type}' \
@@ -791,7 +981,7 @@ def main(config):
             
         
 
-    # return ###############
+    return ###############
 
     '''3. Evaluate'''
     k = 10

@@ -106,8 +106,9 @@ class CountDownDataset(Dataset):
                 t = 0.05
             # get pos / neg sentence pair
             t1, t2 = self.get_sent(item, is_pos=True)
-            if self.contrast:
-                neg_t2 = self.get_sent(item, is_pos=False) #same t1, but neg_t2
+            # if self.contrast:
+            #     neg_t2 = self.get_sent(item, is_pos=False) #same t1, but neg_t2
+                
             # print(f'Inside __getitem__(), original t1: \n{t1}, \nt2: \n{t2}')
             # randomly mask t1 and t2 with a uniformly sampled masking rate t
             if self.stage == 'pretrain':
@@ -121,14 +122,14 @@ class CountDownDataset(Dataset):
             elif self.stage == 'inference': 
                 # (t1, t1_label), (t2, t2_label) = self.mask(t1, 0), self.mask(t2, 1)
                 (t1, t1_mask), (t2, t2_mask) = self.encode(t1), self.encode(t2) 
-                if self.contrast:
-                    neg_t2, neg_t2_mask = self.encode(neg_t2)
-                    longer = len(neg_t2) - len(t2)
-                    if longer>=0:
-                        neg_t2 = neg_t2[:len(t2)]
-                    else:
-                        neg_t2 = neg_t2 + [neg_t2[-1]]*(-1*longer)
-                    assert len(neg_t2) == len(t2), f'len(neg_t2): {len(neg_t2)}, len(t2): {len(t2)}'
+                # if self.contrast:
+                #     neg_t2, neg_t2_mask = self.encode(neg_t2)
+                #     longer = len(neg_t2) - len(t2)
+                #     if longer>=0:
+                #         neg_t2 = neg_t2[:len(t2)]
+                #     else:
+                #         neg_t2 = neg_t2 + [neg_t2[-1]]*(-1*longer)
+                #     assert len(neg_t2) == len(t2), f'len(neg_t2): {len(neg_t2)}, len(t2): {len(t2)}'
                 t2_all_zero = False
             else:
                 raise NotImplementedError
@@ -146,21 +147,21 @@ class CountDownDataset(Dataset):
         label_padding = [IGNORE_INDEX] * (self.max_len - len(input)) #self.tokenizer.pad_token_id
         attn_padding = [0] * (self.max_len - len(input))
         input.extend(input_padding), label.extend(label_padding), attn.extend(attn_padding)
-        if self.contrast:
-            neg_label = (t1_mask + [self.tokenizer.sep_token_id] + neg_t2 \
-            + [self.tokenizer.eos_token_id])[:self.max_len]
-            neg_label.extend(label_padding)
+        # if self.contrast:
+        #     neg_label = (t1_mask + [self.tokenizer.sep_token_id] + neg_t2 \
+        #     + [self.tokenizer.eos_token_id])[:self.max_len]
+        #     neg_label.extend(label_padding)
         
         output = {
             'input': input,
             'label': label,
             'attention': attn,
         }
-        if self.contrast:
-            output['neg_label'] = neg_label
+        # if self.contrast:
+        #     output['neg_label'] = neg_label
         # print(f'final:\nraw line[idx]: \n{self.lines[item]}\nbert_input: \n{bert_input}, \nbert_label: \n{bert_label}') # \nsegment_label: \n{segment_label}
         output = {k: torch.tensor(v) for k, v in output.items()}
-        output['contrast'] = self.contrast
+        # output['contrast'] = self.contrast
         
         return output
     
@@ -168,18 +169,30 @@ class CountDownDataset(Dataset):
         if is_pos:
             t1, t2 = self.lines[idx][0], self.lines[idx][1]
             return t1, t2
-        else:
-            # method1: random pair (meaningful negative target)
-            while True: #ensure the t2 is negative
-                t2 = self.lines[rand.randrange(len(self.lines))][1]
-                if t2 != self.lines[idx][1]:
-                    break
-            # # method2: random token_id (meaningless negative target)
+        else: #TODO: method 1 and 2 are "bad" negatiuve samples
+            raise NotImplementedError('you should not reach here')
+            '''method1: random pair (meaningful negative target)'''
+            # while True: #ensure the t2 is negative
+            #     t2 = self.lines[rand.randrange(len(self.lines))][1]
+            #     if t2 != self.lines[idx][1]:
+            #         break
+            '''method2: random token_id (meaningless negative target)'''
             # t2_len = len(self.encode(self.lines[idx][1])[0])
             # t2_ids = [rand.randint(5,20) for _ in range(t2_len)]
             # t2 = self.tokenizer.decode(t2_ids)
+            '''method3: randomly select arbitrary number of tokens to shift by 1'''
+            t2_ids = torch.tensor(self.encode(self.lines[idx][1])[0])
+            # print(f'before, t2_ids: {t2_ids}, t2: {self.lines[idx][1]}')
+            t2_len = len(t2_ids)
+            shift_num = rand.randint(1, t2_len)
+            idx = torch.randperm(t2_len)[:shift_num]
+            delta = torch.randint(0, 2, (shift_num,))*2 - 1 #+1or-1
+            t2_ids[idx] += delta
+            t2 = self.tokenizer.decode(t2_ids)
+            # print(f'after adding noise to positions: {idx}, t2_ids: {t2_ids}, t2: {t2}')
+            
             # # print(f'neg t2: {t2}')
-            return t2
+            return t2 
     
     def mask(self, sentence, t):
         tokens = sentence.split() #only useful for textual sentences

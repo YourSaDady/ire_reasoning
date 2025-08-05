@@ -503,9 +503,11 @@ class BERT(torch.nn.Module):
         self.encoder_blocks = torch.nn.ModuleList(
             [EncoderLayer(d_hidden, heads, d_hidden * 4, dropout) for _ in range(n_layers)])
 
-    def forward(self, x, segment_info): #inputs are two tensors
+    def forward(self, x, segment_info): 
+        '''Size(batch_size, full_len) -> Size(batch_size, full_len, vocab_size)'''
         # attention masking for padded token
         # (batch_size, 1, seq_len, seq_len)
+        # print(f'BERT input x.shape: {x.shape}')
         mask = (x > 0).unsqueeze(1).repeat(1, x.size(1), 1).unsqueeze(1)
 
         # embedding the indexed sequence to sequence of vectors
@@ -514,6 +516,7 @@ class BERT(torch.nn.Module):
         # running over multiple transformer blocks
         for encoder in self.encoder_blocks:
             x = encoder.forward(x, mask)
+        # print(f'BERT output x.shape: {x.shape}')
         return x    
     
 class MLMDecoder(nn.Module): #task-specified decoder
@@ -538,7 +541,23 @@ class MLMDecoder(nn.Module): #task-specified decoder
         else:
             return self.softmax(self.linear(x))
         
-'''The ultimate base_model for sequential EBMs'''
+class EnergyDecoder(nn.Module):
+    '''
+    Linear decoder which first flattens the positional and the hidden dimensions of the BERT's output,
+    then returns the energy value (scalar, but usually batchalized).
+    '''
+    def __init__(self, out_len, seq_len):
+        super().__init__()
+        self.linear = torch.nn.Linear(out_len*seq_len, 1)
+
+    def forward(self, x): #Size(batch_size, full_len, vocab_size) -> Size(batch_size)
+        batch_size = x.size(0)
+        energy_batch = self.linear(x.view(batch_size, -1))
+        # print(f'decoder input x.shape: {x.shape}, decoder output.shape: {energy_batch.shape}')
+        return energy_batch
+        
+        
+'''The previous base_model for sequential EBMs. Workable but too slow.'''
 class DiscreteDiffusion(nn.Module):
     def __init__(self, vocab_size, hidden_size=128, out_len=10, n_layers=6, heads=8, \
         max_len=256, dropout=0.1):
@@ -557,6 +576,32 @@ class DiscreteDiffusion(nn.Module):
         )
     def forward(self, x, segment_label, is_ebm):
         return self.decoder(self.bert(x, segment_label), is_ebm)
+
+'''The revised base_model for sequential EBMs. Given a input_ids batch, 
+    directly calculates the batched scalar energy value. '''
+class EnergyBERT(nn.Module):
+    def __init__(self, vocab_size, hidden_size=128, n_layers=6, heads=8, \
+        max_len=256, dropout=0.1):
+        super().__init__()
+        self.bert = BERT(
+            vocab_size=vocab_size,
+            d_hidden=hidden_size,
+            n_layers=n_layers,
+            heads=heads,
+            max_len=max_len,
+            dropout=dropout,
+        )
+        self.decoder = EnergyDecoder(
+            out_len=hidden_size,
+            seq_len=max_len,
+        )
+    def forward(self, x):  #this is actually enrgy() already!
+        '''
+        Size(batch_size, full_len) : input batch
+        -> Size(batch_size, full_len, bert_out_dim) (the so-called latent) : BERT encoder output
+        -> Size(batch_size) : Classifier decoder output
+        '''
+        return self.decoder(self.bert(x, None)) #segment_info = None
     
 '''
 Train a WordPiece Tokenizer

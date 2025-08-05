@@ -1,13 +1,13 @@
 # arguments
 task_name: countdown  # binary-addition
-param_type: bert # mlp, transformer, bert, gpt
+param_type: fast # mlp, transformer, bert, gpt, fast
 is_ebm: False
 # max_len: 128
 # special_tokens: ['<mask>']
 load_ebm_ckpts: False ###########
 continue_train: False #######for further training with fully masked t2 (inference) after trained on mlm
 parallel: False ########currently only supports training with parallel_train.py
-device: cuda #cpu, cuda
+device: cpu #cpu, cuda
 visualize: False ###########
 
 
@@ -80,8 +80,8 @@ train:
   epochs: 1 #1 #40 #same as diffusion-vs-ar ########
   lr: 3e-4  #有用: init optimizer
   early_stop_threshold: 0.01 #没用?
-  contrast: False ##############
-  batch_size:  800 #200 #100 #sudoku must be 1
+  contrast: True ##############
+  batch_size:  12 #200 #100 #sudoku must be 1
   visualize: True
   wandb: True ####################### 
 
