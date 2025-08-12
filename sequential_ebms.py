@@ -1872,14 +1872,14 @@ class FastSequentialEBMs():
             coords = torch.nonzero(array < val, as_tuple=False)
             n = torch.count_nonzero(array[0] < val)
         elif type == 'curr_unmask': 
-            coords = torch.nonzero(array == val, as_tupl=False)
+            coords = torch.nonzero(array == val, as_tuple=False)
             n = torch.count_nonzero(array[0] == val)
         elif type == 'full_unmask':
             coords = torch.nonzero(array <= val, as_tuple=False)
             n = torch.count_nonzero(array[0] <= val)
         assert coords.dim() == 2
         row_ids, col_ids = coords[:, 0], coords[:, 1]
-        ids = torch.empty(row_size, n)
+        ids = torch.empty(row_size, n, device=self.device)
         for r in range(row_size):
             ids[r, :] = col_ids[row_ids == r]
         return ids.long()
@@ -1890,8 +1890,71 @@ class FastSequentialEBMs():
         try:
             return self.model.forward(batched_input_ids).squeeze() #Size(batch_size, 1) -> Size(batch_size)
         except:
-            raise IndexError(f'forward input: {batched_input_ids}')
-    
+            raise IndexError(f'forward input({batched_input_ids.shape}): {batched_input_ids}')
+        
+    def pseudolikelihood_revised(self, xo, xu):
+        '''
+        Temporary revised version of pseudolikelihood_batched.
+        params:
+            - xo: (B, full_len), the sequence of input and previously unmasked output tokens
+            - xu: (B, full_len), zero-padded output tokens to be unmasked at the current timestamp (为了节省memory并没有重新repredict historical unmasking tokens)
+        returns:
+            - logp_xu: (B, V, U): distribution of the "pseudo-logits"
+        '''
+        # torch.set_printoptions(threshold=float('inf'))   # or a huge integer
+        # 1. Get all the sizes needed
+        u = self.get_2D_indices(
+            array=xu,
+            val=self.tokenizer.pad_token_id,
+            type='remove_pad',
+        )
+        xu_ = xu.clone()
+        xu_[xu_ == self.tokenizer.unk_token_id] = self.tokenizer.pad_token_id
+        B, full_len = xo.shape
+        device = self.device
+        U, V = u.size(1), self.vocab_size
+        # 2. Initialize the all-in x_base as input for batchalized energy calculation
+        x_base = xo.clone().unsqueeze(1).unsqueeze(1).expand(B, U, V, full_len) #later to be varied on U and V dimensions
+        # if U == 2:
+        #     print(f'\nInside pseudolikelihood(), xo({xo.shape}): \n{xo},\nxu({xu.shape}): \n{xu}')
+        #     print(f'u({u.shape}): {u}')
+        #     print(f'x_base initialized has shape: {x_base.shape}')
+        # 3. Unmask earlier positions j < i for every i (vary on U before i)
+        if U > 1:
+            mask_early = torch.arange(U, device=device).unsqueeze(0) < torch.arange(U, device=device).unsqueeze(1) #(U,U), downward triangular matrix of True's among False's
+            mask_early = mask_early.unsqueeze(0).unsqueeze(2).expand(B,U,V,U) #(B_,U,V_,U)
+            # if U == 2:
+            #     print(f'mask_early({mask_early.shape}): {mask_early}')
+            idx_early = u.unsqueeze(1).unsqueeze(2).expand(B,U,V,U) #(B,U_,V_,U)
+            u_early = xu_.gather(dim=-1, index=u).unsqueeze(1).unsqueeze(2).expand(B,U,V,U) #(B,U_,V_,U)
+            o_early = xo.gather(dim=-1, index=u).unsqueeze(1).unsqueeze(2).expand(B,U,V,U) #(B,U_,V_,U)
+            val_early = torch.where(mask_early, u_early, o_early) #(B,U,V_,U)
+            # if U == 2:
+            #     print(f'val_early({val_early.shape}): {val_early}')
+            x_base = x_base.scatter(dim=-1, index=idx_early, src=val_early.long())
+            # if U == 2:
+            #     print(f'x_base with unmasked positions earlier than i ({x_base.shape}): \n{x_base}')
+        # 3. Write class value v at position u[b, i] for every v
+        idx_u = u.unsqueeze(2).expand(B,U,V).unsqueeze(-1) #B,U,V,1
+        val_v = torch.arange(V, device=device).view(1,1,V,1).expand(B,U,V,1) #B,U,V,1
+        x_base = x_base.scatter(dim=-1, index=idx_u, src=val_v.long())
+        # if U == 2:
+        #     print(f'x_base with varied v ({x_base.shape}): \n{x_base}')
+        # 4. Flatten the x_base and compute the energies in a single forward (might result in OOM!)
+        flat = x_base.reshape(-1, full_len) #(B*U*V,full_len)
+        # if U == 2:
+        #     print(f'after falttened for energy() to take in, flat({flat.shape}): \n{flat}')
+        flat_energy = self.energy(flat) #(B*U*V)
+        energy_dist = flat_energy.view(B,U,V) #B,U,V
+        # if U == 2:
+        #     print(f'the final energy_dist({energy_dist.shape}): \n{energy_dist}')
+        # 5. Gibbs distribution
+        log_gibbs_dist = self.log_gibbs_dist(energy_dist)
+        # if U == 2:
+        #     print(f'the logp_xu before permuting ({pseudolikelihood.shape}): \n{pseudolikelihood}')
+        
+        return log_gibbs_dist.permute(0,2,1).contiguous()
+            
     def pseudolikelihood_batched(self, xo, xu):
         '''
         More batchalized version of pseudolikelihood for reducing the for-loop iteration on V.
@@ -1903,17 +1966,20 @@ class FastSequentialEBMs():
         u = self.get_2D_indices(
             array=xu,
             val=self.tokenizer.pad_token_id,
-            type=
-            'remove_pad',
+            type='remove_pad',
         )
         xu_  =xu.clone()
         xu_[xu == self.tokenizer.unk_token_id] = self.tokenizer.pad_token_id
         U, V = u.size(1), self.vocab_size
+        torch.set_printoptions(threshold=float('inf'))   # or a huge integer
+        if U == 2:
+            print(f'\nInside pseudolikelihood(), xo({xo.shape}): \n{xo},\nxu({xu.shape}): \n{xu}')
+            print(f'u({u.shape}): {u}')
         # 1. Build the input sequence for calculating the energy_dist efficiently
         x_base = xo.clone().unsqueeze(1).unsqueeze(1).expand(B,U,V,full_len)
         # 2. Unmask earlier positions j < i for every i
         if U > 1:
-            mask_early = torch.arange(U, device=device).unsqueeze(0) < torch.arange(U, device=device).unsqueeze(1)
+            mask_early = torch.arange(U, device=device).unsqueeze(0) < torch.arange(U, device=device).unsqueeze(1) #Size(U,U)的上行和右列全部False、左下三角区域全部True的 u_i mask matrix
             # print(f'mask_early({mask_early.shape}): {mask_early}')
             mask_early = mask_early.unsqueeze(0).unsqueeze(2) #1,u,1,u
             idx_early = u.unsqueeze(1).expand(B,U,U) #B,U,U
@@ -1922,12 +1988,17 @@ class FastSequentialEBMs():
             flat_xu  = xu_.unsqueeze(1).expand(-1, U, -1).reshape(-1, full_len)  # (B*U, full_len)
             val_early = flat_xu.gather(dim=1, index=flat_idx)  # (B*U, U)
             val_early = val_early.view(B, U, U)                # (B, U, U)
+            if U ==2:
+                print(f'val_early({val_early.shape}): \n{val_early}')
+                print(f'val_early.unsqueeze(-1).expand(B, U, U, 3)({val_early.unsqueeze(-1).expand(B, U, U, 3).shape}): \n{val_early.unsqueeze(-1).expand(B, U, U, 3)}')
             # effect of x_base.scatter_(dim=1,index=idx_early.unsqueeze(2).expand(B,U,V,U),src=val_early.unsqueeze(2).expand(B,U,V,U))
             b_idx = torch.arange(B, device=device).view(B, 1, 1, 1).expand(B, U, U, V)
             i_idx = torch.arange(U, device=device).view(1, U, 1, 1).expand(B, U, U, V)
             v_idx = torch.arange(V, device=device).view(1, 1, 1, V).expand(B, U, U, V)
             target_pos = idx_early.unsqueeze(-1).expand(B, U, U, V)  # (B, U, U, V)
             x_base[b_idx, i_idx, v_idx, target_pos] = val_early.unsqueeze(-1).expand(B, U, U, V)
+            if U == 2:
+                print(f'after unmasked early positions before u_i, x_base({x_base.shape}): \n{x_base}')
         # 3. Write class value v at position u[b, i] for every v
         # idx_u = u.unsqueeze(2).expand(B,U,V).unsqueeze(-1) #B,U,V,1
         # val_v = torch.arange(V, device=device).view(1,1,V,1).expand(B,U,V,1) #B,U,V,1
@@ -1937,18 +2008,23 @@ class FastSequentialEBMs():
         v_idx = torch.arange(V, device=device).view(1, 1, V).expand(B, U, V)
         u_flat = u.unsqueeze(2).expand(B, U, V)
         x_base[b_idx, i_idx, v_idx, u_flat] = v_idx.long()
+        if U == 2:
+            print(f'after unmasked u_i with all v values, x_base({x_base.shape}): \n{x_base}')
         # 4. Flatten and compute the energies in one forward pass
         flat = x_base.reshape(-1, full_len) #B*U*V,full_len
+        if U == 2:
+            print(f'after falttened for energy() to take in, flat({flat.shape}): \n{flat}')
         flat_energy = self.energy(flat) #B*U*V
         energy_dist = flat_energy.view(B,U,V) #B,U,V
+        if U == 2:
+            print(f'the final energy_dist({energy_dist.shape}): \n{energy_dist}')
         # 5. Gibbs distribution
-        pseudolikelihood = torch.log(self.gibbs_dist(energy_dist))
+        pseudolikelihood = self.log_gibbs_dist(energy_dist)
+        if U == 2:
+            print(f'the logp_xu before permuting ({pseudolikelihood.shape}): \n{pseudolikelihood}')
         
         return pseudolikelihood.permute(0,2,1).contiguous()
     
-            
-            
-        
     def pseudolikelihood(self, xo, xu):
         '''
         Sequential EBMs' alternative method of generating the "logits"
@@ -1967,7 +2043,7 @@ class FastSequentialEBMs():
                 )
         xu_ = xu.clone()
         xu_[xu == self.tokenizer.unk_token_id] = self.tokenizer.pad_token_id
-        energy_dist = torch.empty(u.size(0), u.size(1), self.vocab_size) #"logits": Size(batch_size, |u|, vocab_size)
+        energy_dist = torch.empty(u.size(0), u.size(1), self.vocab_size, device=self.device) #"logits": Size(batch_size, |u|, vocab_size)
         for i in range(u.size(1)): # TODO: 能否想办法batchalize?
             for v in range(self.vocab_size): #这里用完整的vocab,不用task-specific：range(self.special_tok_size, self.special_tok_size+len(self.tokenizer.vocab))
                 # 1. prepare the partially unmasked sample batches for calculating the energy
@@ -1987,11 +2063,11 @@ class FastSequentialEBMs():
                 
         # 2. Calculate the log of the Gibbs distribution
         # print(f'\nenergy_dist({energy_dist.shape}): {energy_dist}')
-        pseudolikelihood = torch.log(self.gibbs_dist(energy_dist))
+        pseudolikelihood = self.log_gibbs_dist(energy_dist)
         assert torch.isnan(pseudolikelihood).any() == False, f'\nPseudolikelihood contains NaN!!'
         # print(f'the final pseudolikelihood.shape: {pseudolikelihood.shape}') #Size(batch_size, |u|, vocab_size)
         # move the class dimension ahead to fit the channel-first requirement for calculating the losses
-        pseudolikelihood = pseudolikelihood.permute(0, 2, 1)
+        pseudolikelihood = pseudolikelihood.permute(0, 2, 1).contiguous()
         # print(f'inside pseudo function, after permute, pseudolikelihood.shape: {pseudolikelihood.shape}')
 
         return pseudolikelihood
@@ -2067,23 +2143,96 @@ class FastSequentialEBMs():
         
         return contrast_loss.squeeze()
     
-    def gibbs_dist(self, energy_dist, energy_clip=True):
+    def log_gibbs_dist(self, energy_dist, energy_clip=True):
         '''Basically performs Eq.(0), energy clip is appplied by default. 
         Similar to softmax on Size(batch_size, vocab_size)'''
         if energy_clip:
             energy_dist = energy_dist - energy_dist.min() #perform global clipping so that all energies are between 0~1
-        partition = torch.sum(torch.exp(-1*energy_dist), dim=-1) #Size(batch_size, |u|)
-        expanded_partition = partition.unsqueeze(-1).expand_as(energy_dist)
-        normed_gibbs_dist = torch.exp(-1*energy_dist) / expanded_partition
+        # partition = torch.sum(torch.exp(-1*energy_dist), dim=-1) #Size(batch_size, |u|)
+        # expanded_partition = partition.unsqueeze(-1).expand_as(energy_dist)
+        # normed_gibbs_dist = torch.exp(-1*energy_dist) / expanded_partition
+        log_gibbs_dist = torch.log_softmax(-1*energy_dist, dim=-1)
         # TODO: NaN problem: nominator becomes full of zeros
-        assert torch.isnan(normed_gibbs_dist).any()==False, \
-            f'gibbs_dist contains nan: \n{normed_gibbs_dist}' \
-            f'\ntorch.exp(-1*energy_dist): \n{torch.exp(-1*energy_dist)}' \
-            f'\nclipped energy: \n{energy_dist}'
-        return normed_gibbs_dist
+        no_nan = (torch.isnan(log_gibbs_dist).any() == False)
+        assert no_nan, f'log_gibbs_dist contains non-positive or nan values!' \
+            f'\nclipped energy({energy_dist.shape}): \n{energy_dist}' \
+            f'\nno_nan:{no_nan}'
+        return log_gibbs_dist
     
     def draw_landscape(self, sample_batch, partial_pred):
         raise #TODO
+    
+    def sampling_revised(self, partial_pred:torch.Tensor, u:torch.Tensor, \
+        sampler='gibbs', sampling_times=10, visualize=False, batch_id=None):
+        '''
+        Revised faster version of sampling(), batchalized all unmasking positions and class values inside each time t.
+        
+        - partial_pred: Size(batch_size, full_len), input and previously unmasked tokens
+        - data: Size(batch_size, full_len), the processed data dict specified to k
+            
+        - returns:
+            - cand_pred: Size(batch_size, full_len), the updated partial_pred after T iaterations,
+            - stat: Dict with statistical infos about losses and visualizations
+        '''
+        # torch.set_printoptions(threshold=float('inf')) #########for checking
+        # 1. Get all the needed sizes and indices
+        B, full_len = partial_pred.size()
+        V, device = self.vocab_size, self.device
+        U = u.size(-1)
+        stat = None
+        # print(f'k={batch_id}, u({u.shape}): {u}')
+        if sampler == 'gibbs':
+            prev_pred  = partial_pred.to(device) #(B, full_len)
+            # 2. Start T iterations of Gibbs sampling
+            for t in range(sampling_times):
+                # print(f'_____Start t={t}-th sampling_____')
+                if visualize: 
+                    # TODO
+                    raise
+                # 2.1 Calculate the energy of the previous prediction
+                prev_energy = self.energy(prev_pred) #(B,)
+                # 2. Generate a new Gibbs sample from the previous sample
+                cand_pred = prev_pred.clone() #(B,full_len)
+                # print(f'the initial cand_pred at t={t}, ({cand_pred.shape}): \n{cand_pred}')
+                v_range = torch.arange(V, device=device).view(1,V,1).expand(B,V,1)
+                for i in range(U): # vectorized on the v dimension
+                    xui_base = cand_pred.unsqueeze(1).expand(B,V,full_len)
+                    # if i == 2 and t == 0 and batch_id == 2:
+                    #     print(f'i={i}, initial xui_base({xui_base.shape}): \n{xui_base}')
+                    ui = u[:,i].view(B,1,1).expand(B,V,1)
+                    xui_base = xui_base.scatter(dim=-1, index=ui, src=v_range) #(B, V, full_len)
+                    flat = xui_base.reshape(-1, full_len) #(B*V,full_len)
+                    # if i == 2 and t == 0 and batch_id == 2:
+                    #     print(f'\ni={i}, scattered xui_base({xui_base.shape}): \n{xui_base}')
+                    #     print(f'flat.shape: {flat.shape}')
+                    ui_energy = self.energy(flat).view(B,V)
+                    log_ui_dist = self.log_gibbs_dist(ui_energy)
+                    try:
+                        ui_dist = torch.exp(log_ui_dist) #(B,V)
+                    except:
+                        raise RuntimeError(f'ui_energy: \n{ui_energy}\nlog_ui_dist:\n{log_ui_dist}\nui_dist:\n{ui_dist}')
+                    x_ui = torch.multinomial(ui_dist, num_samples=1).view(B,1)
+                    cand_pred = cand_pred.scatter(dim=-1, index=u[:,i].view(B,1), src=x_ui)
+                    # if i == 2 and t == 0 and batch_id == 2:
+                    #     print(f'after sampling at position i={i}, cand_pred becomes: \n{cand_pred}')
+                # end of pos i iter
+                cand_energy = self.energy(cand_pred)
+                
+                # 3. Modify the previous prediction if the sampling result has lower energy
+                energy_drop_mask = (cand_energy < prev_energy).unsqueeze(1).expand(B,full_len)
+                curr_pred = torch.where(energy_drop_mask, cand_pred, prev_pred)
+                
+                # if i == 2 and batch_id == 2:
+                #     print(f'The final candidate at t={t}: \n{cand_pred}')
+                #     print(f'the previous energy({prev_energy.shape}): \n{prev_energy}')
+                #     print(f'the candidate energy({cand_energy.shape}): \n{cand_energy}')
+                #     print(f'energy_drop_mask ({energy_drop_mask.shape}): {energy_drop_mask}')
+                #     print(f'curr_pred at t={t} ({curr_pred}): \n{curr_pred}')
+                
+                # raise######test
+            # end of time t iter
+                
+        return curr_pred, stat
     
     def sampling(self, order_label:int, partial_pred:torch.Tensor, sample_batch:dict, \
         sampler='gibbs', sampling_times=10, visualize=False, batch_id=None):
@@ -2101,6 +2250,7 @@ class FastSequentialEBMs():
                 print(f'___Start t={t}-th sampling...')
                 cand_pred = prev_pred.clone()
                 if visualize and order_label==3 and t == sampling_times-1:
+                    raise
                     landscape = self.draw_landscape( #TODO: new version without latent
                         sample_batch,
                         cand_pred,
@@ -2111,9 +2261,9 @@ class FastSequentialEBMs():
                 unmask_idx = self.get_2D_indices(
                     array=sample_batch['schedule_label'],
                     val=order_label,
-                    type='full_unmask',
+                    type='curr_unmask', #full_unmask
                 ) #Size(batch_size, |u_<=|)
-                print(f'unmask_idx.shape: {unmask_idx.shape}')
+                print(f'unmask_idx({unmask_idx.shape}): {unmask_idx}')
                 for i in range(unmask_idx.size(-1)):
                     print(f'{i}/{unmask_idx.size(0)}position, cand_pred[0]: \n{cand_pred[0]}')
                     # calculate the gibbs disttribution of energy at each unmasking position
@@ -2125,7 +2275,7 @@ class FastSequentialEBMs():
                         energy_iv = self.energy(seq_iv) 
                         dist_i.append(energy_iv.view(batch_size, 1))
                     dist_i = torch.cat(dist_i, dim=-1) #energy_dist, Size(batch_size, vocab_size)
-                    dist_i = self.gibbs_dist(dist_i)
+                    dist_i = torch.exp(self.log_gibbs_dist(dist_i))
                     cand_i = torch.multinomial(dist_i, num_samples=1).squeeze(-1)
                     print(f'dist_i.shape: {dist_i.shape}, cand_i.shape: {cand_i.shape}')
                     cand_pred[unmask_idx[:, i]] = cand_i
@@ -2134,6 +2284,7 @@ class FastSequentialEBMs():
                 if cand_energy < prev_energy:
                     prev_pred = cand_pred
                     print(f'energy decreased from {prev_energy} to {cand_energy}, prev_pred updated to {prev_pred}')
+                break###################test
             #end of t iter
         else:
             raise NotImplementedError(f'sampler: {sampler} is not defined!')

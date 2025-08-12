@@ -135,7 +135,7 @@ class SequentialEBMsTrainer:
         self.ckpts_path = f'./ire_reasoning/ebm_ckpts/{self.sebm.task_name}_{self.sebm.param_type}{self.sebm.d_model}.pth' # _ebm8.9 (sota with sampling_new())
     
     def load_model(self, ckpts_path, device='cuda'):
-        state_dict = torch.load(ckpts_path, map_location=device)
+        state_dict = torch.load(ckpts_path, map_location=device, weights_only=True)
         state_dict = remove_module_prefix(state_dict)
         self.sebm.model.load_state_dict(state_dict)
         
@@ -154,8 +154,11 @@ class SequentialEBMsTrainer:
         '''
         t_list = unmasking_schedule(k+2, scheduler)[1:-1]
         print(f't_list: {t_list}')
-        self.iteration(1, self.test_data, stage=stage, train=False, \
-            schedule=t_list, parallel=self.parallel, visualize=visualize)
+        if self.sebm.param_type == 'fast':
+            self.fast_iteration(1, self.test_data, stage, train=False, visualize=visualize)
+        else:
+            self.iteration(1, self.test_data, stage=stage, train=False, \
+                schedule=t_list, parallel=self.parallel, visualize=visualize)
         
     def add_schedule(self, data, schedule):
         '''
@@ -296,7 +299,7 @@ class SequentialEBMsTrainer:
             history_idx = ((scheduled_data['schedule_label'][b] > 0) & \
                 (scheduled_data['schedule_label'][b] < order_label)).nonzero(as_tuple=True)[0]
             current_idx = ((scheduled_data['schedule_label'][b] > 0) & \
-                (scheduled_data['schedule_label'][b] <= order_label)).nonzero(as_tuple=True)[0]
+                (scheduled_data['schedule_label'][b] == order_label)).nonzero(as_tuple=True)[0] #<= is also workable(also fits infernce better), but results in OOM
             partial_data['input'][b][history_idx] = scheduled_data['label'][b][history_idx]
             partial_data['label'][b][current_idx] = scheduled_data['label'][b][current_idx] 
             # if self.contrast:
@@ -760,40 +763,42 @@ class SequentialEBMsTrainer:
             for k in range(K):
                 # if i < 10:
                 #     print(f'\n___________k={k}___________\n')
+                data = self.prepare_partial_data(scheduled_data, k+1) #AR-like, the previously unmasked tokens won't be predicted again
+                data = {k:v.to(self.device) for k,v in data.items()}
+                u = self.sebm.get_2D_indices( #just to remove the zero paddings
+                    array=data['label'],
+                    val=self.sebm.tokenizer.pad_token_id,
+                    type='remove_pad',
+                ) #Size(batch_size, |u|)
                 if train:
                     torch.autograd.set_detect_anomaly(True)
                     assert self.contrast, f'Fast iteration requires enabling contrast loss!'
-                    data = self.prepare_partial_data(scheduled_data, k+1) #AR-like, the previously unmasked tokens won't be predicted again
-                    data = {k:v.to(self.device) for k,v in data.items()}
                     xo, xu = data['input'], data['label']
                     xu[xu == IGNORE_INDEX] = self.sebm.tokenizer.pad_token_id #reset the IGNORE tokens back to PAD
                     # print(f'\nxo({xo.shape}): {xo}\nxu({xu.shape}): {xu}')
                     cal_t = time()
-                    logp_xu = self.sebm.pseudolikelihood_batched(xo, xu) #Size(batch_size, vocab_size, |u|)
                     # calculate losses
-                    u = self.sebm.get_2D_indices( #just to remove the zero paddings
-                        array=xu,
-                        val=self.sebm.tokenizer.pad_token_id,
-                        type='remove_pad',
-                    ) #Size(batch_size, |u|)
+                    logp_xu = self.sebm.pseudolikelihood_revised(xo, xu) #Size(batch_size, vocab_size, |u|)
+                    # print(f'the logp_xu after permuting ({logp_xu.shape})')
                     # print(f'u.shape: {u.shape}')
                     # TODO: flattened 好像暂时没用?
                     # # flatten the batch: logp:Size(batch_size*|u|, vocab_size), label:Size(batch_size*|u|)
                     # flattened_logp = logp_xu.view(-1, self.sebm.vocab_size)
                     # flattened_pos_label = xu.gather(dim=1, index=u).view(-1)
                     # print(f'xu.gather(dim=1, index=u).shape: {xu.gather(dim=1, index=u).shape}')
-                        
+                    # print(f'logp_xu.device: {logp_xu.device}, xu.device: {xu.device}, u.device: {u.device}')
                     ce_loss = self.criterion(logp_xu, xu.gather(dim=1, index=u))
                     # if i < 10:
                     #     print(f'ce_loss({ce_loss.shape}): {ce_loss}')
-                    contrast_loss = self.sebm.fast_contrast_loss(xo, xu, loss_type='l2', threshold=2)
+                    # contrast_loss = self.sebm.fast_contrast_loss(xo, xu, loss_type='l2', threshold=2)
                     # if i < 10:
                     #     print(f'contrast_loss({contrast_loss.shape}): {contrast_loss}')
-                    loss = ce_loss + contrast_loss
+                    loss = ce_loss #+ contrast_loss
                     
                     # logging
                     if self.train_wandb:
-                        ce_losses[k], contrast_losses[k], total_losses[k] = ce_loss, contrast_loss, loss
+                        ce_losses[k], total_losses[k] = ce_loss, loss
+                        # contrast_losses[k] = contrast_loss
                         if k == K-1: #last k
                             cal_spent = time() - cal_t
                             wandb.log({'ce_loss': ce_losses, 'contrast_loss': contrast_losses, \
@@ -805,18 +810,20 @@ class SequentialEBMsTrainer:
                     torch.nn.utils.clip_grad_norm_(self.sebm.model.parameters(), max_norm)
                     self.optim_schedule.step_and_update_lr()
                 elif (not train) and stage == 'inference':
-                    partial_pred, sth = self.sebm.sampling(
-                        k+1, 
+                    # if i < 10:
+                    #     print(f'\n___________inference with k={k}-th EBM___________\n')
+                    partial_pred, sth = self.sebm.sampling_revised(
                         partial_pred,
-                        scheduled_data,
+                        u,
                         self.sampler,
                         self.sampling_times,
                         visualize=visualize,
-                        batch_id=i,
+                        batch_id=k, ##########this should be i, currently use k for testing 
                     )
             # end K (EBM) iter
             if (not train) and stage == 'inference': # decode and logging
                 pred = partial_pred
+                pred, scheduled_data['label'] = pred.to(self.device), scheduled_data['label'].to(self.device)
                 invalid_pos = scheduled_data['label'] < len(special_tokens)
                 pred[invalid_pos] = scheduled_data['label'][invalid_pos]
                 correct = self.eval_metric(pred, scheduled_data['label']) #TODO: add bachalization
@@ -826,7 +833,7 @@ class SequentialEBMsTrainer:
                 label[label == IGNORE_INDEX] = self.sebm.tokenizer.pad_token_id
                 pred[0][pred[0] == IGNORE_INDEX] = self.sebm.tokenizer.pad_token_id
                 decoded_label = self.sebm.tokenizer.decode(label.tolist(), skip_special_tokens=True)
-                decoded_pred = self.sebm.tokenizer.decode(pred[0].tolist(), slip_special_tokens=True)
+                decoded_pred = self.sebm.tokenizer.decode(pred[0].tolist(), skip_special_tokens=True)
                 if i < 10:
                     print(f'i: {i}, \ndecoded label: {decoded_label}, \ndecoded pred: \n{decoded_pred}, \ncorrect: {correct}')
                 stat = {
@@ -957,13 +964,10 @@ def main(config):
             sebm_trainer.train(epoch, config.train.stage)
         # return##############
     else:
-        # ckpts_path = f'./ebm_ckpts/{task_config.name}_{config.param_type}' \
-        #     f'{config.models[config.param_type].d_model}_diffusion.pth' # _w_mask_inverse.pth # _mlm_test # _w_mask #_diffusion
-        # ckpts_path = './ire_reasoning/ebm_ckpts/countdown_bert384_sft.pth'
         ckpts_path = sebm_trainer.ckpts_path
         # ckpts_path = f'./ire_reasoning/ebm_ckpts/{task_config.name}_{config.param_type}{config.models[config.param_type].d_model}_{config.train.stage}_ebm_test.pth'
-        print(f'\n3. Loading checkpoints from {ckpts_path}...')
-        sebm_trainer.load_model(ckpts_path, config.device)##########################
+        sebm_trainer.load_model(ckpts_path, device=config.device)##########################
+        print(f'\n3. Checkpoints loaded from {ckpts_path}...')
         
         if config.continue_train: #further tune the mlm model with fully masked t2 ('sft' stage)
             print(f'Continue train on {config.train.stage}...')
@@ -981,7 +985,7 @@ def main(config):
             
         
 
-    return ###############
+    # return ###############
 
     '''3. Evaluate'''
     k = 10
