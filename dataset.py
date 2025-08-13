@@ -380,7 +380,6 @@ def load_data(task, stage, max_len, train_batch_size, val_batch_size, contrast=F
             raise NotImplementedError        
         
         return train_loader, test_loader, len(train_data), len(test_data)
-
     elif task == 'countdown':
         # 1. load tokenizer
         print(f'pwd: {os.getcwd()}')

@@ -7,7 +7,7 @@ is_ebm: False
 load_ebm_ckpts: True ###########
 continue_train: False #######for further training with fully masked t2 (inference) after trained on mlm
 parallel: False ########currently only supports training with parallel_train.py
-device: cuda:3 #cpu, cuda
+device: cuda:2 #cpu, cuda
 visualize: False ###########
 
 
@@ -88,7 +88,7 @@ train:
 sampling:
   stage: inference #sft(default mask rate is t),inference(fully mask, depend on sampler)
   epochs: 1
-  batch_size: 2 #4
+  batch_size: 4 #4
   times: 4
   steps: 1
   sampler: gibbs #argmin_energy(traditional loss), gibbs(ebm method)

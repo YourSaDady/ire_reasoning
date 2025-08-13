@@ -105,6 +105,8 @@ class SequentialEBMsTrainer:
         sampler='gibbs',
         sampling_times=10,
         log_freq=10, #log every 10 batches
+        train_size=-1,
+        test_size=-1,
         train_wandb=True,
         test_wandb=False,
         is_ebm=True,
@@ -119,6 +121,8 @@ class SequentialEBMsTrainer:
         self.contrast = contrast
         self.train_data = train_dataloader
         self.test_data = test_dataloader
+        self.train_size=train_size
+        self.test_size=test_size
         # Schedule the optimizer (as stated in paper)
         self.optim = optim.AdamW(self.sebm.model.parameters(), lr=lr, betas=betas, weight_decay=weight_decay)
         self.optim_schedule = ScheduledOptim(
@@ -740,7 +744,7 @@ class SequentialEBMsTrainer:
         else:
             raise NotImplementedError
         if (not train) and stage == 'inference':
-            total_correct, total_samples = 0, 0
+            total_correct, total_samples = 0, self.test_size
             # initialize stat file
             eval_path = f'./ire_reasoning/stats/evaluate/{self.sebm.task_name}_' \
                         f'{self.sebm.param_type}_{self.sebm.d_model}_{stage}_stat.jsonl'
@@ -810,16 +814,19 @@ class SequentialEBMsTrainer:
                     torch.nn.utils.clip_grad_norm_(self.sebm.model.parameters(), max_norm)
                     self.optim_schedule.step_and_update_lr()
                 elif (not train) and stage == 'inference':
-                    # if i < 10:
-                    #     print(f'\n___________inference with k={k}-th EBM___________\n')
-                    partial_pred, sth = self.sebm.sampling_revised(
-                        partial_pred,
-                        u,
-                        self.sampler,
-                        self.sampling_times,
-                        visualize=visualize,
-                        batch_id=k, ##########this should be i, currently use k for testing 
-                    )
+                    self.sebm.model.eval()
+                    with torch.no_grad():
+                        # if i < 10:
+                        #     print(f'\n___________inference with k={k}-th EBM___________\n')
+                        partial_pred, sth = self.sebm.sampling_revised(
+                            partial_pred,
+                            u,
+                            self.sampler,
+                            self.sampling_times,
+                            visualize=visualize,
+                            batch_id=k, ##########this should be i, currently use k for testing 
+                        )
+                    # end of eval mode
             # end K (EBM) iter
             if (not train) and stage == 'inference': # decode and logging
                 pred = partial_pred
@@ -828,14 +835,13 @@ class SequentialEBMsTrainer:
                 pred[invalid_pos] = scheduled_data['label'][invalid_pos]
                 correct = self.eval_metric(pred, scheduled_data['label']) #TODO: add bachalization
                 total_correct += correct
-                total_samples = (i+1)*scheduled_data['input'].size(0)
                 label = scheduled_data['label'][0].clone()
                 label[label == IGNORE_INDEX] = self.sebm.tokenizer.pad_token_id
                 pred[0][pred[0] == IGNORE_INDEX] = self.sebm.tokenizer.pad_token_id
                 decoded_label = self.sebm.tokenizer.decode(label.tolist(), skip_special_tokens=True)
                 decoded_pred = self.sebm.tokenizer.decode(pred[0].tolist(), skip_special_tokens=True)
                 if i < 10:
-                    print(f'i: {i}, \ndecoded label: {decoded_label}, \ndecoded pred: \n{decoded_pred}, \ncorrect: {correct}')
+                    print(f'i: {i}, \ndecoded label: {decoded_label}, \ndecoded pred: {decoded_pred}, \ncorrect: {correct}')
                 stat = {
                     'batch_id': i,
                     'correct': correct,
@@ -853,7 +859,7 @@ class SequentialEBMsTrainer:
         elif (not train): #show inference performance
             final_acc = round(total_correct*100/total_samples, 2)
             print(f'\n\nFinished sampling!'\
-                f'\nFinal accuracy: {final_acc}')
+                f'\nFinal accuracy: {final_acc}, total_correct/total_samples = {total_correct}/{total_samples}')
             with open(eval_path, 'a') as statfile:
                 statfile.write(f'\nFinal Accuracy: {final_acc}\n')
             print(f'\nStats written to path: {eval_path}')
@@ -932,6 +938,8 @@ def main(config):
         train_loader,
         test_loader,
         config.train.lr,
+        train_size=train_size,
+        test_size=test_size,
         train_wandb=config.train.wandb,
         sampler=config.sampling.sampler,
         test_wandb=config.sampling.wandb,
