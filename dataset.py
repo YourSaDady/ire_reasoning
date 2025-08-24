@@ -406,7 +406,7 @@ def load_data(task, stage, max_len, train_batch_size, val_batch_size, contrast=F
         return train_loader, test_loader, len(train_pairs), len(test_pairs), tokenizer
     
     else: #effective batch size is 32 * nprocs
-        train_loader, test_loader = DataLoader(train_data, batch_size=32, shuffle=False, \
-            sampler=DistributedSampler(train_data)), DataLoader(test_data, batch_size=32, \
+        train_loader, test_loader = DataLoader(train_data, batch_size=train_batch_size, shuffle=False, \
+            sampler=DistributedSampler(train_data)), DataLoader(test_data, batch_size=val_batch_size, \
             shuffle=False, sampler=DistributedSampler(test_data))
         return train_loader, test_loader, len(train_pairs), len(test_pairs), tokenizer

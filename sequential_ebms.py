@@ -1900,9 +1900,12 @@ class FastSequentialEBMs():
             - xu: (B, full_len), zero-padded output tokens to be unmasked at the current timestamp (为了节省memory并没有重新repredict historical unmasking tokens)
         returns:
             - logp_xu: (B, V, U): distribution of the "pseudo-logits"
+            - energy_dist: (B, V, U): the energy landscape spanned by U and V
         '''
         # torch.set_printoptions(threshold=float('inf'))   # or a huge integer
         # 1. Get all the sizes needed
+        # if self.device == 0: ####test
+        #     print(f'at the start of pseudolikelihood calculation, \n{torch.cuda.memory_summary()}')
         u = self.get_2D_indices(
             array=xu,
             val=self.tokenizer.pad_token_id,
@@ -1915,6 +1918,8 @@ class FastSequentialEBMs():
         U, V = u.size(1), self.vocab_size
         # 2. Initialize the all-in x_base as input for batchalized energy calculation
         x_base = xo.clone().unsqueeze(1).unsqueeze(1).expand(B, U, V, full_len) #later to be varied on U and V dimensions
+        # if self.device == 0: ####test
+        #     print(f'x_base is initialized, \n{torch.cuda.memory_summary()}')
         # if U == 2:
         #     print(f'\nInside pseudolikelihood(), xo({xo.shape}): \n{xo},\nxu({xu.shape}): \n{xu}')
         #     print(f'u({u.shape}): {u}')
@@ -1944,6 +1949,9 @@ class FastSequentialEBMs():
         flat = x_base.reshape(-1, full_len) #(B*U*V,full_len)
         # if U == 2:
         #     print(f'after falttened for energy() to take in, flat({flat.shape}): \n{flat}')
+        # if self.device == 0: ####test
+        #     print(f'before energy calculation, \n{torch.cuda.memory_summary()}')
+        # if U == 2:
         flat_energy = self.energy(flat) #(B*U*V)
         energy_dist = flat_energy.view(B,U,V) #B,U,V
         # if U == 2:
@@ -1953,7 +1961,7 @@ class FastSequentialEBMs():
         # if U == 2:
         #     print(f'the logp_xu before permuting ({pseudolikelihood.shape}): \n{pseudolikelihood}')
         
-        return log_gibbs_dist.permute(0,2,1).contiguous()
+        return log_gibbs_dist.permute(0,2,1).contiguous(), energy_dist.permute(0,2,1).contiguous()
             
     def pseudolikelihood_batched(self, xo, xu):
         '''
@@ -2072,40 +2080,153 @@ class FastSequentialEBMs():
 
         return pseudolikelihood
     
-    def make_negative(self, u_val):
+    def randomize(self, val, actual_vocab_size):
+        '''
+        helper function to create a fully randomized tensor of the same size as the input.
+        '''
+        start_id = self.special_tok_size
+        end_id = start_id + actual_vocab_size
+        full_noise = torch.randint(start_id, end_id, val.size(), dtype=val.dtype, device=val.device)
+        same_mask = (full_noise == val).to(val.device)
+        while same_mask.any(): #Guarantee each corresponding element is different from the original one
+            regenerated_noise = torch.randint(start_id, end_id, val.size(), dtype=val.dtype, device=val.device)
+            full_noise[same_mask] = regenerated_noise[same_mask]
+            same_mask = (full_noise == val).to(val.device)
+        return full_noise
+        
+    def make_negative(self, u_val, energy_dist):
         '''
         Given the tokens to be unmasked, create a negative version of it.
         Negative samples have a random number of [1, |u|] tokens picked at random output positions,
         anf have their value shifted by +-1. 
         
         input: 
-            u_val: Size(batch_size, |u|), the tokens to be unmaked from the positive sample batch
+            u_val: (B,U), the tokens to be unmaked from the positive sample batch
+            energy_dist: (B,V,U), the energy landscape spanned by V and U
         return:
-            neg_u_val: Size(bach_size, |u|), the noise-added tokens
+            neg_u_val: (B,U), the noise-added tokens
         '''
-        batch_size, u_len = u_val.size()
-        # 1.build a (batch_size, |u|) delta where each row contains n (~[1, |u|]) +1or-1's
-        pos_one = torch.randint(0, u_len, (batch_size, 1), device=self.device)
-        mask1 = torch.zeros(batch_size, u_len, dtype=torch.bool, device=self.device)
-        mask1.scatter_(1, pos_one, True) #mask1 of the "at least one" shifting noised position on each row
-        num_others = torch.randint(0, batch_size*u_len+1, (1,), device=self.device)
-        flat_idx = torch.randperm(batch_size*u_len, device=self.device)[:num_others]
-        mask2 = torch.zeros(batch_size*u_len, dtype=torch.bool, device=self.device)
+        (B,U), device = u_val.size(), self.device
+        # 1. get the u_vals corresponding to the minial and the second minimal energy
+        # vals, ids = torch.topk(energy_dist, k=2, dim=1, largest=False) #both (B,2,U)
+        # full_noise = ids[:, 1, :] #(B,U) #这个negative sample生成办法不顶用
+        full_noise = self.randomize(u_val, len(self.tokenizer.vocab))
+        # 2. get a noise position mask
+        pos_one = torch.randint(0, U, (B,1), device=device)
+        mask1 = torch.zeros(B,U, dtype=torch.bool, device=device)
+        mask1.scatter_(dim=1, index=pos_one, src=torch.ones(B,1,dtype=torch.bool,device=device)) #at least one noised position
+        num_others = torch.randint(0, B*U+1, (1,), device=self.device)
+        flat_idx = torch.randperm(B*U, device=self.device)[:num_others]
+        mask2 = torch.zeros(B*U, dtype=torch.bool, device=self.device)
         mask2[flat_idx] = True
-        mask2 = mask2.view(batch_size, u_len) #mask2 of the other randomly noised positions
+        mask2 = mask2.view(B, U) #other randomly noised positions
         noise_mask = mask1 | mask2
-        delta = torch.where(
-            condition=noise_mask, 
-            input=torch.randint(0,2, (batch_size, u_len), device=self.device)*2-1, # +1 or -1
-            other=torch.tensor(0, device=self.device)
-        )
-        # print(f'delta({delta.shape}): \n{delta}')
-        # 2.apply the delta mask to the u_val to add noise
-        neg_u_val = u_val + delta
+        # 3. get the negative u_val where all non-golden values has the second minimal energy
+        neg_u_val = torch.where(noise_mask, full_noise, u_val)
+        # print(f'neg_u_val.shape: {neg_u_val.shape}')
+        # print(f'\nnoise_mask: \n{noise_mask}, \nu_val: \n{u_val}, \nneg_u_val: \n{neg_u_val}')
+        return neg_u_val.to(device)
+    
+    def contrast_loss_old(self, energy_dist, xu, loss_type='l2', threshold=2):
+        '''
+        Revised version of fast_contrast_loss().
+        inputs:
+            - energy_dist: (B,V,U), the energy landscape spanned by V and U, an intermediate result from pseudolikelihood()
+            - xu: (B, full_len), the zero-padded label for specific k
+        returns:
+            - contrast_loss: Size(1), scalar L2 contrast
+        '''
+        B, V, U = energy_dist.size()
+        u = self.get_2D_indices(
+            array=xu,
+            val=self.tokenizer.pad_token_id,
+            type='remove_pad'
+        ) #(B,U)
+        assert u.size(0)==B and u.size(1)==U, f'u.shape: {u.shape}, B: {B}, V: {V}, U: {U}'
+        # 1. get the (B,U) postive token values at the current step k
+        pos_u_val = xu.clone().gather(dim=1, index=u) #(B,U)
+        # print(f'pos_u_val({pos_u_val.shape}): {pos_u_val}')
+        # 2. get the corresponding corrupted negative token values of (B,U)
+        neg_u_val = self.make_negative(pos_u_val, energy_dist)
+        # 3. index the calculated energy landcape with positive and negative token value
+        pos_energy = energy_dist.gather(dim=1, index=pos_u_val.unsqueeze(1)).squeeze(1).sum(dim=1) #(B,)
+        neg_energy = energy_dist.gather(dim=1, index=neg_u_val.unsqueeze(1)).squeeze(1).sum(dim=1)
+        # 4. calculate the L2 contrast loss
+        if loss_type == 'l2':
+            contrast_criterion = nn.MSELoss(reduction='mean')
+            l2 = contrast_criterion(pos_energy, neg_energy)
+            contrast_loss = torch.pow(torch.clamp(threshold - l2, min=0.0), 2)
+        else:
+            raise NotImplementedError
         
-        # print(f'u_val: {u_val}, \nneg_u_val: {neg_u_val}')
-        return neg_u_val
+        return contrast_loss.squeeze()
+
+    def contrast_loss_revised(self, energy_dist, xu, threshold=2.0, mode='hinge'):
+        """
+        energy_dist: (B, V, U) energies
+        xu: (B, full_len), zero-padded
+        Returns scalar tensor.
+        """
+        B, V, U = energy_dist.shape
+        # Positions of non-pad targets at this step: u -> (B, U)
+        u = self.get_2D_indices(array=xu, val=self.tokenizer.pad_token_id, type='remove_pad')
+        assert u.size(0) == B and u.size(1) == U
+        # Gold token ids at those positions: (B, U)
+        pos_ids = xu.gather(dim=1, index=u)
+        # Positive energies per position: (B, U)
+        pos_E = energy_dist.gather(dim=1, index=pos_ids.unsqueeze(1)).squeeze(1)
+        # Hard negative per position = best competitor under current model.
+        # Get two smallest energies/ids along V: (B, 2, U)
+        vals, ids = torch.topk(energy_dist, k=2, dim=1, largest=False)
+        top1_ids = ids[:, 0, :]   # best (lowest energy)
+        top2_ids = ids[:, 1, :]   # second best
+        # If the best is actually the gold id, take the second best; else take the best.
+        neg_ids = torch.where(top1_ids.eq(pos_ids), top2_ids, top1_ids)  # (B, U)
+        # Negative energies per position: (B, U)
+        neg_E = energy_dist.gather(dim=1, index=neg_ids.unsqueeze(1)).squeeze(1)
+        # Directional per-position loss
+        if mode == 'hinge':
+            # Enforce pos_E + margin <= neg_E
+            per_pos = F.relu(threshold + pos_E - neg_E)
+        elif mode == 'softplus':
+            # Smooth logistic pairwise loss; small when pos_E << neg_E
+            per_pos = F.softplus(pos_E - neg_E)
+        else:
+            raise ValueError("mode must be 'hinge' or 'softplus'.")
+        return per_pos.mean()
+    
+    # a InfoNCE-style conrtast loss
+    def contrast_loss_infonce(self, energy_dist, xu, k=5, temperature=1.0):
+        """
+        Sample top-k competing tokens (excluding gold) per position and apply InfoNCE.
+        """
+        B, V, U = energy_dist.shape
+        u = self.get_2D_indices(array=xu, val=self.tokenizer.pad_token_id, type='remove_pad')
+        pos_ids = xu.gather(dim=1, index=u)
+        pos_E = energy_dist.gather(1, pos_ids.unsqueeze(1)).squeeze(1)  # (B, U)
+
+        # Get top-(k+1) lowest-energy ids; drop gold if present, keep k negatives
+        vals, ids = torch.topk(energy_dist, k=min(k+1, V), dim=1, largest=False)  # (B, k+1, U)
+        # Build mask to remove gold
+        gold_mask = ids.eq(pos_ids.unsqueeze(1))  # (B, k+1, U)
+        # Replace any gold occurrence by a large energy so it’ll be dropped
+        vals_masked = vals + gold_mask.float() * 1e6
+        # Take the k smallest after masking: (B, k, U)
+        neg_vals, _ = torch.topk(vals_masked, k=min(k, vals_masked.size(1)-1), dim=1, largest=False)
+        neg_E = neg_vals  # (B, k, U)
+
+        # Convert energies to logits (higher better) with temperature
+        pos_logit = (-pos_E / temperature).unsqueeze(1)         # (B, 1, U)
+        neg_logits = (-neg_E / temperature)                     # (B, k, U)
+        logits = torch.cat([pos_logit, neg_logits], dim=1)      # (B, 1+k, U)
+
+        # CE over the small (1+k)-way set; positive index = 0
+        log_probs = logits.log_softmax(dim=1)
+        loss = -log_probs[:, 0, :].mean()
+        return loss
         
+        
+       
     def fast_contrast_loss(self, xo, xu, loss_type='l2', threshold=2):
         '''
         Direct calculation of the contrast loss between the positive and negative energies.

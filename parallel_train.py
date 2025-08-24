@@ -14,7 +14,7 @@ sys.path.append('/home/yichuan/HKU/EBM/ire_reasoning')
 os.chdir('/home/yichuan/HKU/EBM/ire_reasoning')
 # print(f'The current working directory: {os.getcwd()}')
 import hydra
-from sequential_ebms import BERTSequentialEBMs, GPTSequentialEBMs
+from sequential_ebms import BERTSequentialEBMs, GPTSequentialEBMs, FastSequentialEBMs
 from main import unmasking_schedule, ScheduledOptim, SequentialEBMsTrainer
 from dataset import load_data
 from utils import convert_time, VisualizeEBMs
@@ -53,11 +53,15 @@ class ParallelSequentialEBMsTrainer(SequentialEBMsTrainer):
         # log_freq=10,
         train_wandb=True,
         test_wandb=False,
+        train_size=-1,
+        test_size=-1,
         sampler='gibbs',
         sampling_times=10,
         is_ebm=True,
         contrast=False,
         device=None,
+        epochs=1,
+        
     ):
         super().__init__(sebm, 
             train_dataloader, 
@@ -66,11 +70,14 @@ class ParallelSequentialEBMsTrainer(SequentialEBMsTrainer):
             sampler=sampler,
             train_wandb=train_wandb,
             test_wandb=test_wandb,
+            train_size=train_size,
+            test_size=test_size,
             is_ebm=is_ebm,
             contrast=contrast,
             sampling_times=sampling_times,
             device=device,
             parallel=True,
+            epochs=epochs,
         )
         
         # Wrap the model with DistributedDataParallel
@@ -87,7 +94,6 @@ def train(rank, world_size, config):
     '''0. Set up parallel environment'''
     setup(rank, world_size)
     print(f'rank: {rank}, pid: {os.getpid()}')
-    
     '''1. Load task datasets'''
     if config.task_name == 'countdown':
         max_len = config.tasks[config.task_name].max_len
@@ -102,15 +108,15 @@ def train(rank, world_size, config):
         contrast=config.train.contrast,
         parallel=config.parallel,
     )
-    print(f'param type: {config.param_type}')
+    print(f'param type: {config.param_type}\ntrain_batch_size:test_batch_size={config.train.batch_size}:{config.sampling.batch_size}')
     print(f'\nLoaded datasets for task: {config.task_name}, max_len: {max_len}, ' \
         f'train:test={train_size}:{test_size} (before batching)...')
+    print(rank, "local BS =", next(iter(train_loader))['input'].shape[0])
     # return ##############
     
     '''2. Initialize sequential EBMs'''
     print(f'\nInitializing EBMs...')
     task_config = config.tasks[config.task_name]
-    model_config = config.models[config.param_type]
     if task_config.name.startswith('binary'):
         print(f'inp_len: {task_config.inp_len}, out_len: {task_config.out_len}, num_classes: {task_config.num_classes}')
     if config.param_type == 'bert':
@@ -134,6 +140,18 @@ def train(rank, world_size, config):
             model_config=None, #TODO: other configs, if necessary
             device=rank,
         )
+    elif config.param_type == 'fast':
+        d_model = config.models['bert'].d_model
+        n_layers = config.models['bert'].n_layers
+        heads = config.models['bert'].heads
+        sebm = FastSequentialEBMs(
+            tokenizer=tokenizer,
+            task_config=task_config,
+            d_model=d_model,
+            n_layers=n_layers,
+            heads=heads,
+            device=rank,
+        )
     else:
         raise NotImplementedError
     
@@ -143,13 +161,16 @@ def train(rank, world_size, config):
         train_loader, 
         test_loader, 
         lr=config.train.lr,
+        train_size=train_size,
+        test_size=test_size,
         train_wandb=config.train.wandb,
         sampler=config.sampling.sampler,
         test_wandb=config.sampling.wandb,
         is_ebm=config.is_ebm,
         contrast=config.train.contrast,
         sampling_times=config.sampling.times,
-        device=rank
+        device=rank,
+        epochs=config.train.epochs,
     )
     
     if config.train.wandb and sebm_trainer.device == 0:
@@ -166,6 +187,9 @@ def train(rank, world_size, config):
         #make shuffling work properly across multiple epochs
         sebm_trainer.train_data.sampler.set_epoch(epoch)
         sebm_trainer.train(epoch, config.train.stage)
+        if sebm_trainer.train_is_converged:
+            print(f'\nend epochs loop')
+            break
     
     cleanup()
 
@@ -174,7 +198,9 @@ def train(rank, world_size, config):
 
 @hydra.main(version_base=None, config_path='./configs', config_name='config')
 def main(config):
+    torch.cuda.empty_cache()
     world_size = torch.cuda.device_count()
+    print(f'start spawning!')
     mp.spawn(train, args=(world_size, config), nprocs=world_size, join=True)
 
 
