@@ -23,6 +23,7 @@ import random as rand
 import wandb
 from time import time
 import json
+import math
 
 IGNORE_INDEX = -100
 
@@ -92,6 +93,30 @@ class ScheduledOptim():
         for param_group in self._optimizer.param_groups:
             param_group['lr'] = lr
 
+class EarlyStopper:
+    def __init__(self, patience=20, min_delta=1e-3, ema_beta=0.9, mode='min'):
+        self.patience = patience
+        self.min_delta = min_delta
+        self.ema_beta = ema_beta
+        self.mode = mode
+        self.best = math.inf if mode == 'min' else -math.inf
+        self.num_bad = 0
+        self.ema = None
+
+    def update(self, value):
+        # EMA to tame vibration
+        self.ema = value if self.ema is None else self.ema_beta*self.ema + (1-self.ema_beta)*value
+        metric = self.ema
+
+        improved = (metric < self.best - self.min_delta) if self.mode == 'min' else (metric > self.best + self.min_delta)
+        if improved:
+            self.best = metric
+            self.num_bad = 0
+            return False  # don't stop
+        else:
+            self.num_bad += 1
+            return self.num_bad >= self.patience
+
 class SequentialEBMsTrainer:
     def __init__(
         self,
@@ -131,10 +156,6 @@ class SequentialEBMsTrainer:
         )
         self.criterion = nn.CrossEntropyLoss().to(device) #label_smoothing=True
         self.log_freq = log_freq
-        self.best_metric = 1e-1 #1e3 #currently use the total loss
-        self.early_stop_threshold = 1e-4 #the delta loss per 10 iterations
-        self.patience = 8
-        self.train_is_converged = False
         # sampling configs:
         self.sampler = sampler
         self.sampling_times = sampling_times
@@ -142,7 +163,7 @@ class SequentialEBMsTrainer:
         self.test_wandb = test_wandb
         self.epochs = epochs
         print(f"Total Parameters: {sum([p.nelement() for p in self.sebm.model.parameters()])}, is_ebm: {self.is_ebm}")
-        self.ckpts_path = f'./ire_reasoning/ebm_ckpts/{self.sebm.task_name}_{self.sebm.param_type}{self.sebm.d_model}_contrast_parallel.pth' # _ebm8.9 (sota with sampling_new())
+        self.ckpts_path = f'./ire_reasoning/ebm_ckpts/{self.sebm.task_name}_{self.sebm.param_type}{self.sebm.d_model}_earlystop.pth' # _ebm8.9 (sota with sampling_new())
     
     def load_model(self, ckpts_path, device): #config.device
         state_dict = torch.load(ckpts_path, map_location=device, weights_only=True)
@@ -158,6 +179,75 @@ class SequentialEBMsTrainer:
     def test(self, epoch, stage): #暂时无用
         self.iteration(epoch, self.test_data, stage, train=False)
         
+    def validate(self, epoch, early_stopper):
+        '''validate on the test set'''
+        self.sebm.model.eval()
+        val_loss = 0.0
+        total_correct, total_samples = 0, 0
+        with torch.no_grad():
+            t_list = unmasking_schedule(10+2, 'cosine')[1:-1]
+            if self.sebm.param_type == 'fast':
+                if (not self.parallel) or self.device == 0:
+                    data_iter = data_iter = tqdm(
+                        enumerate(self.test_data),
+                        desc="EP_%s_%s:%d" % ('train', 'validate', epoch),
+                        total=len(self.test_data),
+                        bar_format="{l_bar}{r_bar}"
+                    )
+                else:
+                    data_iter = enumerate(self.test_data)
+            else:
+                raise NotImplementedError('the param_type "{}" is currently not implemented!')
+            if self.sebm.task_name == 'countdown':
+                special_tokens = {0, 1, 2, 3, 4}
+                self.sebm.special_tok_size = len(special_tokens)
+            else:
+                raise NotImplementedError
+            
+            for i, data in data_iter:
+                B = data['label'].size(0)
+                scheduled_data, K = self.add_schedule_new(data, t_list)
+                partial_pred = scheduled_data['input'].clone()
+                partial_pred[partial_pred == IGNORE_INDEX] = self.sebm.tokenizer.pad_token_id
+                for k in range(K):
+                    data = self.prepare_partial_data(scheduled_data, k+1)
+                    data = {k:v.to(self.device) for k,v in data.items()}
+                    u = self.sebm.get_2D_indices(
+                        array=data['label'],
+                        val=self.sebm.tokenizer.pad_token_id,
+                        type='remove_pad',
+                    )
+                    if k == K-1:
+                        get_logits=True
+                    else:
+                        get_logits=False
+                    partial_pred, sth = self.sebm.sampling_revised( #sth have to store the ce loss of the batch
+                        partial_pred,
+                        u,
+                        self.sampler,
+                        self.sampling_times,
+                        batch_id=k,
+                        get_logits=get_logits,
+                    )
+                # end of K iter
+                xu_label = data['label'].gather(dim=1, index=u)
+                ce_loss = self.criterion(sth['pseudo_xu_logits'], xu_label).item() #(B,V,U), (B,U) -> scalar
+                val_loss += ce_loss * B
+                total_samples += B
+                pred = partial_pred
+                pred, scheduled_data['label'] = pred.to(self.device), scheduled_data['label'].to(self.device)
+                invalid_pos = scheduled_data['label'] < len(special_tokens)
+                pred[invalid_pos] = scheduled_data['label'][invalid_pos]
+                correct = self.eval_metric(pred, scheduled_data['label'])
+                total_correct += correct
+            # end of batch iter
+            val_ce = val_loss / total_samples
+            final_acc = round(total_correct*100/total_samples, 2)
+            if early_stopper.update(val_ce):
+                return True, final_acc, val_ce
+            else:
+                return False, final_acc, val_ce
+    
     def evaluate(self, k, scheduler='cosine', stage='pretrain', visualize=False): #Inference
         '''
         Recover a fully masked sequence using a specified scheduler, with decreasing t
@@ -793,11 +883,6 @@ class SequentialEBMsTrainer:
                         # print(f'\nbefore saving, {torch.cuda.memory_summary()}')
                         torch.save(self.sebm.model.state_dict(), self.ckpts_path)
                         # print(f'\nafter saving, {torch.cuda.memory_summary()}')
-                        if self.train_is_converged:
-                            print(f'\nTraining converged! {i}-iter ckpt saved by rank[0] to path: {self.ckpts_path}')
-                            return
-                        else:
-                            print(f'{i}-iter ckpt saved by rank[0] to path: {self.ckpts_path}, training not converged')
                     
                     torch.autograd.set_detect_anomaly(True)
                     assert self.contrast, f'Fast iteration requires enabling contrast loss!'
@@ -822,18 +907,6 @@ class SequentialEBMsTrainer:
                         loss = ce_loss + beta*contrast_loss
                     else:
                         loss = ce_loss
-                   
-                    # if self.parallel and (i % 10 == 0) and (k == 0) and self.device == 0:
-                    #     improved = (loss < self.best_metric - self.early_stop_threshold)
-                    #     if improved:
-                    #         self.best_metric = loss
-                    #         patience = 0
-                    #     else:
-                    #         patience += 1
-                    #         if patience == self.patience:
-                    #             print(f'converged loss: {loss}, best_metric: {self.best_metric}')
-                    #             self.train_is_converged = True
-                        
                     
                     # logging
                     if self.train_wandb:
@@ -846,8 +919,6 @@ class SequentialEBMsTrainer:
                             cal_spent = time() - cal_t
                             wandb.log({'ce_loss': ce_losses, 'contrast_loss': contrast_losses, \
                                 'loss':total_losses, 'time': cal_spent})
-                            avg_loss = torch.stack(list(total_losses.values())).float().mean()
-                            self.train_is_converged = (avg_loss < self.best_metric)
                     self.optim_schedule.zero_grad()
                     loss.backward()
                     # clip gradients
@@ -892,22 +963,24 @@ class SequentialEBMsTrainer:
                 with open(eval_path, 'a') as statfile:
                     statfile.write(json.dumps(stat)+'\n')
             # break #################test
+            # if train and (i > 4): ##################
+            #     break ##################
         # end of batch iter
-        if train: #save checkpoints
-            if not self.parallel:
-                print(f'\n\nFinished training!')
-                torch.save(self.sebm.model.state_dict(), self.ckpts_path)
-                print(f'\nmodel saved to {self.ckpts_path}.')
-            elif (epoch == self.epochs-1) and self.parallel: #TODO: parallel issue: somehow cannot synchronize...
-                print(f'\nThis is last epoch({epoch}), rank({self.device}) finished training! waiting...')
-                dist.barrier()
-                print(f'synchronized...')
-                if self.device == 0:
-                    torch.save(self.sebm.model.state_dict(), self.ckpts_path)
-                    print(f'\nrank[0] model finally saved ckpt to {self.ckpts_path}')
-            else: #parallel, non-last epochs
-                print(f'\nEpoch {epoch} completed on rank{self.device}, go to next epoch.\n')
-        elif (not train): #show inference performance
+        # if train: #save checkpoints
+        #     if not self.parallel:
+        #         print(f'\n\nFinished training!')
+        #         torch.save(self.sebm.model.state_dict(), self.ckpts_path)
+        #         print(f'\nmodel saved to {self.ckpts_path}.')
+        #     elif (epoch == self.epochs-1) and self.parallel: #TODO: parallel issue: somehow cannot synchronize...
+        #         print(f'\nThis is last epoch({epoch}), rank({self.device}) finished training! waiting...')
+        #         dist.barrier()
+        #         print(f'synchronized...')
+        #         if self.device == 0:
+        #             torch.save(self.sebm.model.state_dict(), self.ckpts_path)
+        #             print(f'\nrank[0] model finally saved ckpt to {self.ckpts_path}')
+        #     else: #parallel, non-last epochs
+        #         print(f'\nEpoch {epoch} completed on rank{self.device}, go to next epoch.\n')
+        if (not train): #show inference performance
             final_acc = round(total_correct*100/total_samples, 2)
             print(f'\n\nFinished sampling!'\
                 f'\nFinal accuracy: {final_acc}, total_correct/total_samples = {total_correct}/{total_samples}')
@@ -1002,7 +1075,7 @@ def main(config):
     )
 
     # return ##############
-
+    '''3. Train & Inference'''
     if not config.load_ebm_ckpts:
         print(f'No checkpoints found.')
         # print(f'\nBefore training...')
@@ -1019,11 +1092,38 @@ def main(config):
                     "epochs": config.train.epochs,
                 },
             )
+        '''3.0 Set the early_stopper'''
+        early_stopper = EarlyStopper(patience=25, min_delta=5e-4, ema_beta=0.9, mode='min')
         for epoch in range(config.train.epochs):
+            '''3.1 train one epoch'''
+            # sebm_trainer.train_data.sampler.set_epoch(epoch) #make shuffling work properly across multiple epochs
             sebm_trainer.train(epoch, config.train.stage)
-            if sebm_trainer.train_is_converged:
-                print(f'\nend epochs loop')
+            # if sebm_trainer.train_is_converged: #TODO: remove
+            #     print(f'\nend epochs loop')
+            #     break
+            
+            '''3.2 validate converge or not'''
+            if sebm_trainer.device == 0:
+                print(f'\n\nEpoch{epoch} finished, start validate!\n\n')
+            converge, val_acc, val_ce = sebm_trainer.validate(epoch, early_stopper)
+            if converge or (epoch == sebm_trainer.epochs-1):
+                if sebm_trainer.device == 0:
+                    print(f'\n\n你converged!!\nepoch: {epoch}\nval_acc: {val_acc}\nval_ce: {val_ce}\n\n')
+                '''3.3 save checkpoints'''
+                if not config.parallel:
+                    print(f'\n\nFinished training!')
+                    torch.save(sebm_trainer.sebm.model.state_dict(), sebm_trainer.ckpts_path)
+                    print(f'\nmodel saved to {sebm_trainer.ckpts_path}.')
+                # else: #TODO: parallel issue: somehow cannot synchronize...
+                #     print(f'\nThis is last epoch({epoch}), rank({sebm_trainer.device}) finished training! waiting...')
+                #     dist.barrier()
+                #     print(f'synchronized...')
+                #     if sebm_trainer.device == 0:
+                #         torch.save(sebm_trainer.sebm.model.state_dict(), sebm_trainer.ckpts_path)
+                #         print(f'\nrank[0] model finally saved ckpt to {sebm_trainer.ckpts_path}')
                 break
+            else:
+                print(f'\n\nNot convreged...\nepoch: {epoch}\nval_acc: {val_acc}\nval_ce: {val_ce}\n\n')
         # return##############
     else:
         ckpts_path = sebm_trainer.ckpts_path

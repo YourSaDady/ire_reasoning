@@ -15,13 +15,14 @@ os.chdir('/home/yichuan/HKU/EBM/ire_reasoning')
 # print(f'The current working directory: {os.getcwd()}')
 import hydra
 from sequential_ebms import BERTSequentialEBMs, GPTSequentialEBMs, FastSequentialEBMs
-from main import unmasking_schedule, ScheduledOptim, SequentialEBMsTrainer
+from main import unmasking_schedule, ScheduledOptim, SequentialEBMsTrainer, EarlyStopper
 from dataset import load_data
 from utils import convert_time, VisualizeEBMs
 import random as rand
 import wandb
 from time import time
 import json
+import math
 
 IGNORE_INDEX = -100
 
@@ -83,8 +84,6 @@ class ParallelSequentialEBMsTrainer(SequentialEBMsTrainer):
         # Wrap the model with DistributedDataParallel
         self.sebm.model = DDP(self.sebm.model, \
             device_ids=[self.device])
-
-
 
 
 '''
@@ -183,17 +182,35 @@ def train(rank, world_size, config):
                 "epochs": config.train.epochs,
             },
         )
+        
+    '''0. Set the early_stopper'''
+    early_stopper = EarlyStopper(patience=25, min_delta=5e-4, ema_beta=0.9, mode='min')
+        
     for epoch in range(config.train.epochs):
-        #make shuffling work properly across multiple epochs
-        sebm_trainer.train_data.sampler.set_epoch(epoch)
+        # dist.barrier()
+        # print(f'device{sebm_trainer.device} synchronized')
+        '''1. train'''
+        sebm_trainer.train_data.sampler.set_epoch(epoch) #make shuffling work properly across multiple epochs
         sebm_trainer.train(epoch, config.train.stage)
-        if sebm_trainer.train_is_converged:
-            print(f'\nend epochs loop')
+        # if sebm_trainer.train_is_converged: #TODO: remove
+        #     print(f'\nend epochs loop')
+        #     break
+        
+        '''2. validate converge or not'''
+        print(f'device{sebm_trainer.device}: epoch{epoch} finished, start validate...')
+        # dist.barrier()
+        # print(f'device{sebm_trainer.device} synchronized')
+        converge, val_acc, val_ce = sebm_trainer.validate(epoch, early_stopper)
+        if sebm_trainer.device == 0:
+            # print(f'epoch{epoch}: val_ce: {val_ce}, val_acc: {val_acc}')
+            wandb.log({'val_ce': val_ce, 'val_acc': val_acc})
+        if converge or (epoch == sebm_trainer.epochs-1):
+            print(f'\n\n你converged!!\nepoch: {epoch}\nval_acc: {val_acc}\nval_ce: {val_ce}\n\n')
             break
+        else:
+            print(f'\n\nNot convreged...\nepoch: {epoch}\nval_acc: {val_acc}\nval_ce: {val_ce}\n\n')
     
     cleanup()
-
-
 
 
 @hydra.main(version_base=None, config_path='./configs', config_name='config')
@@ -201,7 +218,7 @@ def main(config):
     torch.cuda.empty_cache()
     world_size = torch.cuda.device_count()
     print(f'start spawning!')
-    mp.spawn(train, args=(world_size, config), nprocs=world_size, join=True)
+    mp.spawn(train, args=(world_size, config), nprocs=world_size, join=True) 
 
 
 if __name__ == "__main__":

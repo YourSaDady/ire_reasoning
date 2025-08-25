@@ -2223,9 +2223,7 @@ class FastSequentialEBMs():
         # CE over the small (1+k)-way set; positive index = 0
         log_probs = logits.log_softmax(dim=1)
         loss = -log_probs[:, 0, :].mean()
-        return loss
-        
-        
+        return loss     
        
     def fast_contrast_loss(self, xo, xu, loss_type='l2', threshold=2):
         '''
@@ -2284,7 +2282,7 @@ class FastSequentialEBMs():
         raise #TODO
     
     def sampling_revised(self, partial_pred:torch.Tensor, u:torch.Tensor, \
-        sampler='gibbs', sampling_times=10, visualize=False, batch_id=None):
+        sampler='gibbs', sampling_times=10, visualize=False, batch_id=None, get_logits=False):
         '''
         Revised faster version of sampling(), batchalized all unmasking positions and class values inside each time t.
         
@@ -2300,7 +2298,11 @@ class FastSequentialEBMs():
         B, full_len = partial_pred.size()
         V, device = self.vocab_size, self.device
         U = u.size(-1)
-        stat = None
+        if get_logits:
+            stat = {}
+            pseudo_xu_logits = []
+        else:
+            stat = None
         # print(f'k={batch_id}, u({u.shape}): {u}')
         if sampler == 'gibbs':
             prev_pred  = partial_pred.to(device) #(B, full_len)
@@ -2328,6 +2330,8 @@ class FastSequentialEBMs():
                     #     print(f'flat.shape: {flat.shape}')
                     ui_energy = self.energy(flat).view(B,V)
                     log_ui_dist = self.log_gibbs_dist(ui_energy)
+                    if t == (sampling_times-1) and get_logits:
+                        pseudo_xu_logits.append(log_ui_dist.unsqueeze(1)) #(B,1,V)
                     try:
                         ui_dist = torch.exp(log_ui_dist) #(B,V)
                     except:
@@ -2352,6 +2356,10 @@ class FastSequentialEBMs():
                 
                 # raise######test
             # end of time t iter
+            if get_logits:
+                pseudo_xu_logits = torch.cat(pseudo_xu_logits, dim=1).permute(0,2,1).contiguous() #(B,V,U)
+                assert pseudo_xu_logits.size() == (B,V,U), f'pseudo_xu_logits.size: {pseudo_xu_logits.size}'
+                stat = {'pseudo_xu_logits': pseudo_xu_logits}
                 
         return curr_pred, stat
     
