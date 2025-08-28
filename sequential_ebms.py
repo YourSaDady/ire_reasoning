@@ -544,8 +544,6 @@ def random_flip(samples: Union[torch.Tensor, list[torch.Tensor]], flip_range:int
 #         #end of stat write
 #         print(f'\nFinished evaluation. \nstatistics saved to {stat_path}, \nvisualfile saved to: {visual_path}.')
         
-        
-        
 class BERTSequentialEBMs():
     def __init__(self, tokenizer, task_config, d_model, n_layers, heads=8, device='cpu'):
         self.param_type = 'bert'
@@ -1442,8 +1440,6 @@ class BERTSequentialEBMs():
         
         return logp_xu
     
-    
-    
 class GPTSequentialEBMs():
     '''
     Use a GPT2-style model from scratch, allows flexible input and output lengths
@@ -1810,8 +1806,6 @@ class GPTSequentialEBMs():
             return logits #gamma, mlm_output
         else: #return output ids (argmax, if not do_sample)
             return self.softmax(logits), None
-        
-
 
 '''
 Batchalized version of BERTSequentialEBMs. Hope for better performance.
@@ -2337,6 +2331,7 @@ class FastSequentialEBMs():
                     except:
                         raise RuntimeError(f'ui_energy: \n{ui_energy}\nlog_ui_dist:\n{log_ui_dist}\nui_dist:\n{ui_dist}')
                     x_ui = torch.multinomial(ui_dist, num_samples=1).view(B,1)
+                    # x_ui = torch.argmax(ui_dist, dim=-1, keepdim=True) #(B,1) #for optimal inference (temp)
                     cand_pred = cand_pred.scatter(dim=-1, index=u[:,i].view(B,1), src=x_ui)
                     # if i == 2 and t == 0 and batch_id == 2:
                     #     print(f'after sampling at position i={i}, cand_pred becomes: \n{cand_pred}')

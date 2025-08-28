@@ -881,6 +881,8 @@ class SequentialEBMsTrainer:
                     if self.parallel and (i % 10 == 0) and (k == 0) and self.device == 0:
                         # CHECKPOINT_PATH = tempfile.gettempdir() + "/model.checkpoint"
                         # print(f'\nbefore saving, {torch.cuda.memory_summary()}')
+                        # print(f'cuda{self.device} waiting for sync...')
+                        # dist.barrier()
                         torch.save(self.sebm.model.state_dict(), self.ckpts_path)
                         # print(f'\nafter saving, {torch.cuda.memory_summary()}')
                     
