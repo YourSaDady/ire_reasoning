@@ -62,6 +62,7 @@ class ParallelSequentialEBMsTrainer(SequentialEBMsTrainer):
         contrast=False,
         device=None,
         epochs=1,
+        continue_train=False,
         
     ):
         super().__init__(sebm, 
@@ -79,6 +80,7 @@ class ParallelSequentialEBMsTrainer(SequentialEBMsTrainer):
             device=device,
             parallel=True,
             epochs=epochs,
+            continue_train=continue_train,
         )
         
         # Wrap the model with DistributedDataParallel
@@ -170,6 +172,7 @@ def train(rank, world_size, config):
         sampling_times=config.sampling.times,
         device=rank,
         epochs=config.train.epochs,
+        continue_train=config.continue_train,
     )
     
     if config.train.wandb and sebm_trainer.device == 0:
@@ -187,6 +190,9 @@ def train(rank, world_size, config):
     early_stopper = EarlyStopper(patience=25, min_delta=5e-4, ema_beta=0.9, mode='min')
         
     for epoch in range(config.train.epochs):
+        if config.continue_train and epoch < config.cont_epoch:
+            print(f'[{rank}]: epoch{epoch} trained, skipp')
+            continue
         # dist.barrier()
         # print(f'device{sebm_trainer.device} synchronized')
         '''1. train'''

@@ -2330,8 +2330,8 @@ class FastSequentialEBMs():
                         ui_dist = torch.exp(log_ui_dist) #(B,V)
                     except:
                         raise RuntimeError(f'ui_energy: \n{ui_energy}\nlog_ui_dist:\n{log_ui_dist}\nui_dist:\n{ui_dist}')
-                    x_ui = torch.multinomial(ui_dist, num_samples=1).view(B,1)
-                    # x_ui = torch.argmax(ui_dist, dim=-1, keepdim=True) #(B,1) #for optimal inference (temp)
+                    # x_ui = torch.multinomial(ui_dist, num_samples=1).view(B,1)
+                    x_ui = torch.argmax(ui_dist, dim=-1, keepdim=True) #(B,1) #for optimal inference (temp)
                     cand_pred = cand_pred.scatter(dim=-1, index=u[:,i].view(B,1), src=x_ui)
                     # if i == 2 and t == 0 and batch_id == 2:
                     #     print(f'after sampling at position i={i}, cand_pred becomes: \n{cand_pred}')

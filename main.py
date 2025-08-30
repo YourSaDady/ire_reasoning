@@ -139,6 +139,7 @@ class SequentialEBMsTrainer:
         device='cpu', ########debugging
         parallel=False,
         epochs=-1,
+        continue_train=False,
     ):
         self.device = device
         self.parallel = parallel
@@ -164,8 +165,16 @@ class SequentialEBMsTrainer:
         self.epochs = epochs
         print(f"Total Parameters: {sum([p.nelement() for p in self.sebm.model.parameters()])}, is_ebm: {self.is_ebm}")
         self.ckpts_path = f'./ire_reasoning/ebm_ckpts/{self.sebm.task_name}_{self.sebm.param_type}{self.sebm.d_model}_earlystop.pth' # _ebm8.9 (sota with sampling_new())
+        
+        if continue_train:
+            self.load_model(self.ckpts_path, device)
+            print(f'\n\nContinue train from {self.ckpts_path}, ckpts loaded.')
+        else:
+            print(f'\n\nTrain from scratch')
     
     def load_model(self, ckpts_path, device): #config.device
+        if isinstance(device, int):
+            device = torch.device('cuda', device)
         state_dict = torch.load(ckpts_path, map_location=device, weights_only=True)
         state_dict = remove_module_prefix(state_dict)
         self.sebm.model.load_state_dict(state_dict)
@@ -1072,14 +1081,14 @@ def main(config):
         is_ebm=config.is_ebm,
         contrast=config.train.contrast,
         sampling_times=config.sampling.times,
-        device=config.device,
+        device=config.device, #可能是这里导致报错
         parallel=config.parallel,
     )
 
     # return ##############
     '''3. Train & Inference'''
     if not config.load_ebm_ckpts:
-        print(f'No checkpoints found.')
+        print(f'No checkpoints found, start training from scratch.')
         # print(f'\nBefore training...')
         # # test(sebm, val_data[0]) 
         # k=10
