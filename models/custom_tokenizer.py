@@ -154,7 +154,7 @@ class CustomTokenizer(PreTrainedTokenizer):
 
     @classmethod
     def from_pretrained(cls, save_directory: Union[str, os.PathLike], **kwargs):
-        cfg_file = Path(save_directory) / "tokenizer_config.json"
+        cfg_file = Path(save_directory) #/ "tokenizer_config.json"
         with open(cfg_file) as f:
             cfg = json.load(f)
         return cls.from_config(cfg)

@@ -1,0 +1,152 @@
+start spawning!
+rank: 0, pid: 38714
+
+Now start loading train and test data...
+pwd: /root/EBM
+
+train set size: 500000
+
+test set size: 1000
+train_data[0]: 
+{'input': tensor([ 9,  9, 20,  7, 20, 10,  9, 20, 11,  9,  1,  2,  2,  2,  2,  2,  2,  2,
+         2,  2,  2,  2,  2,  2,  2,  2,  2,  2,  2,  3,  0,  0,  0,  0,  0,  0,
+         0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0]), 'label': tensor([   2,    2,    2,    2,    2,    2,    2,    2,    2,    2,    1,    7,
+          15,   10,    9,   19,    6,    5,   13,   20,    6,    5,   13,   17,
+           9,    9,   19,   11,    9,    3, -100, -100, -100, -100, -100, -100,
+        -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100,
+        -100, -100]), 'attention': tensor([1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+        1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0])}
+param type: fast
+train_batch_size:test_batch_size=16:32
+
+Loaded datasets for task: countdown, max_len: 50, train:test=500000:1000 (before batching)...
+0 local BS = 16
+
+Initializing EBMs...
+Initializing FastSequentialEBMs is completed!
+Total Parameters: 5352193, is_ebm: False
+
+
+Continue train from ./ire_reasoning/ebm_ckpts/countdown_fast384_earlystop.pth, ckpts loaded.
+
+
+
+Start training...
+rank: 2, pid: 38716
+
+Now start loading train and test data...
+pwd: /root/EBM
+
+train set size: 500000
+
+test set size: 1000
+train_data[0]: 
+{'input': tensor([ 9,  9, 20,  7, 20, 10,  9, 20, 11,  9,  1,  2,  2,  2,  2,  2,  2,  2,
+         2,  2,  2,  2,  2,  2,  2,  2,  2,  2,  2,  3,  0,  0,  0,  0,  0,  0,
+         0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0]), 'label': tensor([   2,    2,    2,    2,    2,    2,    2,    2,    2,    2,    1,    7,
+          15,   10,    9,   19,    6,    5,   13,   20,    6,    5,   13,   17,
+           9,    9,   19,   11,    9,    3, -100, -100, -100, -100, -100, -100,
+        -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100,
+        -100, -100]), 'attention': tensor([1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+        1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0])}
+param type: fast
+train_batch_size:test_batch_size=16:32
+
+Loaded datasets for task: countdown, max_len: 50, train:test=500000:1000 (before batching)...
+2 local BS = 16
+
+Initializing EBMs...
+Initializing FastSequentialEBMs is completed!
+Total Parameters: 5352193, is_ebm: False
+
+
+Continue train from ./ire_reasoning/ebm_ckpts/countdown_fast384_earlystop.pth, ckpts loaded.
+[2]: epoch0 trained, skip
+[2]: epoch1 trained, skip
+[2]: epoch2 trained, skip
+[2]: epoch3 trained, skip
+[2]: epoch4 trained, skip
+[2]: epoch5 trained, skip
+[2]: epoch6 trained, skip
+[2]: epoch7 trained, skip
+[2]: epoch8 trained, skip
+rank: 1, pid: 38715
+
+Now start loading train and test data...
+pwd: /root/EBM
+
+train set size: 500000
+
+test set size: 1000
+train_data[0]: 
+{'input': tensor([ 9,  9, 20,  7, 20, 10,  9, 20, 11,  9,  1,  2,  2,  2,  2,  2,  2,  2,
+         2,  2,  2,  2,  2,  2,  2,  2,  2,  2,  2,  3,  0,  0,  0,  0,  0,  0,
+         0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0]), 'label': tensor([   2,    2,    2,    2,    2,    2,    2,    2,    2,    2,    1,    7,
+          15,   10,    9,   19,    6,    5,   13,   20,    6,    5,   13,   17,
+           9,    9,   19,   11,    9,    3, -100, -100, -100, -100, -100, -100,
+        -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100,
+        -100, -100]), 'attention': tensor([1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+        1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0])}
+param type: fast
+train_batch_size:test_batch_size=16:32
+
+Loaded datasets for task: countdown, max_len: 50, train:test=500000:1000 (before batching)...
+1 local BS = 16
+
+Initializing EBMs...
+Initializing FastSequentialEBMs is completed!
+Total Parameters: 5352193, is_ebm: False
+
+
+Continue train from ./ire_reasoning/ebm_ckpts/countdown_fast384_earlystop.pth, ckpts loaded.
+[1]: epoch0 trained, skip
+[1]: epoch1 trained, skip
+[1]: epoch2 trained, skip
+[1]: epoch3 trained, skip
+[1]: epoch4 trained, skip
+[1]: epoch5 trained, skip
+[1]: epoch6 trained, skip
+[1]: epoch7 trained, skip
+[1]: epoch8 trained, skip
+rank: 3, pid: 38717
+
+Now start loading train and test data...
+pwd: /root/EBM
+
+train set size: 500000
+
+test set size: 1000
+train_data[0]: 
+{'input': tensor([ 9,  9, 20,  7, 20, 10,  9, 20, 11,  9,  1,  2,  2,  2,  2,  2,  2,  2,
+         2,  2,  2,  2,  2,  2,  2,  2,  2,  2,  2,  3,  0,  0,  0,  0,  0,  0,
+         0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0]), 'label': tensor([   2,    2,    2,    2,    2,    2,    2,    2,    2,    2,    1,    7,
+          15,   10,    9,   19,    6,    5,   13,   20,    6,    5,   13,   17,
+           9,    9,   19,   11,    9,    3, -100, -100, -100, -100, -100, -100,
+        -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100,
+        -100, -100]), 'attention': tensor([1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+        1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0])}
+param type: fast
+train_batch_size:test_batch_size=16:32
+
+Loaded datasets for task: countdown, max_len: 50, train:test=500000:1000 (before batching)...
+3 local BS = 16
+
+Initializing EBMs...
+Initializing FastSequentialEBMs is completed!
+Total Parameters: 5352193, is_ebm: False
+
+
+Continue train from ./ire_reasoning/ebm_ckpts/countdown_fast384_earlystop.pth, ckpts loaded.
+[3]: epoch0 trained, skip
+[3]: epoch1 trained, skip
+[3]: epoch2 trained, skip
+[3]: epoch3 trained, skip
+[3]: epoch4 trained, skip
+[3]: epoch5 trained, skip
+[3]: epoch6 trained, skip
+[3]: epoch7 trained, skip
+[3]: epoch8 trained, skip

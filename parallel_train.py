@@ -10,8 +10,8 @@ import sys
 import os
 import os.path as osp
 from tqdm import tqdm
-sys.path.append('/home/yichuan/HKU/EBM/ire_reasoning')
-os.chdir('/home/yichuan/HKU/EBM/ire_reasoning')
+sys.path.append('/root/EBM/ire_reasoning')
+os.chdir('/root/EBM/ire_reasoning')
 # print(f'The current working directory: {os.getcwd()}')
 import hydra
 from sequential_ebms import BERTSequentialEBMs, GPTSequentialEBMs, FastSequentialEBMs
@@ -162,8 +162,8 @@ def train(rank, world_size, config):
         train_loader, 
         test_loader, 
         lr=config.train.lr,
-        train_size=train_size,
-        test_size=test_size,
+        train_size=train_size, #the total number of trai samples, not batch size
+        test_size=test_size, #similar
         train_wandb=config.train.wandb,
         sampler=config.sampling.sampler,
         test_wandb=config.sampling.wandb,
@@ -179,8 +179,8 @@ def train(rank, world_size, config):
         print(f'\n\n\nStart training...')
         wandb.login()
         run = wandb.init(
-            project=f'EBM_train-{task_config.name}_{config.param_type}_rank0',  # Specify your project
-            config={                        # Track hyperparameters and metadata
+            project=f'EBM_train-{task_config.name}_{config.param_type}_rank0',
+            config={ # Track hyperparameters and metadata
                 "learning_rate": config.train.lr,
                 "epochs": config.train.epochs,
             },
@@ -191,8 +191,11 @@ def train(rank, world_size, config):
         
     for epoch in range(config.train.epochs):
         if config.continue_train and epoch < config.cont_epoch:
-            print(f'[{rank}]: epoch{epoch} trained, skipp')
             continue
+        elif config.continue_train and epoch == config.cont_epoch:
+            n_steps = config.cont_epoch * train_size
+            sebm_trainer.optim_schedule.fast_forward(n_steps)
+            print(f'device{sebm_trainer.device} have optimizer set to the latest step, start training from epoch{epoch}')
         # dist.barrier()
         # print(f'device{sebm_trainer.device} synchronized')
         '''1. train'''
@@ -203,18 +206,23 @@ def train(rank, world_size, config):
         #     break
         
         '''2. validate converge or not'''
-        print(f'device{sebm_trainer.device}: epoch{epoch} finished, start validate...')
+        print(f'device{sebm_trainer.device}: epoch{epoch} finished, waiting for sync...')
         # dist.barrier()
         # print(f'device{sebm_trainer.device} synchronized')
         converge, val_acc, val_ce = sebm_trainer.validate(epoch, early_stopper)
-        if sebm_trainer.device == 0:
+        
+        # if val_acc >= 98.0:
+        #     torch.save(sebm_trainer.sebm.model.state_dict(), sebm_trainer.ckpts_path)
+        #     print(f'\n\nval_acc: {val_acc} is over 98%, saved to {sebm_trainer.ckpts_path}\n\n')
+        #     break
+        if config.train.wandb and sebm_trainer.device == 0:
             # print(f'epoch{epoch}: val_ce: {val_ce}, val_acc: {val_acc}')
             wandb.log({'val_ce': val_ce, 'val_acc': val_acc})
         if converge or (epoch == sebm_trainer.epochs-1):
-            print(f'\n\n你converged!!\nepoch: {epoch}\nval_acc: {val_acc}\nval_ce: {val_ce}\n\n')
+            print(f'\n\n你converged!!\ndevice: {sebm_trainer.device}\nepoch: {epoch}\nval_acc: {val_acc}\nval_ce: {val_ce}\n\n')
             break
         else:
-            print(f'\n\nNot convreged...\nepoch: {epoch}\nval_acc: {val_acc}\nval_ce: {val_ce}\n\n')
+            print(f'\n\nNot convreged...\ndevice: {sebm_trainer.device}\nepoch: {epoch}\nval_acc: {val_acc}\nval_ce: {val_ce}\n\n')
     
     cleanup()
 

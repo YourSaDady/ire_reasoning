@@ -2,6 +2,7 @@ import os.path as osp
 import sys
 import os
 import json
+import csv
 import torch
 import itertools
 import random as rand
@@ -9,8 +10,8 @@ from torch.utils.data  import Dataset, DataLoader
 from torch.utils.data.distributed import DistributedSampler
 import pandas as pd
 import numpy as np
-sys.path.append('/home/yichuan/HKU/EBM')
-os.chdir('/home/yichuan/HKU/EBM')
+sys.path.append('/root/EBM')
+os.chdir('/root/EBM')
 # print(f'The current working directory: {os.getcwd()}')
 
 from models.bert import train_tokenizer
@@ -47,30 +48,35 @@ def load_satnet_dataset(data_dir): #废了
     labels = torch.load(osp.join(data_dir, 'labels.pt'))
     return features, labels
 
-class SudokuDataset(Dataset):
-    def __init__(self, dataset_identifier, split): #identifier就是'sudoku', split = {train, val}
-        self.features, self.labels = load_satnet_dataset(get_data_dir(dataset_identifier))
-        nr_datapoints = len(self.features)
-
-        assert split in ('train', 'val')
-        self.split = split
-        if self.split == 'train':
-            self.features = self.features[:int(nr_datapoints * 0.9)]
-            self.labels = self.labels[:int(nr_datapoints * 0.9)]
-        else:
-            self.features = self.features[int(nr_datapoints * 0.9):]
-            self.labels = self.labels[int(nr_datapoints * 0.9):]
-
-        self.cond_entry = (self.features.sum(axis=-1) == 1)[:, :, :, None].expand(-1, -1, -1, 9) #?
-        self.inp_dim = self.features[0].numel()
-        self.out_dim = self.labels[0].numel()
-
+class SudokuDataset(Dataset): #TODO
+    def __init__(self, data_pair, tokenizer, max_len=81): 
+        self.tokenizer = tokenizer
+        self.max_len = max_len
+        self.corpus_line = len(data_pairs)
+        self.lines = data_pair
+    
     def __len__(self):
-        return len(self.features)
-
-    def __getitem__(self, idx):
-        return _rescale(self.features[idx].reshape(-1)), _rescale(self.labels[idx].reshape(-1)), self.cond_entry[idx].reshape(-1)
-
+        return self.corpus_line
+    def __get_item__(self, item):
+        '''
+        return data_dict:
+            - input (B, 81): zero-padded quizzes batch
+            - label (B, 81): completed solution batch (the non-zero values in the inputs are maintained)
+        '''
+        quiz, sol = self.tokenizer.encode(self.lines[item][0]), self.tokenizer.encode(self.lines[item][1])
+        sol = sol - quiz
+        input_padding = [self.tokenizer.pad_token_id] * (self.max_len - len(quiz)) #[0,0,0,0], total = 85
+        label_padding = [IGNORE_INDEX] * (self.max_len - len(sol)) #[-100, -100, -100, -100], total = 85
+        quiz.extend(input_padding), sol.extend(label_padding)
+        output = {
+            'input': quiz,
+            'label': sol
+        }
+        output = {k: torch.tensor(v) for k, v in output.items()}
+        
+        return output
+        
+        
 class CountDownDataset(Dataset):
     def __init__(self, data_pair, tokenizer, stage, max_len=256, contrast=False):
         '''
@@ -383,7 +389,7 @@ def load_data(task, stage, max_len, train_batch_size, val_batch_size, contrast=F
     elif task == 'countdown':
         # 1. load tokenizer
         print(f'pwd: {os.getcwd()}')
-        tokenizer = CustomTokenizer.from_pretrained('./ire_reasoning/models/model_config_tiny') 
+        tokenizer = CustomTokenizer.from_pretrained('./ire_reasoning/models/model_config_tiny/tokenizer_config_cd.json') 
         # 2. laod dataset
         train_pairs, test_pairs = [], []
         for split, pairs in zip(['train', 'test'], [train_pairs, test_pairs]):
@@ -393,8 +399,24 @@ def load_data(task, stage, max_len, train_batch_size, val_batch_size, contrast=F
                     entry = json.loads(line.strip())
                     pairs.append((entry['input'], entry['output']))
             print(f'\n{split} set size: {len(pairs)}')
-        train_data = CountDownDataset(train_pairs, stage=stage, max_len=max_len, tokenizer=tokenizer, contrast=contrast)
+        train_data = CountDownDataset(train_pairs, stage=stage, max_len=max_len, tokenizer=tokenizer, contrast=contrast) #TODO: contrast这个argument废了
         test_data = CountDownDataset(test_pairs, stage=stage, max_len=max_len, tokenizer=tokenizer)
+    elif task == 'sudoku':
+        tokenizer = CustomTokenizer.from_pretrained('./ire_reasoning/models/model_config_tiny/tokenizer_config_sudoku.json')
+        train_pairs, test_pairs = [], []
+        for split, pairs in zip(['train','test'], [train_pairs, test_pairs]):
+            path = f'./datasets/sudoku/sudoku_{split}/csv'
+            with open(path, new_line='', encoding='utf-8') as file:
+                reader = csv.reader(file)
+                next(reader, None) #skip header
+                for row in reader:
+                    quiz, sol = map(str.strip, row)
+                    pairs.append((quiz, sol))
+            print(f'\n{spilt} set size: {len(pairs)}')
+        train_data = SudokuDataset(train_pairs, max_len=max_len, tokenizer=tokenizer)
+        test_data = SudokuDataset(test_pairs, max_len=max_len, tokenizer=tokenizer)
+                        
+                
     else:
         raise NotImplementedError
     
@@ -402,7 +424,7 @@ def load_data(task, stage, max_len, train_batch_size, val_batch_size, contrast=F
     
     if not parallel:
         train_loader, test_loader = DataLoader(train_data, batch_size=train_batch_size, shuffle=True, pin_memory=True), \
-            DataLoader(test_data, batch_size=val_batch_size, shuffle=True, pin_memory=True)
+            DataLoader(test_data, batch_size=val_batch_size, shuffle=True, sample=None, pin_memory=True) #sampler=None
         return train_loader, test_loader, len(train_pairs), len(test_pairs), tokenizer
     
     else: #effective batch size is 32 * nprocs

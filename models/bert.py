@@ -11,7 +11,7 @@ import transformers
 from torch.utils.data import Dataset
 from tokenizers import BertWordPieceTokenizer
 from pathlib import Path
-os.chdir('/home/yichuan/HKU/EBM')
+os.chdir('/root/EBM')
 # print(f'The current working directory: {os.getcwd()}')
 
 IGNORE_INDEX = -100

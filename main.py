@@ -12,8 +12,8 @@ import sys
 import os
 import os.path as osp
 from tqdm import tqdm
-sys.path.append('/home/yichuan/HKU/EBM/ire_reasoning')
-os.chdir('/home/yichuan/HKU/EBM/ire_reasoning')
+sys.path.append('/root/EBM/ire_reasoning')
+os.chdir('/root/EBM/ire_reasoning')
 # print(f'The current working directory: {os.getcwd()}')
 import hydra
 from sequential_ebms import BERTSequentialEBMs, GPTSequentialEBMs, FastSequentialEBMs
@@ -24,6 +24,7 @@ import wandb
 from time import time
 import json
 import math
+import threading, copy
 
 IGNORE_INDEX = -100
 
@@ -90,6 +91,13 @@ class ScheduledOptim():
         self.n_current_steps += 1
         lr = self.init_lr * self._get_lr_scale()
 
+        for param_group in self._optimizer.param_groups:
+            param_group['lr'] = lr
+            
+    def fast_forward(self, n_steps: int):
+        '''adjust the lr to the n-th step in one-run'''
+        self.n_current_steps = n_steps
+        lr = self.init_lr * self._get_lr_scale()
         for param_group in self._optimizer.param_groups:
             param_group['lr'] = lr
 
@@ -252,6 +260,20 @@ class SequentialEBMsTrainer:
             # end of batch iter
             val_ce = val_loss / total_samples
             final_acc = round(total_correct*100/total_samples, 2)
+            
+            # gather the global validation accuracy
+            # total_correct = torch.tensor(total_correct, dtype=torch.long, device=self.device)
+            # total_samples = torch.tensor(total_samples, dtype=torch.long, device=self.device)
+            # dist.all_reduce(total_correct, op=dist.ReduceOp.SUM)
+            # dist.all_reduce(total_samples, op=dist.ReduceOp.SUM)
+
+            # final_acc = (total_correct.float() / total_samples).item()
+            if dist.get_rank() == 0:
+                print(f'\n\nInside validate(), local val_acc: {final_acc:.2f}')
+                if final_acc >= 98.2:
+                    torch.save(self.sebm.model.state_dict(), self.ckpts_path)
+                    print(f'acc: {val_acc} is over 98%, saved to {self.ckpts_path}\n\n')
+            
             if early_stopper.update(val_ce):
                 return True, final_acc, val_ce
             else:
@@ -847,11 +869,18 @@ class SequentialEBMsTrainer:
             )
         else:
             data_iter = enumerate(data_loader)
-        if self.sebm.task_name == 'countdown':
-            special_tokens = {0, 1, 2, 3, 4}
-            self.sebm.special_tok_size = len(special_tokens)
-        else:
-            raise NotImplementedError
+            
+        # data_iter = tqdm(
+        #     enumerate(data_loader), 
+        #     desc="EP_%s_%s:%d" % (mode, stage, epoch),
+        #     total=len(data_loader),
+        #     bar_format="{l_bar}{r_bar}",
+        #     disable=(self.device!=0), 
+        #     mininterval=2
+        # )
+        
+        special_tokens = {0, 1, 2, 3, 4}
+        self.sebm.special_tok_size = len(special_tokens)
         if (not train) and stage == 'inference':
             total_correct, total_samples = 0, self.test_size
             # initialize stat file
@@ -867,6 +896,9 @@ class SequentialEBMsTrainer:
             max_K = 10
             t_list = unmasking_schedule(max_K+2, 'cosine')[1:-1]
             scheduled_data, K = self.add_schedule_new(data, t_list)
+            if i == 0:
+                print(f'scheduled_data: \nscheduled_data: {scheduled_data}')
+                raise
             # print(f"schedule_label: \n{scheduled_data['schedule_label']}")
             # raise
             if (not train) and stage == 'inference':
@@ -892,7 +924,10 @@ class SequentialEBMsTrainer:
                         # print(f'\nbefore saving, {torch.cuda.memory_summary()}')
                         # print(f'cuda{self.device} waiting for sync...')
                         # dist.barrier()
-                        torch.save(self.sebm.model.state_dict(), self.ckpts_path)
+                        tmp_state = copy.deepcopy(self.sebm.model.state_dict())
+                        # torch.save(self.sebm.model.state_dict(), self.ckpts_path)
+                        threading.Thread(target=lambda: torch.save(tmp_state, self.ckpts_path)).start()
+                        print(f'\nckpts saved')
                         # print(f'\nafter saving, {torch.cuda.memory_summary()}')
                     
                     torch.autograd.set_detect_anomaly(True)
@@ -920,7 +955,7 @@ class SequentialEBMsTrainer:
                         loss = ce_loss
                     
                     # logging
-                    if self.train_wandb:
+                    if self.train_wandb: # and self.device == 0
                         ce_losses[k], total_losses[k] = ce_loss, loss
                         if self.contrast:
                             contrast_losses[k] = contrast_loss
@@ -929,13 +964,15 @@ class SequentialEBMsTrainer:
                                 continue
                             cal_spent = time() - cal_t
                             wandb.log({'ce_loss': ce_losses, 'contrast_loss': contrast_losses, \
-                                'loss':total_losses, 'time': cal_spent})
+                                'loss':total_losses, 'time': cal_spent}, commit=False)
                     self.optim_schedule.zero_grad()
                     loss.backward()
                     # clip gradients
                     max_norm = 1.0
                     torch.nn.utils.clip_grad_norm_(self.sebm.model.parameters(), max_norm)
                     self.optim_schedule.step_and_update_lr()
+                    # dist.barrier()
+                    # print(f'rank{self.device} synchronized after optimizer.step()')
                 elif (not train) and stage == 'inference':
                     self.sebm.model.eval()
                     with torch.no_grad():
@@ -991,6 +1028,7 @@ class SequentialEBMsTrainer:
         #             print(f'\nrank[0] model finally saved ckpt to {self.ckpts_path}')
         #     else: #parallel, non-last epochs
         #         print(f'\nEpoch {epoch} completed on rank{self.device}, go to next epoch.\n')
+        print(f'device{self.device} finished!')
         if (not train): #show inference performance
             final_acc = round(total_correct*100/total_samples, 2)
             print(f'\n\nFinished sampling!'\
@@ -1011,7 +1049,7 @@ def main(config):
     '''1. Load task datasets'''
     if config.task_name.startswith('binary'):
         max_len = config.tasks[config.task_name].inp_len + config.tasks[config.task_name].out_len #+ 3
-    elif config.task_name == 'countdown':
+    elif config.task_name == 'countdown' or config.task_name == 'sudoku':
         max_len = config.tasks[config.task_name].max_len
     train_loader, test_loader, train_size, test_size, tokenizer = load_data(
         config.task_name, 
@@ -1031,7 +1069,7 @@ def main(config):
     '''2. Initialize and train EBMs'''
     print(f'\nInitializing EBMs...')
     task_config = config.tasks[config.task_name]
-    if task_config.name.startswith('binary'):
+    if task_config.name.startswith('binary'): #TODO: delete
         print(f'inp_len: {task_config.inp_len}, out_len: {task_config.out_len}, num_classes: {task_config.num_classes}')
     if config.param_type == 'bert':
         d_model = config.models[config.param_type].d_model
@@ -1068,6 +1106,7 @@ def main(config):
         )
     else:
         raise NotImplementedError
+    
     sebm_trainer = SequentialEBMsTrainer(
         sebm,
         train_loader,
