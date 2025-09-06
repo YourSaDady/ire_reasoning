@@ -88,8 +88,8 @@ sampling:
   stage: inference #sft(default mask rate is t),inference(fully mask, depend on sampler)
   epochs: 1
   batch_size: 32 #4
-  times: 4
-  steps: 1
+  times: 4 #4: 93.7
+  # steps: 1 #?
   sampler: gibbs #argmin_energy(traditional loss), gibbs(ebm method)
   wandb: False
   # temperature: 1.0cd
