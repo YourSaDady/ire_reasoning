@@ -4,10 +4,10 @@ param_type: fast # mlp, transformer, bert, gpt, fast
 is_ebm: False
 # max_len: 128
 # special_tokens: ['<mask>']
-load_ebm_ckpts: False ###########
-continue_train: True #######for further training with fully masked t2 (inference) after trained on mlm
-cont_epoch: 8
-parallel: True ########currently only supports training with parallel_train.py
+load_ebm_ckpts: True ###########
+continue_train: False #######for further training with fully masked t2 (inference) after trained on mlm
+cont_epoch: 25
+parallel: False ########currently only supports training with parallel_train.py
 device: cuda #cpu, cuda
 visualize: False ###########
 
@@ -90,8 +90,8 @@ sampling:
   stage: inference #sft(default mask rate is t),inference(fully mask, depend on sampler)
   epochs: 1
   batch_size: 32 #4
-  times: 4
-  steps: 1
+  times: 4 #4: 93.7
+  # steps: 1 #?
   sampler: gibbs #argmin_energy(traditional loss), gibbs(ebm method)
   wandb: False
   # temperature: 1.0cd

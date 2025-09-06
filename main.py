@@ -92,6 +92,13 @@ class ScheduledOptim():
 
         for param_group in self._optimizer.param_groups:
             param_group['lr'] = lr
+            
+    def fast_forward(self, n_steps: int):
+        '''adjust the lr to the n-th step in one-run'''
+        self.n_current_steps = n_steps
+        lr = self.init_lr * self._get_lr_scale()
+        for param_group in self._optimizer.param_groups:
+            param_group['lr'] = lr
 
 class EarlyStopper:
     def __init__(self, patience=20, min_delta=1e-3, ema_beta=0.9, mode='min'):

@@ -191,8 +191,20 @@ def train(rank, world_size, config):
         
     for epoch in range(config.train.epochs):
         if config.continue_train and epoch < config.cont_epoch:
-            print(f'[{rank}]: epoch{epoch} trained, skipp')
             continue
+            # # upate lr to the last epoch
+            # if sebm_trainer.device == 0:
+            #     diter = tqdm(sebm_trainer.train_data)
+            # else:
+            #     diter = sebm_trainer.train_data
+            # for id, _ in enumerate(diter):
+            #     sebm_trainer.optim_schedule._update_learning_rate()
+            # print(f'[{rank}]: epoch{epoch} trained, skip')
+            # continue
+        elif config.continue_train and epoch == config.cont_epoch:
+            n_steps = config.cont_epoch * train_size
+            sebm_trainer.optim_schedule.fast_forward(n_steps)
+            print(f'device{sebm_trainer.device} have optimizer set to the latest step, start training from epoch{epoch}')
         # dist.barrier()
         # print(f'device{sebm_trainer.device} synchronized')
         '''1. train'''
