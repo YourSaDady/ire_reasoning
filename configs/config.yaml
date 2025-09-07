@@ -1,15 +1,16 @@
 # arguments
-task_name: countdown  # binary-addition
+task_name: countdown  # sudoku
 param_type: fast # mlp, transformer, bert, gpt, fast
 is_ebm: False
 # max_len: 128
 # special_tokens: ['<mask>']
-load_ebm_ckpts: False ###########
-continue_train: True #######for further training with fully masked t2 (inference) after trained on mlm
+load_ebm_ckpts: True ###########
+continue_train: False #######for further training with fully masked t2 (inference) after trained on mlm
 cont_epoch: 25
-parallel: True ########currently only supports training with parallel_train.py
+parallel: False ########currently only supports training with parallel_train.py
 device: cuda #cpu, cuda
 visualize: False ###########
+project_root: /home/yichuan/HKU/EBM/ire_reasoning
 
 
 # 这个参数暂时无用
@@ -71,7 +72,7 @@ tasks:
     name: sudoku
     metrics: ['acc']
     num_classes: 14 #1~9 + 5 special_toks
-    max_len: 85 #9x9 + 4 padding positions for batchalized unmasking schedule
+    max_len: 92 #9x9 + 9 padding positions for batchalized unmasking schedule
 
 
 train:
@@ -80,14 +81,14 @@ train:
   lr: 1e-3 #3e-4  #有用: init optimizer
   early_stop_threshold: 0.01 #没用?
   contrast: True ##############
-  batch_size:  16 #16 #200 #100 #sudoku must be 1 #pseudolikelihood_batched: at most 16
+  batch_size:  14 #16 #200 #100 #sudoku must be 1 #pseudolikelihood_batched: at most 16
   visualize: True
-  wandb: False ####################### 
+  wandb: True ####################### 
 
 sampling:
   stage: inference #sft(default mask rate is t),inference(fully mask, depend on sampler)
   epochs: 1
-  batch_size: 32 #4
+  batch_size: 32 #32
   times: 4 #4: 93.7
   # steps: 1 #?
   sampler: gibbs #argmin_energy(traditional loss), gibbs(ebm method)

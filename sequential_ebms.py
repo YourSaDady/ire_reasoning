@@ -19,8 +19,8 @@ import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 import plotly.graph_objects as go
 from dash import Dash, dcc, html
-sys.path.append('/root/EBM/ire_reasoning')
-os.chdir('/root/EBM/ire_reasoning')
+# sys.path.append('/root/EBM/ire_reasoning')
+# os.chdir('/root/EBM/ire_reasoning')
 os.environ['WANDB_API_KEY'] = '3c06642500f1527ecd0328870ff61d36b5c17193'
 # os.environ['CUDA_LAUNCH_BLOCKING']=1
 # os.environ['TORCH_USE_CUDA_DSA']=1

@@ -12,8 +12,6 @@ import sys
 import os
 import os.path as osp
 from tqdm import tqdm
-sys.path.append('/root/EBM/ire_reasoning')
-os.chdir('/root/EBM/ire_reasoning')
 # print(f'The current working directory: {os.getcwd()}')
 import hydra
 from sequential_ebms import BERTSequentialEBMs, GPTSequentialEBMs, FastSequentialEBMs
@@ -172,7 +170,7 @@ class SequentialEBMsTrainer:
         self.test_wandb = test_wandb
         self.epochs = epochs
         print(f"Total Parameters: {sum([p.nelement() for p in self.sebm.model.parameters()])}, is_ebm: {self.is_ebm}")
-        self.ckpts_path = f'./ire_reasoning/ebm_ckpts/{self.sebm.task_name}_{self.sebm.param_type}{self.sebm.d_model}_earlystop.pth' # _ebm8.9 (sota with sampling_new())
+        self.ckpts_path = f'./ebm_ckpts/{self.sebm.task_name}_{self.sebm.param_type}{self.sebm.d_model}_earlystop.pth' # _ebm8.9 (sota with sampling_new())
         
         if continue_train:
             self.load_model(self.ckpts_path, device)
@@ -215,11 +213,8 @@ class SequentialEBMsTrainer:
                     data_iter = enumerate(self.test_data)
             else:
                 raise NotImplementedError('the param_type "{}" is currently not implemented!')
-            if self.sebm.task_name == 'countdown':
-                special_tokens = {0, 1, 2, 3, 4}
-                self.sebm.special_tok_size = len(special_tokens)
-            else:
-                raise NotImplementedError
+            special_tokens = {0, 1, 2, 3, 4}
+            self.sebm.special_tok_size = len(special_tokens)
             
             for i, data in data_iter:
                 B = data['label'].size(0)
@@ -257,6 +252,8 @@ class SequentialEBMsTrainer:
                 pred[invalid_pos] = scheduled_data['label'][invalid_pos]
                 correct = self.eval_metric(pred, scheduled_data['label'])
                 total_correct += correct
+                
+                # break#############################
             # end of batch iter
             val_ce = val_loss / total_samples
             final_acc = round(total_correct*100/total_samples, 2)
@@ -268,11 +265,11 @@ class SequentialEBMsTrainer:
             # dist.all_reduce(total_samples, op=dist.ReduceOp.SUM)
 
             # final_acc = (total_correct.float() / total_samples).item()
-            if dist.get_rank() == 0:
+            if self.parallel and dist.get_rank() == 0:
                 print(f'\n\nInside validate(), local val_acc: {final_acc:.2f}')
                 if final_acc >= 98.2:
                     torch.save(self.sebm.model.state_dict(), self.ckpts_path)
-                    print(f'acc: {val_acc} is over 98%, saved to {self.ckpts_path}\n\n')
+                    print(f'acc: {final_acc} is over 98%, saved to {self.ckpts_path}\n\n')
             
             if early_stopper.update(val_ce):
                 return True, final_acc, val_ce
@@ -394,7 +391,11 @@ class SequentialEBMsTrainer:
                     padding_pos = (data['label'][b] == IGNORE_INDEX).\
                         nonzero(as_tuple=True)[0].tolist()
                     # print(f'unlabeled_pos < sample_num: {unlabeled_pos} < {sample_num}, \npadding_pos: {padding_pos}')
-                    unmask_pad = rand.sample(padding_pos, sample_num-len(unlabeled_pos))
+                    try:
+                        unmask_pad = rand.sample(padding_pos, sample_num-len(unlabeled_pos))
+                    except:
+                        print(f'unlabeled_pos < sample_num: {unlabeled_pos} < {sample_num}, \npadding_pos: {padding_pos}')
+                        raise
                     unmask_pos.extend(unmask_pad)
                     scheduled_data['label'][b][unmask_pad] = self.sebm.tokenizer.unk_token_id #replace the PADs to be unmasked temperorily with UNK
                 schedule_label[b][unmask_pos] = K
@@ -884,7 +885,7 @@ class SequentialEBMsTrainer:
         if (not train) and stage == 'inference':
             total_correct, total_samples = 0, self.test_size
             # initialize stat file
-            eval_path = f'./ire_reasoning/stats/evaluate/{self.sebm.task_name}_' \
+            eval_path = f'./stats/evaluate/{self.sebm.task_name}_' \
                         f'{self.sebm.param_type}_{self.sebm.d_model}_{stage}_stat.jsonl'
             with open(eval_path, 'w') as evalfile: 
                 evalfile.write('')
@@ -896,9 +897,8 @@ class SequentialEBMsTrainer:
             max_K = 10
             t_list = unmasking_schedule(max_K+2, 'cosine')[1:-1]
             scheduled_data, K = self.add_schedule_new(data, t_list)
-            if i == 0:
-                print(f'scheduled_data: \nscheduled_data: {scheduled_data}')
-                raise
+            # if i == 0:          #######################
+            #     print(f"scheduled_data: \nscheduled_data: \ninput: {scheduled_data['input'][0]}\nlabel: {scheduled_data['label'][0]}\nschedule_label: {scheduled_data['schedule_label'][0]}")
             # print(f"schedule_label: \n{scheduled_data['schedule_label']}")
             # raise
             if (not train) and stage == 'inference':
@@ -927,7 +927,7 @@ class SequentialEBMsTrainer:
                         tmp_state = copy.deepcopy(self.sebm.model.state_dict())
                         # torch.save(self.sebm.model.state_dict(), self.ckpts_path)
                         threading.Thread(target=lambda: torch.save(tmp_state, self.ckpts_path)).start()
-                        print(f'\nckpts saved')
+                        # print(f'\nckpts saved')
                         # print(f'\nafter saving, {torch.cuda.memory_summary()}')
                     
                     torch.autograd.set_detect_anomaly(True)
@@ -1045,6 +1045,9 @@ class SequentialEBMsTrainer:
 @hydra.main(version_base=None, config_path='./configs',
             config_name='config')
 def main(config):
+    # Set the project root
+    os.chdir(config.project_root)
+    
     print(f'\n___\nStage: {config.train.stage}\n___\n')
     '''1. Load task datasets'''
     if config.task_name.startswith('binary'):

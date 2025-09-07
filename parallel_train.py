@@ -10,8 +10,6 @@ import sys
 import os
 import os.path as osp
 from tqdm import tqdm
-sys.path.append('/root/EBM/ire_reasoning')
-os.chdir('/root/EBM/ire_reasoning')
 # print(f'The current working directory: {os.getcwd()}')
 import hydra
 from sequential_ebms import BERTSequentialEBMs, GPTSequentialEBMs, FastSequentialEBMs
@@ -92,11 +90,14 @@ class ParallelSequentialEBMsTrainer(SequentialEBMsTrainer):
 Parallel version of main()
 '''
 def train(rank, world_size, config):
+    os.chdir(config.project_root)
     '''0. Set up parallel environment'''
     setup(rank, world_size)
     print(f'rank: {rank}, pid: {os.getpid()}')
     '''1. Load task datasets'''
     if config.task_name == 'countdown':
+        max_len = config.tasks[config.task_name].max_len
+    elif config.task_name == 'sudoku':
         max_len = config.tasks[config.task_name].max_len
     else:
         raise NotImplementedError(f'{config.task_name} is not specified!')

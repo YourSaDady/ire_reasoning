@@ -10,8 +10,8 @@ from torch.utils.data  import Dataset, DataLoader
 from torch.utils.data.distributed import DistributedSampler
 import pandas as pd
 import numpy as np
-sys.path.append('/root/EBM')
-os.chdir('/root/EBM')
+# sys.path.append('/root/EBM')
+# os.chdir('/root/EBM')
 # print(f'The current working directory: {os.getcwd()}')
 
 from models.bert import train_tokenizer
@@ -52,19 +52,20 @@ class SudokuDataset(Dataset): #TODO
     def __init__(self, data_pair, tokenizer, max_len=81): 
         self.tokenizer = tokenizer
         self.max_len = max_len
-        self.corpus_line = len(data_pairs)
+        self.corpus_line = len(data_pair)
         self.lines = data_pair
     
     def __len__(self):
         return self.corpus_line
-    def __get_item__(self, item):
+    def __getitem__(self, item):
         '''
         return data_dict:
             - input (B, 81): zero-padded quizzes batch
             - label (B, 81): completed solution batch (the non-zero values in the inputs are maintained)
         '''
         quiz, sol = self.tokenizer.encode(self.lines[item][0]), self.tokenizer.encode(self.lines[item][1])
-        sol = sol - quiz
+        quiz = [self.tokenizer.pad_token_id if x == self.tokenizer.unk_token_id else x for x in quiz]
+        sol = (torch.tensor(sol) - torch.tensor(quiz)).tolist()
         input_padding = [self.tokenizer.pad_token_id] * (self.max_len - len(quiz)) #[0,0,0,0], total = 85
         label_padding = [IGNORE_INDEX] * (self.max_len - len(sol)) #[-100, -100, -100, -100], total = 85
         quiz.extend(input_padding), sol.extend(label_padding)
@@ -389,11 +390,11 @@ def load_data(task, stage, max_len, train_batch_size, val_batch_size, contrast=F
     elif task == 'countdown':
         # 1. load tokenizer
         print(f'pwd: {os.getcwd()}')
-        tokenizer = CustomTokenizer.from_pretrained('./ire_reasoning/models/model_config_tiny/tokenizer_config_cd.json') 
+        tokenizer = CustomTokenizer.from_pretrained('./models/model_config_tiny/tokenizer_config_cd.json') 
         # 2. laod dataset
         train_pairs, test_pairs = [], []
         for split, pairs in zip(['train', 'test'], [train_pairs, test_pairs]):
-            path = f'./datasets/diffusion_vs_ar-data/cd3_{split}.jsonl' #pwd = EBM
+            path = f'../datasets/cd/cd3_{split}.jsonl' #pwd = EBM
             with open(path, 'r') as file:
                 for line in file:
                     entry = json.loads(line.strip())
@@ -402,17 +403,17 @@ def load_data(task, stage, max_len, train_batch_size, val_batch_size, contrast=F
         train_data = CountDownDataset(train_pairs, stage=stage, max_len=max_len, tokenizer=tokenizer, contrast=contrast) #TODO: contrast这个argument废了
         test_data = CountDownDataset(test_pairs, stage=stage, max_len=max_len, tokenizer=tokenizer)
     elif task == 'sudoku':
-        tokenizer = CustomTokenizer.from_pretrained('./ire_reasoning/models/model_config_tiny/tokenizer_config_sudoku.json')
+        tokenizer = CustomTokenizer.from_pretrained('./models/model_config_tiny/tokenizer_config_sudoku.json')
         train_pairs, test_pairs = [], []
         for split, pairs in zip(['train','test'], [train_pairs, test_pairs]):
-            path = f'./datasets/sudoku/sudoku_{split}/csv'
-            with open(path, new_line='', encoding='utf-8') as file:
+            path = f'../datasets/sudoku/sudoku_{split}.csv'
+            with open(path, newline='', encoding='utf-8') as file:
                 reader = csv.reader(file)
                 next(reader, None) #skip header
                 for row in reader:
                     quiz, sol = map(str.strip, row)
                     pairs.append((quiz, sol))
-            print(f'\n{spilt} set size: {len(pairs)}')
+            print(f'\n{split} set size: {len(pairs)}')
         train_data = SudokuDataset(train_pairs, max_len=max_len, tokenizer=tokenizer)
         test_data = SudokuDataset(test_pairs, max_len=max_len, tokenizer=tokenizer)
                         
@@ -424,11 +425,11 @@ def load_data(task, stage, max_len, train_batch_size, val_batch_size, contrast=F
     
     if not parallel:
         train_loader, test_loader = DataLoader(train_data, batch_size=train_batch_size, shuffle=True, pin_memory=True), \
-            DataLoader(test_data, batch_size=val_batch_size, shuffle=True, sample=None, pin_memory=True) #sampler=None
+            DataLoader(test_data, batch_size=val_batch_size, shuffle=True, pin_memory=True)
         return train_loader, test_loader, len(train_pairs), len(test_pairs), tokenizer
     
     else: #effective batch size is 32 * nprocs
         train_loader, test_loader = DataLoader(train_data, batch_size=train_batch_size, shuffle=False, \
             sampler=DistributedSampler(train_data)), DataLoader(test_data, batch_size=val_batch_size, \
-            shuffle=False, sampler=DistributedSampler(test_data))
+            shuffle=False, sampler=None) #sampler=DistributedSampler(test_data) 
         return train_loader, test_loader, len(train_pairs), len(test_pairs), tokenizer
