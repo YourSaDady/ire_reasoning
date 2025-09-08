@@ -170,7 +170,7 @@ class SequentialEBMsTrainer:
         self.test_wandb = test_wandb
         self.epochs = epochs
         print(f"Total Parameters: {sum([p.nelement() for p in self.sebm.model.parameters()])}, is_ebm: {self.is_ebm}")
-        self.ckpts_path = f'./ebm_ckpts/{self.sebm.task_name}_{self.sebm.param_type}{self.sebm.d_model}_earlystop.pth' # _ebm8.9 (sota with sampling_new())
+        self.ckpts_path = f'./ebm_ckpts/{self.sebm.task_name}_{self.sebm.param_type}{self.sebm.d_model}_earlystop_20.pth' # _ebm8.9 (sota with sampling_new())
         
         if continue_train:
             self.load_model(self.ckpts_path, device)
@@ -955,16 +955,19 @@ class SequentialEBMsTrainer:
                         loss = ce_loss
                     
                     # logging
-                    if self.train_wandb: # and self.device == 0
-                        ce_losses[k], total_losses[k] = ce_loss, loss
-                        if self.contrast:
-                            contrast_losses[k] = contrast_loss
-                        if k == K-1: #last k
+                    ce_losses[k], total_losses[k] = ce_loss, loss
+                    if self.contrast:
+                        contrast_losses[k] = contrast_loss
+                    if k == K-1: # last k
+                        if self.train_wandb: # and self.device == 0
                             if self.parallel and self.device != 0:
                                 continue
                             cal_spent = time() - cal_t
                             wandb.log({'ce_loss': ce_losses, 'contrast_loss': contrast_losses, \
                                 'loss':total_losses, 'time': cal_spent}, commit=False)
+                        elif (i % 10 == 0):
+                            avg_ce_loss = torch.stack(list(ce_losses.values())).mean()
+                            print(f'avg_ce_loss: {avg_ce_loss}')
                     self.optim_schedule.zero_grad()
                     loss.backward()
                     # clip gradients

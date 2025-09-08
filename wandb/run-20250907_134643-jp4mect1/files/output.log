@@ -1,2 +1,2 @@
 device0 have optimizer set to the latest step, start training from epoch25
-EP_train_inference:25:  47%|| 4194/8929 [2:56:14<7:33:04,  5.74s/it]
+EP_train_inference:25:  81%|| 7207/8929 [5:07:49<1:13:32,  2.56s/it] 
