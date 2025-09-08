@@ -961,15 +961,17 @@ class SequentialEBMsTrainer:
                     if self.contrast:
                         contrast_losses[k] = contrast_loss
                     if k == K-1: # last k
-                        if self.train_wandb: # and self.device == 0
+                        if self.train_wandb: # and self.device == 0 ##############################
                             if self.parallel and self.device != 0:
                                 continue
                             cal_spent = time() - cal_t
                             wandb.log({'ce_loss': ce_losses, 'contrast_loss': contrast_losses, \
                                 'loss':total_losses, 'time': cal_spent}, commit=False)
-                        elif (i % 10 == 0):
+                        if (i % 10 == 0):
                             avg_ce_loss = torch.stack(list(ce_losses.values())).mean()
-                            print(f'avg_ce_loss: {avg_ce_loss}')
+                            avg_contrast_loss = torch.stack(list(contrast_losses.values())).mean()
+                            avg_loss = torch.stack(list(total_losses.values())).mean()
+                            print(f'avg_loss: {avg_loss}, avg_ce_loss: {avg_ce_loss}, avg_contrast_loss: {avg_contrast_loss}')
                     self.optim_schedule.zero_grad()
                     loss.backward()
                     # clip gradients
@@ -1104,7 +1106,7 @@ def main(config):
         # d_model = config.models['tiny'].d_model
         # n_layers = config.models['tiny'].n_layers
         # heads = config.models['tiny'].heads
-        model_config_path = f'./ire_reasoning/models/model_config_{config.model_scale}'
+        model_config_path = f'./models/model_config_{config.model_scale}'
         model_config = AutoConfig.from_pretrained(model_config_path)
         sebm = FastSequentialEBMs( #_build_model can choose BERT-from-scratch, or naive-GPT2-miny
             tokenizer=tokenizer,

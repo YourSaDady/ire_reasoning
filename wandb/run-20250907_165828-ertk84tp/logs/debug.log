@@ -1,0 +1,34 @@
+2025-09-07 16:58:28,679 INFO    MainThread:683841 [wandb_setup.py:_flush():81] Current SDK version is 0.21.3
+2025-09-07 16:58:28,679 INFO    MainThread:683841 [wandb_setup.py:_flush():81] Configure stats pid to 683841
+2025-09-07 16:58:28,679 INFO    MainThread:683841 [wandb_setup.py:_flush():81] Loading settings from /root/.config/wandb/settings
+2025-09-07 16:58:28,679 INFO    MainThread:683841 [wandb_setup.py:_flush():81] Loading settings from /root/EBM/ire_reasoning/wandb/settings
+2025-09-07 16:58:28,679 INFO    MainThread:683841 [wandb_setup.py:_flush():81] Loading settings from environment variables
+2025-09-07 16:58:28,679 INFO    MainThread:683841 [wandb_init.py:setup_run_log_directory():686] Logging user logs to /root/EBM/ire_reasoning/wandb/run-20250907_165828-ertk84tp/logs/debug.log
+2025-09-07 16:58:28,679 INFO    MainThread:683841 [wandb_init.py:setup_run_log_directory():687] Logging internal logs to /root/EBM/ire_reasoning/wandb/run-20250907_165828-ertk84tp/logs/debug-internal.log
+2025-09-07 16:58:28,679 INFO    MainThread:683841 [wandb_init.py:init():813] calling init triggers
+2025-09-07 16:58:28,679 INFO    MainThread:683841 [wandb_init.py:init():818] wandb.init called with sweep_config: {}
+config: {'learning_rate': 0.001, 'epochs': 600, '_wandb': {}}
+2025-09-07 16:58:28,679 INFO    MainThread:683841 [wandb_init.py:init():854] starting backend
+2025-09-07 16:58:28,921 INFO    MainThread:683841 [wandb_init.py:init():857] sending inform_init request
+2025-09-07 16:58:28,962 INFO    MainThread:683841 [wandb_init.py:init():865] backend started and connected
+2025-09-07 16:58:28,968 INFO    MainThread:683841 [wandb_init.py:init():936] updated telemetry
+2025-09-07 16:58:29,011 INFO    MainThread:683841 [wandb_init.py:init():960] communicating run to backend with 90.0 second timeout
+2025-09-07 16:58:39,113 WARNING MainThread:683841 [wandb_init.py:init():1571] [no run ID] interrupted
+Traceback (most recent call last):
+  File "/root/miniconda3/envs/ebm/lib/python3.9/site-packages/wandb/sdk/wandb_init.py", line 1562, in init
+    run = wi.init(run_settings, run_config, run_printer)
+  File "/root/miniconda3/envs/ebm/lib/python3.9/site-packages/wandb/sdk/wandb_init.py", line 979, in init
+    result = wait_with_progress(
+  File "/root/miniconda3/envs/ebm/lib/python3.9/site-packages/wandb/sdk/mailbox/wait_with_progress.py", line 23, in wait_with_progress
+    return wait_all_with_progress(
+  File "/root/miniconda3/envs/ebm/lib/python3.9/site-packages/wandb/sdk/mailbox/wait_with_progress.py", line 77, in wait_all_with_progress
+    return asyncer.run(progress_loop_with_timeout)
+  File "/root/miniconda3/envs/ebm/lib/python3.9/site-packages/wandb/sdk/lib/asyncio_manager.py", line 136, in run
+    return future.result()
+  File "/root/miniconda3/envs/ebm/lib/python3.9/concurrent/futures/_base.py", line 441, in result
+    self._condition.wait(timeout)
+  File "/root/miniconda3/envs/ebm/lib/python3.9/threading.py", line 312, in wait
+    waiter.acquire()
+KeyboardInterrupt
+2025-09-07 16:58:39,188 INFO    wandb-AsyncioManager-main:683841 [service_client.py:_forward_responses():84] Reached EOF.
+2025-09-07 16:58:39,188 INFO    wandb-AsyncioManager-main:683841 [mailbox.py:close():137] Closing mailbox, abandoning 2 handles.

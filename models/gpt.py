@@ -12,10 +12,10 @@ from transformers import AutoModelForCausalLM, AutoConfig
 from torch.utils.data import Dataset
 from tokenizers import BertWordPieceTokenizer
 from pathlib import Path
-os.chdir('/home/yichuan/HKU/EBM')
-print(f'The current working directory: {os.getcwd()}')
+# os.chdir('/home/yichuan/HKU/EBM')
+# print(f'The current working directory: {os.getcwd()}')
 
-from bert import EnergyDecoder
+from .bert import EnergyDecoder
 
 IGNORE_INDEX = -100
 
@@ -96,6 +96,22 @@ class GPTDataset(Dataset):
         return sen_ids, sen_mask
     
     
+'''
+class EnergyDecoder(nn.Module):
+    #Linear decoder which first flattens the positional and the hidden dimensions of the model's output (logits),
+    #then returns the energy value (scalar, but usually batchalized).
+    
+    def __init__(self, out_len, seq_len):
+        super().__init__()
+        self.linear = torch.nn.Linear(out_len*seq_len, 1)
+
+    def forward(self, x): #Size(batch_size, full_len, vocab_size) -> Size(batch_size)
+        batch_size = x.size(0)
+        energy_batch = self.linear(x.view(batch_size, -1))
+        # print(f'decoder input x.shape: {x.shape}, decoder output.shape: {energy_batch.shape}')
+        return energy_batch
+'''
+    
 class EnergyGPT(nn.Module):
     '''
     The GPT2-style model used in diffusion-vs-ar, with an additional linear decoder to output scalar energy
@@ -106,17 +122,11 @@ class EnergyGPT(nn.Module):
         self.config = model_config
         self.gpt = AutoModelForCausalLM.from_config(model_config)
         self.decoder = EnergyDecoder(
-            out_len=model_config.n_embd,
-            seq_len=model_config.n_cxt
+            out_len=model_config.vocab_size, #Note that GPT2 is a decoder whose out_dim = vocab_size, whereas BERT is a encoder whose out_dim=hidden_dim
+            seq_len=model_config.n_ctx #50
         )
     def forward(self, x):
         '''
-        input(B, full_len) -> GPT(B, hidden_dim) -> Decoder(B,)
+        input(B, full_len) -> GPT(B, full_len, hidden_dim) -> Decoder(B,1)
         '''
-        gpt_out = self.gpt(x)
-        assert (gpt_out.size(0)==x.size(0) and gpt_out.size(1)==self.config.n_embd and gpt_out.dim()==2), \
-            f'gpt output shape mismatched! gpt_out.shape: {gpt_out.shape}, x.shape: {x.shape}!' 
-        out = self.decoder(gpt_out)
-        assert (out.dim()==1 and out.size(0)==x.size(0)), f'decoder output shape mismatched! out.shape: {out.shape}'
-        return out
-        # return self.decoder(self.gpt(x))
+        return self.decoder(self.gpt(x).logits)

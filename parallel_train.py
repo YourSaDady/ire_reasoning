@@ -10,6 +10,8 @@ import sys
 import os
 import os.path as osp
 from tqdm import tqdm
+import transformers 
+from transformers import AutoConfig
 # print(f'The current working directory: {os.getcwd()}')
 import hydra
 from sequential_ebms import BERTSequentialEBMs, GPTSequentialEBMs, FastSequentialEBMs
@@ -143,15 +145,14 @@ def train(rank, world_size, config):
             device=rank,
         )
     elif config.param_type == 'fast':
-        d_model = config.models['bert'].d_model
-        n_layers = config.models['bert'].n_layers
-        heads = config.models['bert'].heads
+        model_config_path = f'./models/model_config_{config.model_scale}'
+        model_config = AutoConfig.from_pretrained(model_config_path)
         sebm = FastSequentialEBMs(
             tokenizer=tokenizer,
             task_config=task_config,
-            d_model=d_model,
-            n_layers=n_layers,
-            heads=heads,
+            model_config=model_config,
+            model_arc=config.model_arc,
+            model_scale=config.model_scale,
             device=rank,
         )
     else:

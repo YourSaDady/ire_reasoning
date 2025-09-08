@@ -544,7 +544,7 @@ class MLMDecoder(nn.Module): #task-specified decoder
         
 class EnergyDecoder(nn.Module):
     '''
-    Linear decoder which first flattens the positional and the hidden dimensions of the BERT's output,
+    Linear decoder which first flattens the positional and the hidden dimensions of the model's output (logits),
     then returns the energy value (scalar, but usually batchalized).
     '''
     def __init__(self, out_len, seq_len):
