@@ -12,6 +12,8 @@ import sys
 import os
 import os.path as osp
 from tqdm import tqdm
+import transformers
+from transformers import AutoConfig
 # print(f'The current working directory: {os.getcwd()}')
 import hydra
 from sequential_ebms import BERTSequentialEBMs, GPTSequentialEBMs, FastSequentialEBMs
@@ -170,7 +172,7 @@ class SequentialEBMsTrainer:
         self.test_wandb = test_wandb
         self.epochs = epochs
         print(f"Total Parameters: {sum([p.nelement() for p in self.sebm.model.parameters()])}, is_ebm: {self.is_ebm}")
-        self.ckpts_path = f'./ebm_ckpts/{self.sebm.task_name}_{self.sebm.param_type}{self.sebm.d_model}_earlystop_20.pth' # _ebm8.9 (sota with sampling_new())
+        self.ckpts_path = f'./ebm_ckpts/{self.sebm.task_name}_{self.sebm.param_type}{self.sebm.model_arc}{self.sebm.model_scale}_earlystop.pth' # _ebm8.9 (sota with sampling_new())
         
         if continue_train:
             self.load_model(self.ckpts_path, device)
@@ -1066,7 +1068,7 @@ def main(config):
         contrast=config.train.contrast,
         parallel=config.parallel,
     )
-    print(f'param type: {config.param_type}')
+    print(f'\nparam type: {config.param_type}, model_arc: {config.model_arc}, model_scale: {config.model_scale}')
     print(f'\nLoaded datasets for task: {config.task_name}, max_len: {max_len}, ' \
         f'train:test={train_size}:{test_size},'\
         f'batch_size={config.train.batch_size}:{config.sampling.batch_size}...')
@@ -1099,15 +1101,17 @@ def main(config):
             device=config.device, #TODO
         )
     elif config.param_type == 'fast': #largely the same hyper params as bert sebm
-        d_model = config.models['bert'].d_model
-        n_layers = config.models['bert'].n_layers
-        heads = config.models['bert'].heads
-        sebm = FastSequentialEBMs(
+        # d_model = config.models['tiny'].d_model
+        # n_layers = config.models['tiny'].n_layers
+        # heads = config.models['tiny'].heads
+        model_config_path = f'./ire_reasoning/models/model_config_{config.model_scale}'
+        model_config = AutoConfig.from_pretrained(model_config_path)
+        sebm = FastSequentialEBMs( #_build_model can choose BERT-from-scratch, or naive-GPT2-miny
             tokenizer=tokenizer,
             task_config=task_config,
-            d_model=d_model,
-            n_layers=n_layers,
-            heads=heads,
+            model_config=model_config,
+            model_arc=config.model_arc,
+            model_scale=config.model_scale,
             device=config.device,
         )
     else:

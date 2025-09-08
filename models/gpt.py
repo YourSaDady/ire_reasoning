@@ -8,11 +8,14 @@ import random as rand
 import math
 import itertools
 import transformers
+from transformers import AutoModelForCausalLM, AutoConfig
 from torch.utils.data import Dataset
 from tokenizers import BertWordPieceTokenizer
 from pathlib import Path
 os.chdir('/home/yichuan/HKU/EBM')
 print(f'The current working directory: {os.getcwd()}')
+
+from bert import EnergyDecoder
 
 IGNORE_INDEX = -100
 
@@ -91,3 +94,29 @@ class GPTDataset(Dataset):
         sen_ids = self.tokenizer.encode(sentence)
         sen_mask = [self.tokenizer._vocab_str_to_int["[MASK]"]]*len(sen_ids)
         return sen_ids, sen_mask
+    
+    
+class EnergyGPT(nn.Module):
+    '''
+    The GPT2-style model used in diffusion-vs-ar, with an additional linear decoder to output scalar energy
+    '''
+    def __init__(self, model_config):
+        super().__init__()
+        # 1. build the gpt
+        self.config = model_config
+        self.gpt = AutoModelForCausalLM.from_config(model_config)
+        self.decoder = EnergyDecoder(
+            out_len=model_config.n_embd,
+            seq_len=model_config.n_cxt
+        )
+    def forward(self, x):
+        '''
+        input(B, full_len) -> GPT(B, hidden_dim) -> Decoder(B,)
+        '''
+        gpt_out = self.gpt(x)
+        assert (gpt_out.size(0)==x.size(0) and gpt_out.size(1)==self.config.n_embd and gpt_out.dim()==2), \
+            f'gpt output shape mismatched! gpt_out.shape: {gpt_out.shape}, x.shape: {x.shape}!' 
+        out = self.decoder(gpt_out)
+        assert (out.dim()==1 and out.size(0)==x.size(0)), f'decoder output shape mismatched! out.shape: {out.shape}'
+        return out
+        # return self.decoder(self.gpt(x))

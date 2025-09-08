@@ -36,6 +36,7 @@ import wandb
 
 from models.mlp import MLP
 from models.bert import DiscreteDiffusion, EnergyBERT
+from models.gpt import EnergyGPT
 
 inf = 1000000
 IGNORE_INDEX = -100
@@ -1344,8 +1345,10 @@ Features:
 - batchalized pseudolikelihood, losses calcualtion
 '''
 class FastSequentialEBMs():
-    def __init__(self, tokenizer, task_config, d_model, n_layers, heads=8, device='cpu'):
+    def __init__(self, tokenizer, task_config, model_config, model_arc='gpt', model_scale='tiny', device='cpu'):
         self.param_type = 'fast' #generally the same as BERT, with fast pseudolikelihood and contrast loss calculation
+        self.model_arc = model_arc
+        self.model_scale = model_scale
         self.tokenizer = tokenizer
         self.task_config = task_config
         self.task_name = task_config.name
@@ -1358,9 +1361,10 @@ class FastSequentialEBMs():
             self.tokenizer.unk_token_id,
         }
         self.special_tok_size = len(self.special_token_ids)
-        self.d_model = d_model
-        self.n_layers = n_layers
-        self.heads = heads
+        self.model_config = model_config
+        self.d_model = model_config.n_embd
+        self.n_layers = model_config.n_layer
+        self.heads = model_config.n_head
         self.device = device
         self.criterion = nn.CrossEntropyLoss()
         
@@ -1368,13 +1372,17 @@ class FastSequentialEBMs():
         print(f'Initializing FastSequentialEBMs is completed!')
     
     def _build_model(self):
-        self.model = EnergyBERT(
-            vocab_size = self.vocab_size,
-            max_len = self.max_len,
-            hidden_size = self.d_model,
-            n_layers = self.n_layers,
-            heads = self.heads,
-        )
+        # self.model = EnergyBERT(
+        #     vocab_size = self.vocab_size,
+        #     max_len = self.max_len,
+        #     hidden_size = self.d_model,
+        #     n_layers = self.n_layers,
+        #     heads = self.heads,
+        # )
+        self.model_config.vocab_size = self.vocab_size
+        self.model_config.n_ctx = self.max_len
+        self.model = EnergyGPT(self.model_config)
+        
         self.model.to(self.device)
     
     def get_2D_indices(self, array, val, type='remove_pad'): #n is the number of wanted elements in a row

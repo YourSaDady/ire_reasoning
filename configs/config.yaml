@@ -1,6 +1,7 @@
 # arguments
 task_name: countdown  # sudoku
 param_type: fast # mlp, transformer, bert, gpt, fast
+model_arc: gpt #bert
 is_ebm: False
 # max_len: 128
 # special_tokens: ['<mask>']
@@ -8,12 +9,13 @@ load_ebm_ckpts: False ###########
 continue_train: False #######for further training with fully masked t2 (inference) after trained on mlm
 cont_epoch: 20
 parallel: False ########currently only supports training with parallel_train.py
-device: cuda #cpu, cuda
+device: cpu #cpu, cuda
 visualize: False ###########
+model_scale: tiny #tiny: 6M, 
 project_root: /home/yichuan/HKU/EBM/ire_reasoning
 
 
-# 这个参数暂时无用
+# 这个参数暂时无用 (全部看config json file, 不管是不是build-from-scratch)
 models:
   llama3.1-8b-instruct:
     # regular tokens: [0-127999]
