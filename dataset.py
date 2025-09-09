@@ -63,9 +63,15 @@ class SudokuDataset(Dataset): #TODO
             - input (B, 81): zero-padded quizzes batch
             - label (B, 81): completed solution batch (the non-zero values in the inputs are maintained)
         '''
-        quiz, sol = self.tokenizer.encode(self.lines[item][0]), self.tokenizer.encode(self.lines[item][1])
-        quiz = [self.tokenizer.pad_token_id if x == self.tokenizer.unk_token_id else x for x in quiz]
-        sol = (torch.tensor(sol) - torch.tensor(quiz)).tolist()
+        # replace the given positions in the label with zero 
+        q_list, s_list = [int(ch) for ch in self.lines[item][0]], [int(ch) for ch in self.lines[item][1]]
+        q_tensor, s_tensor = torch.tensor(q_list), torch.tensor(s_list)-torch.tensor(q_list)
+        # print(f'original quiz: \n{q_tensor.view(9,9)}\noriginal sol: \n{s_tensor.view(9,9)}')
+        q_str, s_str = ''.join([str(ch) for ch in q_tensor.tolist()]), ''.join([str(ch) for ch in s_tensor.tolist()])
+        quiz, sol = self.tokenizer.encode(q_str), self.tokenizer.encode(s_str)
+        quiz = [self.tokenizer.mask_token_id if x == self.tokenizer.unk_token_id else x for x in quiz]
+        sol = [self.tokenizer.pad_token_id if x == self.tokenizer.unk_token_id else x for x in sol]
+        # print(f'encoded quiz: \n{torch.tensor(quiz).view(9,9)}\nencoded sol: \n{torch.tensor(sol).view(9,9)}')
         input_padding = [self.tokenizer.pad_token_id] * (self.max_len - len(quiz)) #[0,0,0,0], total = 85
         label_padding = [IGNORE_INDEX] * (self.max_len - len(sol)) #[-100, -100, -100, -100], total = 85
         quiz.extend(input_padding), sol.extend(label_padding)

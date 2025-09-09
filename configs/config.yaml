@@ -1,18 +1,18 @@
 # arguments
-task_name: countdown  # sudoku
+task_name: sudoku  # countdown
 param_type: fast # mlp, transformer, bert, gpt, fast
-model_arc: gpt #bert
+model_arc: bert #bert
 model_scale: tiny #tiny: 6M, 
 is_ebm: False
 # max_len: 128
 # special_tokens: ['<mask>']
 load_ebm_ckpts: False ###########
 continue_train: False #######for further training with fully masked t2 (inference) after trained on mlm
-cont_epoch: 20
-parallel: True ########currently only supports training with parallel_train.py
-device: cuda #cpu, cuda
+cont_epoch: 0
+parallel: False ########currently only supports training with parallel_train.py
+device: cpu #cpu, cuda
 visualize: False ###########
-project_root: /root/EBM/ire_reasoning
+project_root: /home/yichuan/HKU/EBM/ire_reasoning
 
 
 # 这个参数暂时无用 (全部看config json file, 不管是不是build-from-scratch)
@@ -79,13 +79,13 @@ tasks:
 
 train:
   stage: inference #pretrain (mm_energy), sft (), inference
-  epochs: 1 #600 #same as diffusion-vs-ar ########
+  epochs: 600 #600 #same as diffusion-vs-ar ########
   lr: 1e-3 #3e-4  #有用: init optimizer
   early_stop_threshold: 0.01 #没用?
   contrast: True ##############
-  batch_size:  12 #14 #16 #200 #100 #sudoku must be 1 #pseudolikelihood_batched: at most 16
+  batch_size:  1 #14 #16 #200 #100 #sudoku must be 1 #pseudolikelihood_batched: at most 16
   visualize: True
-  wandb: False ####################### 
+  wandb: True ####################### 
 
 sampling:
   stage: inference #sft(default mask rate is t),inference(fully mask, depend on sampler)

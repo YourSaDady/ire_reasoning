@@ -1372,16 +1372,18 @@ class FastSequentialEBMs():
         print(f'Initializing FastSequentialEBMs is completed!')
     
     def _build_model(self):
-        # self.model = EnergyBERT(
-        #     vocab_size = self.vocab_size,
-        #     max_len = self.max_len,
-        #     hidden_size = self.d_model,
-        #     n_layers = self.n_layers,
-        #     heads = self.heads,
-        # )
-        self.model_config.vocab_size = self.vocab_size
-        self.model_config.n_ctx = self.max_len
-        self.model = EnergyGPT(self.model_config)
+        if self.model_arc == 'gpt':
+            self.model_config.vocab_size = self.vocab_size
+            self.model_config.n_ctx = self.max_len
+            self.model = EnergyGPT(self.model_config)
+        elif self.model_arc == 'bert':
+            self.model = EnergyBERT(
+                vocab_size = self.vocab_size,
+                max_len = self.max_len,
+                hidden_size = self.d_model,
+                n_layers = self.n_layers,
+                heads = self.heads,
+            )
         
         self.model.to(self.device)
     

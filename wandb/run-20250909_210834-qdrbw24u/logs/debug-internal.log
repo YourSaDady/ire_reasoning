@@ -1,0 +1,15 @@
+{"time":"2025-09-09T21:08:34.249251759+08:00","level":"INFO","msg":"stream: starting","core version":"0.19.11","symlink path":"/home/yichuan/HKU/EBM/ire_reasoning/wandb/run-20250909_210834-qdrbw24u/logs/debug-core.log"}
+{"time":"2025-09-09T21:08:34.60361966+08:00","level":"INFO","msg":"created new stream","id":"qdrbw24u"}
+{"time":"2025-09-09T21:08:34.603681581+08:00","level":"INFO","msg":"stream: started","id":"qdrbw24u"}
+{"time":"2025-09-09T21:08:34.603708974+08:00","level":"INFO","msg":"writer: Do: started","stream_id":"qdrbw24u"}
+{"time":"2025-09-09T21:08:34.603718612+08:00","level":"INFO","msg":"handler: started","stream_id":"qdrbw24u"}
+{"time":"2025-09-09T21:08:34.60372383+08:00","level":"INFO","msg":"sender: started","stream_id":"qdrbw24u"}
+{"time":"2025-09-09T21:08:34.989296733+08:00","level":"INFO","msg":"Starting system monitor"}
+{"time":"2025-09-09T21:08:40.552902654+08:00","level":"INFO","msg":"stream: closing","id":"qdrbw24u"}
+{"time":"2025-09-09T21:08:40.552955542+08:00","level":"INFO","msg":"Stopping system monitor"}
+{"time":"2025-09-09T21:08:40.553044657+08:00","level":"INFO","msg":"Stopped system monitor"}
+{"time":"2025-09-09T21:08:41.46676413+08:00","level":"INFO","msg":"fileTransfer: Close: file transfer manager closed"}
+{"time":"2025-09-09T21:08:41.747947501+08:00","level":"INFO","msg":"handler: closed","stream_id":"qdrbw24u"}
+{"time":"2025-09-09T21:08:41.748010497+08:00","level":"INFO","msg":"writer: Close: closed","stream_id":"qdrbw24u"}
+{"time":"2025-09-09T21:08:41.748087992+08:00","level":"INFO","msg":"sender: closed","stream_id":"qdrbw24u"}
+{"time":"2025-09-09T21:08:41.748200232+08:00","level":"INFO","msg":"stream: closed","id":"qdrbw24u"}

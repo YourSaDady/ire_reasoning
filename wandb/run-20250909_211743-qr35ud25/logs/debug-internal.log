@@ -1,0 +1,7 @@
+{"time":"2025-09-09T21:17:43.878422819+08:00","level":"INFO","msg":"stream: starting","core version":"0.19.11","symlink path":"/home/yichuan/HKU/EBM/ire_reasoning/wandb/run-20250909_211743-qr35ud25/logs/debug-core.log"}
+{"time":"2025-09-09T21:17:44.221264063+08:00","level":"INFO","msg":"created new stream","id":"qr35ud25"}
+{"time":"2025-09-09T21:17:44.221401212+08:00","level":"INFO","msg":"stream: started","id":"qr35ud25"}
+{"time":"2025-09-09T21:17:44.221433662+08:00","level":"INFO","msg":"writer: Do: started","stream_id":"qr35ud25"}
+{"time":"2025-09-09T21:17:44.221536754+08:00","level":"INFO","msg":"sender: started","stream_id":"qr35ud25"}
+{"time":"2025-09-09T21:17:44.22147658+08:00","level":"INFO","msg":"handler: started","stream_id":"qr35ud25"}
+{"time":"2025-09-09T21:17:44.589851875+08:00","level":"INFO","msg":"Starting system monitor"}

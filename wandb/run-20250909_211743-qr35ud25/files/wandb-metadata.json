@@ -1,0 +1,31 @@
+{
+  "os": "Linux-5.15.0-153-generic-x86_64-with-glibc2.35",
+  "python": "CPython 3.9.21",
+  "startedAt": "2025-09-09T13:17:43.874416Z",
+  "program": "/home/yichuan/HKU/EBM/ire_reasoning/main.py",
+  "codePath": "main.py",
+  "git": {
+    "remote": "git@github.com:YourSaDady/ire_reasoning.git",
+    "commit": "1bd65aa7a3e17d26d5680388932c3bdd7d68c2d5"
+  },
+  "email": "songyc9@126.com",
+  "root": "/home/yichuan/HKU/EBM/ire_reasoning",
+  "host": "lpk-gpu1",
+  "executable": "/home/yichuan/miniconda3/envs/ebm/bin/python",
+  "codePathLocal": "main.py",
+  "cpu_count": 32,
+  "cpu_count_logical": 64,
+  "disk": {
+    "/": {
+      "total": "104560812032",
+      "used": "75449016320"
+    }
+  },
+  "memory": {
+    "total": "134800048128"
+  },
+  "cpu": {
+    "count": 32,
+    "countLogical": 64
+  }
+}

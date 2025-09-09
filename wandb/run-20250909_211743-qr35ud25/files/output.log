@@ -1,0 +1,45 @@
+EP_train_inference:0:   0%|| 0/100000 [00:09<?, ?it/s]
+avg_loss: 6.952284812927246, avg_ce_loss: 2.6277401447296143, avg_contrast_loss: 4.324544429779053
+devicecpu finished!
+EP_train_validate:0:   0%|| 0/32 [00:04<?, ?it/s]
+Error executing job with overrides: []
+Traceback (most recent call last):
+  File "/home/yichuan/HKU/EBM/ire_reasoning/sequential_ebms.py", line 1424, in energy
+    return self.model.forward(batched_input_ids).squeeze() #Size(batch_size, 1) -> Size(batch_size)
+  File "/home/yichuan/HKU/EBM/ire_reasoning/models/bert.py", line 605, in forward
+    return self.decoder(self.bert(x, None)) #segment_info = None
+  File "/home/yichuan/miniconda3/envs/ebm/lib/python3.9/site-packages/torch/nn/modules/module.py", line 1736, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+  File "/home/yichuan/miniconda3/envs/ebm/lib/python3.9/site-packages/torch/nn/modules/module.py", line 1747, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/home/yichuan/HKU/EBM/ire_reasoning/models/bert.py", line 519, in forward
+    x = encoder.forward(x, mask)
+  File "/home/yichuan/HKU/EBM/ire_reasoning/models/bert.py", line 471, in forward
+    interacted = self.layernorm(interacted + embeddings)
+KeyboardInterrupt
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/home/yichuan/HKU/EBM/ire_reasoning/main.py", line 1170, in main
+    converge, val_acc, val_ce = sebm_trainer.validate(epoch, early_stopper)
+  File "/home/yichuan/HKU/EBM/ire_reasoning/main.py", line 238, in validate
+    partial_pred, sth = self.sebm.sampling_revised( #sth have to store the ce loss of the batch
+  File "/home/yichuan/HKU/EBM/ire_reasoning/sequential_ebms.py", line 1864, in sampling_revised
+    ui_energy = self.energy(flat).view(B,V)
+  File "/home/yichuan/HKU/EBM/ire_reasoning/sequential_ebms.py", line 1426, in energy
+    raise IndexError(f'forward input({batched_input_ids.shape}): {batched_input_ids}')
+IndexError: forward input(torch.Size([448, 92])): tensor([[2, 2, 2,  ..., 0, 0, 0],
+        [2, 2, 2,  ..., 0, 0, 0],
+        [2, 2, 2,  ..., 0, 0, 0],
+        ...,
+        [2, 2, 6,  ..., 0, 0, 0],
+        [2, 2, 6,  ..., 0, 0, 0],
+        [2, 2, 6,  ..., 0, 0, 0]])
+
+Set the environment variable HYDRA_FULL_ERROR=1 for a complete stack trace.
+Error in atexit._run_exitfuncs:
+Traceback (most recent call last):
+  File "/home/yichuan/miniconda3/envs/ebm/lib/python3.9/threading.py", line 1080, in _wait_for_tstate_lock
+    if lock.acquire(block, timeout):
+KeyboardInterrupt

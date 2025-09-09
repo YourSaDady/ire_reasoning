@@ -172,7 +172,7 @@ class SequentialEBMsTrainer:
         self.test_wandb = test_wandb
         self.epochs = epochs
         print(f"Total Parameters: {sum([p.nelement() for p in self.sebm.model.parameters()])}, is_ebm: {self.is_ebm}")
-        self.ckpts_path = f'./ebm_ckpts/{self.sebm.task_name}_{self.sebm.param_type}{self.sebm.model_arc}{self.sebm.model_scale}_earlystop.pth' # _ebm8.9 (sota with sampling_new())
+        self.ckpts_path = f'./ebm_ckpts/{self.sebm.task_name}_{self.sebm.param_type}_{self.sebm.model_arc}_{self.sebm.model_scale}_threshold4.pth' # _ebm8.9 (sota with sampling_new())
         
         if continue_train:
             self.load_model(self.ckpts_path, device)
@@ -946,7 +946,7 @@ class SequentialEBMsTrainer:
                     if self.contrast:
                         #_____contrast loss hyperparams______
                         beta = 1
-                        threshold = 2
+                        threshold = 4
                         #____________________________________
                         contrast_loss = self.sebm.contrast_loss_revised(energy_dist, xu, threshold=threshold, mode='hinge')
                         # contrast_loss = self.sebm.fast_contrast_loss(xo, xu, loss_type='l2', threshold=2)
@@ -1017,7 +1017,7 @@ class SequentialEBMsTrainer:
                 }
                 with open(eval_path, 'a') as statfile:
                     statfile.write(json.dumps(stat)+'\n')
-            # break #################test
+            break #################test
             # if train and (i > 4): ##################
             #     break ##################
         # end of batch iter
