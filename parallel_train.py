@@ -19,7 +19,6 @@ from main import unmasking_schedule, ScheduledOptim, SequentialEBMsTrainer, Earl
 from dataset import load_data
 from utils import convert_time, VisualizeEBMs
 import random as rand
-import wandb
 from time import time
 import json
 import math
@@ -97,9 +96,7 @@ def train(rank, world_size, config):
     setup(rank, world_size)
     print(f'rank: {rank}, pid: {os.getpid()}')
     '''1. Load task datasets'''
-    if config.task_name == 'countdown':
-        max_len = config.tasks[config.task_name].max_len
-    elif config.task_name == 'sudoku':
+    if config.task_name.startswith('cd') or config.task_name == 'sudoku':
         max_len = config.tasks[config.task_name].max_len
     else:
         raise NotImplementedError(f'{config.task_name} is not specified!')
@@ -178,8 +175,9 @@ def train(rank, world_size, config):
     )
     
     if config.train.wandb and sebm_trainer.device == 0:
-        print(f'\n\n\nStart training...')
-        wandb.login()
+        print(f'\n\n\nStart training and initialize wandb...')
+        import wandb
+        # wandb.login()
         run = wandb.init(
             project=f'EBM_train-{task_config.name}_{config.param_type}_rank0',
             config={ # Track hyperparameters and metadata

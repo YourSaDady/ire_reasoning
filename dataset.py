@@ -393,14 +393,14 @@ def load_data(task, stage, max_len, train_batch_size, val_batch_size, contrast=F
             raise NotImplementedError        
         
         return train_loader, test_loader, len(train_data), len(test_data)
-    elif task == 'countdown':
+    elif task.startswith('cd'):
         # 1. load tokenizer
         print(f'pwd: {os.getcwd()}')
         tokenizer = CustomTokenizer.from_pretrained('./models/model_config_tiny/tokenizer_config_cd.json') 
         # 2. laod dataset
         train_pairs, test_pairs = [], []
         for split, pairs in zip(['train', 'test'], [train_pairs, test_pairs]):
-            path = f'../datasets/cd/cd3_{split}.jsonl' #pwd = EBM
+            path = f'../datasets/cd/{task}_{split}.jsonl' #pwd = EBM
             with open(path, 'r') as file:
                 for line in file:
                     entry = json.loads(line.strip())

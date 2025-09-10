@@ -1,7 +1,7 @@
 # arguments
-task_name: sudoku  # countdown
+task_name: cd4  # countdown
 param_type: fast # mlp, transformer, bert, gpt, fast
-model_arc: bert #bert
+model_arc: gpt #bert
 model_scale: tiny #tiny: 6M, 
 is_ebm: False
 # max_len: 128
@@ -9,8 +9,8 @@ is_ebm: False
 load_ebm_ckpts: False ###########
 continue_train: False #######for further training with fully masked t2 (inference) after trained on mlm
 cont_epoch: 0
-parallel: False ########currently only supports training with parallel_train.py
-device: cpu #cpu, cuda
+parallel: True ########currently only supports training with parallel_train.py
+device: cuda #cpu, cuda
 visualize: False ###########
 project_root: /home/yichuan/HKU/EBM/ire_reasoning
 
@@ -27,7 +27,7 @@ models:
     n_layers: 3 #6
     heads: 12 #8
 
-  gpt: #from scratch
+  gpt: #from scratch (no use now, Sep10th)
     # d_model: #?
     max_len: 50 #512
     d_model: 384 #The same as "n_embd" in config.json
@@ -64,11 +64,23 @@ tasks:
   #   val_size: 200
   #   metrics: ['acc']
 
-  countdown:
-    name: countdown #TODO: CD3,4,5
+  cd3:
+    name: cd3 #TODO: 4,5
     metrics: ['acc']
     num_classes: 31 #?
     max_len: 50
+
+  cd4:
+    name: cd4
+    metrics: ['acc']
+    num_classes: 31
+    max_len: 55
+
+  cd5: 
+    name: cd5
+    metrics: ['acc']
+    num_classes: 31
+    max_len: 75
 
   sudoku:
     name: sudoku
@@ -83,9 +95,9 @@ train:
   lr: 1e-3 #3e-4  #有用: init optimizer
   early_stop_threshold: 0.01 #没用?
   contrast: True ##############
-  batch_size:  1 #14 #16 #200 #100 #sudoku must be 1 #pseudolikelihood_batched: at most 16
+  batch_size:  10 #14 #16 #200 #100 #sudoku must be 1 #pseudolikelihood_batched: at most 16
   visualize: True
-  wandb: True ####################### 
+  wandb: False ####################### 
 
 sampling:
   stage: inference #sft(default mask rate is t),inference(fully mask, depend on sampler)

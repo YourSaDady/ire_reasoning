@@ -1,0 +1,13 @@
+EP_train_inference:0:   0%|| 67/25000 [01:11<7:22:28,  1.06s/it]
+avg_loss: 5.036148548126221, avg_ce_loss: 2.6772618293762207, avg_contrast_loss: 2.35888671875
+avg_loss: 5.059912204742432, avg_ce_loss: 2.6889610290527344, avg_contrast_loss: 2.3709511756896973
+avg_loss: 4.956781387329102, avg_ce_loss: 2.6520726680755615, avg_contrast_loss: 2.3047094345092773
+avg_loss: 4.947976589202881, avg_ce_loss: 2.6595096588134766, avg_contrast_loss: 2.2884669303894043
+avg_loss: 4.841313362121582, avg_ce_loss: 2.6318771839141846, avg_contrast_loss: 2.2094364166259766
+avg_loss: 4.755398750305176, avg_ce_loss: 2.532677412033081, avg_contrast_loss: 2.2227210998535156
+avg_loss: 4.7035746574401855, avg_ce_loss: 2.4708430767059326, avg_contrast_loss: 2.232731819152832
+Error in atexit._run_exitfuncs:
+Traceback (most recent call last):
+  File "/home/yichuan/miniconda3/envs/ebm/lib/python3.9/threading.py", line 1080, in _wait_for_tstate_lock
+    if lock.acquire(block, timeout):
+KeyboardInterrupt

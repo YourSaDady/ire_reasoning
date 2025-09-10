@@ -1,0 +1,7 @@
+{"time":"2025-09-10T16:32:10.330866284+08:00","level":"INFO","msg":"stream: starting","core version":"0.19.11","symlink path":"/home/yichuan/HKU/EBM/ire_reasoning/wandb/run-20250910_163210-gu91ycv0/logs/debug-core.log"}
+{"time":"2025-09-10T16:32:10.668822202+08:00","level":"INFO","msg":"created new stream","id":"gu91ycv0"}
+{"time":"2025-09-10T16:32:10.668924124+08:00","level":"INFO","msg":"stream: started","id":"gu91ycv0"}
+{"time":"2025-09-10T16:32:10.668962069+08:00","level":"INFO","msg":"writer: Do: started","stream_id":"gu91ycv0"}
+{"time":"2025-09-10T16:32:10.668978589+08:00","level":"INFO","msg":"sender: started","stream_id":"gu91ycv0"}
+{"time":"2025-09-10T16:32:10.669051042+08:00","level":"INFO","msg":"handler: started","stream_id":"gu91ycv0"}
+{"time":"2025-09-10T16:32:10.980661803+08:00","level":"INFO","msg":"Starting system monitor"}

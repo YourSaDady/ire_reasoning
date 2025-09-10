@@ -20,7 +20,6 @@ from sequential_ebms import BERTSequentialEBMs, GPTSequentialEBMs, FastSequentia
 from dataset import load_data
 from utils import convert_time, VisualizeEBMs
 import random as rand
-import wandb
 from time import time
 import json
 import math
@@ -172,7 +171,7 @@ class SequentialEBMsTrainer:
         self.test_wandb = test_wandb
         self.epochs = epochs
         print(f"Total Parameters: {sum([p.nelement() for p in self.sebm.model.parameters()])}, is_ebm: {self.is_ebm}")
-        self.ckpts_path = f'./ebm_ckpts/{self.sebm.task_name}_{self.sebm.param_type}_{self.sebm.model_arc}_{self.sebm.model_scale}_threshold4.pth' # _ebm8.9 (sota with sampling_new())
+        self.ckpts_path = f'./ebm_ckpts/{self.sebm.task_name}_{self.sebm.param_type}_{self.sebm.model_arc}_{self.sebm.model_scale}_10k.pth' # _ebm8.9 (sota with sampling_new())
         
         if continue_train:
             self.load_model(self.ckpts_path, device)
@@ -353,7 +352,7 @@ class SequentialEBMsTrainer:
         assert torch.count_nonzero(schedule_label) == valid_labels, \
             f'nonzero labels count: schedule={torch.count_nonzero(schedule_label)}, ' \
                 f"valid_labels={valid_labels}, \nlabel: \n{data['label']}, '\
-                    f'\nschedule_label: n\{schedule_label}"
+                    f'\nschedule_label: \n{schedule_label}"
         return scheduled_data, iters_count
       
     def add_schedule_new(self, data, schedule):
@@ -483,7 +482,7 @@ class SequentialEBMsTrainer:
         else:
             data_iter = enumerate(data_loader)
         
-        if self.sebm.task_name == 'countdown':
+        if self.sebm.task_name.startswith('cd'):
             special_tokens = {0,1,2,3,4}
             self.sebm.special_tok_size = len(special_tokens)
         else:
@@ -899,10 +898,7 @@ class SequentialEBMsTrainer:
             max_K = 10
             t_list = unmasking_schedule(max_K+2, 'cosine')[1:-1]
             scheduled_data, K = self.add_schedule_new(data, t_list)
-            # if i == 0:          #######################
-            #     print(f"scheduled_data: \nscheduled_data: \ninput: {scheduled_data['input'][0]}\nlabel: {scheduled_data['label'][0]}\nschedule_label: {scheduled_data['schedule_label'][0]}")
-            # print(f"schedule_label: \n{scheduled_data['schedule_label']}")
-            # raise
+            # print(f"scheduled_data: \ninput: {scheduled_data['input'][0]}\nlabel: {scheduled_data['label'][0]}\nschedule_label: {scheduled_data['schedule_label'][0]}")
             if (not train) and stage == 'inference':
                 partial_pred = scheduled_data['input'].clone()
                 partial_pred[partial_pred == IGNORE_INDEX] = self.sebm.tokenizer.pad_token_id
@@ -911,7 +907,7 @@ class SequentialEBMsTrainer:
             ce_losses, contrast_losses, total_losses = {}, {}, {}
             for k in range(K):
                 # if i < 10:
-                #     print(f'\n___________k={k}___________\n')
+                #     print(f'___________i={i}, k={k}___________')
                 data = self.prepare_partial_data(scheduled_data, k+1) #AR-like, the previously unmasked tokens won't be predicted again
                 data = {k:v.to(self.device) for k,v in data.items()}
                 u = self.sebm.get_2D_indices( #just to remove the zero paddings
@@ -932,7 +928,7 @@ class SequentialEBMsTrainer:
                         # print(f'\nckpts saved')
                         # print(f'\nafter saving, {torch.cuda.memory_summary()}')
                     
-                    torch.autograd.set_detect_anomaly(True)
+                    # torch.autograd.set_detect_anomaly(True) #这里取消注释会卡住。。。
                     assert self.contrast, f'Fast iteration requires enabling contrast loss!'
                     xo, xu = data['input'], data['label']
                     xu[xu == IGNORE_INDEX] = self.sebm.tokenizer.pad_token_id #reset the IGNORE tokens back to PAD
@@ -946,7 +942,7 @@ class SequentialEBMsTrainer:
                     if self.contrast:
                         #_____contrast loss hyperparams______
                         beta = 1
-                        threshold = 4
+                        threshold = 2
                         #____________________________________
                         contrast_loss = self.sebm.contrast_loss_revised(energy_dist, xu, threshold=threshold, mode='hinge')
                         # contrast_loss = self.sebm.fast_contrast_loss(xo, xu, loss_type='l2', threshold=2)
@@ -964,9 +960,11 @@ class SequentialEBMsTrainer:
                         if self.train_wandb: # and self.device == 0 ##############################
                             if self.parallel and self.device != 0:
                                 continue
-                            cal_spent = time() - cal_t
-                            wandb.log({'ce_loss': ce_losses, 'contrast_loss': contrast_losses, \
-                                'loss':total_losses, 'time': cal_spent}, commit=False)
+                            if self.parallel==False and (self.parallel and self.device == 0):
+                                cal_spent = time() - cal_t
+                                import wandb
+                                wandb.log({'ce_loss': ce_losses, 'contrast_loss': contrast_losses, \
+                                    'loss':total_losses, 'time': cal_spent})
                         if (i % 10 == 0):
                             avg_ce_loss = torch.stack(list(ce_losses.values())).mean()
                             avg_contrast_loss = torch.stack(list(contrast_losses.values())).mean()
@@ -1017,8 +1015,10 @@ class SequentialEBMsTrainer:
                 }
                 with open(eval_path, 'a') as statfile:
                     statfile.write(json.dumps(stat)+'\n')
-            break #################test
-            # if train and (i > 4): ##################
+            # break #################test
+            # print(f'\niter i={i} finished')
+            # # raise
+            # if train and (i > 10): ##################
             #     break ##################
         # end of batch iter
         # if train: #save checkpoints
@@ -1059,7 +1059,7 @@ def main(config):
     '''1. Load task datasets'''
     if config.task_name.startswith('binary'):
         max_len = config.tasks[config.task_name].inp_len + config.tasks[config.task_name].out_len #+ 3
-    elif config.task_name == 'countdown' or config.task_name == 'sudoku':
+    elif config.task_name.startswith('cd') or config.task_name == 'sudoku':
         max_len = config.tasks[config.task_name].max_len
     train_loader, test_loader, train_size, test_size, tokenizer = load_data(
         config.task_name, 

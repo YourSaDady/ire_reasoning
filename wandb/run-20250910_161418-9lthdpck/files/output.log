@@ -1,0 +1,75 @@
+EP_train_inference:0:   0%|| 1/62500 [00:41<728:25:07, 41.96s/it]
+___________i=0, k=0___________
+___________i=0, k=1___________
+___________i=0, k=2___________
+___________i=0, k=3___________
+___________i=0, k=4___________
+avg_loss: 5.675982475280762, avg_ce_loss: 3.4393258094787598, avg_contrast_loss: 2.236656427383423
+___________i=1, k=0___________
+___________i=1, k=1___________
+___________i=1, k=2___________
+Error executing job with overrides: []
+Traceback (most recent call last):
+  File "/home/yichuan/HKU/EBM/ire_reasoning/sequential_ebms.py", line 1424, in energy
+    return self.model.forward(batched_input_ids).squeeze() #Size(batch_size, 1) -> Size(batch_size)
+  File "/home/yichuan/HKU/EBM/ire_reasoning/models/gpt.py", line 132, in forward
+    return self.decoder(self.gpt(x).logits)
+  File "/home/yichuan/miniconda3/envs/ebm/lib/python3.9/site-packages/torch/nn/modules/module.py", line 1736, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+  File "/home/yichuan/miniconda3/envs/ebm/lib/python3.9/site-packages/torch/nn/modules/module.py", line 1747, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/home/yichuan/miniconda3/envs/ebm/lib/python3.9/site-packages/transformers/models/gpt2/modeling_gpt2.py", line 1210, in forward
+    transformer_outputs = self.transformer(
+  File "/home/yichuan/miniconda3/envs/ebm/lib/python3.9/site-packages/torch/nn/modules/module.py", line 1736, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+  File "/home/yichuan/miniconda3/envs/ebm/lib/python3.9/site-packages/torch/nn/modules/module.py", line 1747, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/home/yichuan/miniconda3/envs/ebm/lib/python3.9/site-packages/transformers/models/gpt2/modeling_gpt2.py", line 939, in forward
+    outputs = block(
+  File "/home/yichuan/miniconda3/envs/ebm/lib/python3.9/site-packages/torch/nn/modules/module.py", line 1736, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+  File "/home/yichuan/miniconda3/envs/ebm/lib/python3.9/site-packages/torch/nn/modules/module.py", line 1747, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/home/yichuan/miniconda3/envs/ebm/lib/python3.9/site-packages/transformers/utils/deprecation.py", line 172, in wrapped_func
+    return func(*args, **kwargs)
+  File "/home/yichuan/miniconda3/envs/ebm/lib/python3.9/site-packages/transformers/models/gpt2/modeling_gpt2.py", line 403, in forward
+    attn_output, self_attn_weights = self.attn(
+  File "/home/yichuan/miniconda3/envs/ebm/lib/python3.9/site-packages/torch/nn/modules/module.py", line 1736, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+  File "/home/yichuan/miniconda3/envs/ebm/lib/python3.9/site-packages/torch/nn/modules/module.py", line 1747, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/home/yichuan/miniconda3/envs/ebm/lib/python3.9/site-packages/transformers/utils/deprecation.py", line 172, in wrapped_func
+    return func(*args, **kwargs)
+  File "/home/yichuan/miniconda3/envs/ebm/lib/python3.9/site-packages/transformers/models/gpt2/modeling_gpt2.py", line 335, in forward
+    attn_output, attn_weights = attention_interface(
+  File "/home/yichuan/miniconda3/envs/ebm/lib/python3.9/site-packages/transformers/integrations/sdpa_attention.py", line 54, in sdpa_attention_forward
+    attn_output = torch.nn.functional.scaled_dot_product_attention(
+KeyboardInterrupt
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/home/yichuan/HKU/EBM/ire_reasoning/main.py", line 1162, in main
+    sebm_trainer.train(epoch, config.train.stage)
+  File "/home/yichuan/HKU/EBM/ire_reasoning/main.py", line 192, in train
+    self.fast_iteration(epoch, self.train_data, stage, parallel=self.parallel)
+  File "/home/yichuan/HKU/EBM/ire_reasoning/main.py", line 940, in fast_iteration
+    logp_xu, energy_dist = self.sebm.pseudolikelihood_revised(xo, xu) #both of (B,V,U)
+  File "/home/yichuan/HKU/EBM/ire_reasoning/sequential_ebms.py", line 1488, in pseudolikelihood_revised
+    flat_energy = self.energy(flat) #(B*U*V)
+  File "/home/yichuan/HKU/EBM/ire_reasoning/sequential_ebms.py", line 1426, in energy
+    raise IndexError(f'forward input({batched_input_ids.shape}): {batched_input_ids}')
+IndexError: forward input(torch.Size([1240, 50])): tensor([[ 8, 11, 20,  ...,  0,  0,  0],
+        [ 8, 11, 20,  ...,  0,  0,  0],
+        [ 8, 11, 20,  ...,  0,  0,  0],
+        ...,
+        [ 7, 12, 20,  ...,  0,  0,  0],
+        [ 7, 12, 20,  ...,  0,  0,  0],
+        [ 7, 12, 20,  ...,  0,  0,  0]])
+
+Set the environment variable HYDRA_FULL_ERROR=1 for a complete stack trace.
+Error in atexit._run_exitfuncs:
+Traceback (most recent call last):
+  File "/home/yichuan/miniconda3/envs/ebm/lib/python3.9/threading.py", line 1080, in _wait_for_tstate_lock
+    if lock.acquire(block, timeout):
+KeyboardInterrupt

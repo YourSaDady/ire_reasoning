@@ -1,0 +1,5 @@
+EP_train_inference:0:   0%|| 0/2084 [00:03<?, ?it/s]
+avg_loss: 5.001778602600098, avg_ce_loss: 2.653139591217041, avg_contrast_loss: 2.3486390113830566
+device0 finished!
+device0: epoch0 finished, waiting for sync...
+EP_train_validate:0:   0%|| 0/32 [00:00<?, ?it/s]

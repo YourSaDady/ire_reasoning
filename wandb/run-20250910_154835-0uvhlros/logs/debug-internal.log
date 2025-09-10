@@ -1,0 +1,11 @@
+{"time":"2025-09-10T15:48:35.996748815+08:00","level":"INFO","msg":"stream: starting","core version":"0.19.11","symlink path":"/home/yichuan/HKU/EBM/ire_reasoning/wandb/run-20250910_154835-0uvhlros/logs/debug-core.log"}
+{"time":"2025-09-10T15:48:36.426942791+08:00","level":"INFO","msg":"created new stream","id":"0uvhlros"}
+{"time":"2025-09-10T15:48:36.427110559+08:00","level":"INFO","msg":"stream: started","id":"0uvhlros"}
+{"time":"2025-09-10T15:48:36.427136679+08:00","level":"INFO","msg":"writer: Do: started","stream_id":"0uvhlros"}
+{"time":"2025-09-10T15:48:36.427285863+08:00","level":"INFO","msg":"sender: started","stream_id":"0uvhlros"}
+{"time":"2025-09-10T15:48:36.427167345+08:00","level":"INFO","msg":"handler: started","stream_id":"0uvhlros"}
+{"time":"2025-09-10T15:48:36.801956543+08:00","level":"INFO","msg":"Starting system monitor"}
+{"time":"2025-09-10T15:48:38.402975517+08:00","level":"INFO","msg":"stream: closing","id":"0uvhlros"}
+{"time":"2025-09-10T15:48:38.40306585+08:00","level":"INFO","msg":"Stopping system monitor"}
+{"time":"2025-09-10T15:48:38.40312761+08:00","level":"INFO","msg":"Stopped system monitor"}
+{"time":"2025-09-10T15:48:39.701420486+08:00","level":"INFO","msg":"fileTransfer: Close: file transfer manager closed"}

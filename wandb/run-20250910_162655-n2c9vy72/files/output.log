@@ -1,0 +1,28 @@
+EP_train_inference:0:   0%|| 0/15625 [00:00<?, ?it/s]
+___________i=0, k=0___________
+here1
+here2
+here3
+here5
+here6
+___________i=0, k=1___________
+here2
+here3
+here5
+here6
+___________i=0, k=2___________
+here2
+here3
+here5
+here6
+___________i=0, k=3___________
+here2
+here3
+here5
+here6
+___________i=0, k=4___________
+here2
+here3
+here4
+avg_loss: 5.683932781219482, avg_ce_loss: 3.4386990070343018, avg_contrast_loss: 2.2452337741851807
+here5

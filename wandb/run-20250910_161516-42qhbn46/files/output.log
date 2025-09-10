@@ -1,0 +1,104 @@
+EP_train_inference:0:   0%|| 4/62500 [00:04<18:49:00,  1.08s/it]
+___________i=0, k=0___________
+___________i=0, k=1___________
+___________i=0, k=2___________
+___________i=0, k=3___________
+___________i=0, k=4___________
+avg_loss: 5.653314590454102, avg_ce_loss: 3.4220681190490723, avg_contrast_loss: 2.2312469482421875
+___________i=1, k=0___________
+___________i=1, k=1___________
+___________i=1, k=2___________
+___________i=1, k=3___________
+___________i=1, k=4___________
+___________i=2, k=0___________
+___________i=2, k=1___________
+___________i=2, k=2___________
+___________i=2, k=3___________
+___________i=2, k=4___________
+___________i=3, k=0___________
+___________i=3, k=1___________
+___________i=3, k=2___________
+___________i=3, k=3___________
+___________i=3, k=4___________
+___________i=4, k=0___________
+Traceback (most recent call last):
+  File "/home/yichuan/HKU/EBM/ire_reasoning/main.py", line 1233, in <module>
+    main()
+  File "/home/yichuan/miniconda3/envs/ebm/lib/python3.9/site-packages/hydra/main.py", line 94, in decorated_main
+    _run_hydra(
+  File "/home/yichuan/miniconda3/envs/ebm/lib/python3.9/site-packages/hydra/_internal/utils.py", line 394, in _run_hydra
+    _run_app(
+  File "/home/yichuan/miniconda3/envs/ebm/lib/python3.9/site-packages/hydra/_internal/utils.py", line 457, in _run_app
+    run_and_report(
+  File "/home/yichuan/miniconda3/envs/ebm/lib/python3.9/site-packages/hydra/_internal/utils.py", line 220, in run_and_report
+    return func()
+  File "/home/yichuan/miniconda3/envs/ebm/lib/python3.9/site-packages/hydra/_internal/utils.py", line 458, in <lambda>
+    lambda: hydra.run(
+  File "/home/yichuan/miniconda3/envs/ebm/lib/python3.9/site-packages/hydra/_internal/hydra.py", line 119, in run
+    ret = run_job(
+  File "/home/yichuan/miniconda3/envs/ebm/lib/python3.9/site-packages/hydra/core/utils.py", line 186, in run_job
+    ret.return_value = task_function(task_cfg)
+  File "/home/yichuan/HKU/EBM/ire_reasoning/main.py", line 1162, in main
+    sebm_trainer.train(epoch, config.train.stage)
+  File "/home/yichuan/HKU/EBM/ire_reasoning/main.py", line 192, in train
+    self.fast_iteration(epoch, self.train_data, stage, parallel=self.parallel)
+  File "/home/yichuan/HKU/EBM/ire_reasoning/main.py", line 978, in fast_iteration
+    self.optim_schedule.step_and_update_lr()
+  File "/home/yichuan/HKU/EBM/ire_reasoning/main.py", line 77, in step_and_update_lr
+    self._optimizer.step()
+  File "/home/yichuan/miniconda3/envs/ebm/lib/python3.9/site-packages/torch/optim/optimizer.py", line 487, in wrapper
+    out = func(*args, **kwargs)
+  File "/home/yichuan/miniconda3/envs/ebm/lib/python3.9/site-packages/torch/optim/optimizer.py", line 91, in _use_grad
+    ret = func(self, *args, **kwargs)
+  File "/home/yichuan/miniconda3/envs/ebm/lib/python3.9/site-packages/torch/optim/adamw.py", line 220, in step
+    adamw(
+  File "/home/yichuan/miniconda3/envs/ebm/lib/python3.9/site-packages/torch/optim/optimizer.py", line 154, in maybe_fallback
+    return func(*args, **kwargs)
+  File "/home/yichuan/miniconda3/envs/ebm/lib/python3.9/site-packages/torch/optim/adamw.py", line 782, in adamw
+    func(
+  File "/home/yichuan/miniconda3/envs/ebm/lib/python3.9/site-packages/torch/optim/adamw.py", line 606, in _multi_tensor_adamw
+    exp_avg_sq_sqrt = torch._foreach_sqrt(device_exp_avg_sqs)
+KeyboardInterrupt
+Traceback (most recent call last):
+  File "/home/yichuan/HKU/EBM/ire_reasoning/main.py", line 1233, in <module>
+    main()
+  File "/home/yichuan/miniconda3/envs/ebm/lib/python3.9/site-packages/hydra/main.py", line 94, in decorated_main
+    _run_hydra(
+  File "/home/yichuan/miniconda3/envs/ebm/lib/python3.9/site-packages/hydra/_internal/utils.py", line 394, in _run_hydra
+    _run_app(
+  File "/home/yichuan/miniconda3/envs/ebm/lib/python3.9/site-packages/hydra/_internal/utils.py", line 457, in _run_app
+    run_and_report(
+  File "/home/yichuan/miniconda3/envs/ebm/lib/python3.9/site-packages/hydra/_internal/utils.py", line 220, in run_and_report
+    return func()
+  File "/home/yichuan/miniconda3/envs/ebm/lib/python3.9/site-packages/hydra/_internal/utils.py", line 458, in <lambda>
+    lambda: hydra.run(
+  File "/home/yichuan/miniconda3/envs/ebm/lib/python3.9/site-packages/hydra/_internal/hydra.py", line 119, in run
+    ret = run_job(
+  File "/home/yichuan/miniconda3/envs/ebm/lib/python3.9/site-packages/hydra/core/utils.py", line 186, in run_job
+    ret.return_value = task_function(task_cfg)
+  File "/home/yichuan/HKU/EBM/ire_reasoning/main.py", line 1162, in main
+    sebm_trainer.train(epoch, config.train.stage)
+  File "/home/yichuan/HKU/EBM/ire_reasoning/main.py", line 192, in train
+    self.fast_iteration(epoch, self.train_data, stage, parallel=self.parallel)
+  File "/home/yichuan/HKU/EBM/ire_reasoning/main.py", line 978, in fast_iteration
+    self.optim_schedule.step_and_update_lr()
+  File "/home/yichuan/HKU/EBM/ire_reasoning/main.py", line 77, in step_and_update_lr
+    self._optimizer.step()
+  File "/home/yichuan/miniconda3/envs/ebm/lib/python3.9/site-packages/torch/optim/optimizer.py", line 487, in wrapper
+    out = func(*args, **kwargs)
+  File "/home/yichuan/miniconda3/envs/ebm/lib/python3.9/site-packages/torch/optim/optimizer.py", line 91, in _use_grad
+    ret = func(self, *args, **kwargs)
+  File "/home/yichuan/miniconda3/envs/ebm/lib/python3.9/site-packages/torch/optim/adamw.py", line 220, in step
+    adamw(
+  File "/home/yichuan/miniconda3/envs/ebm/lib/python3.9/site-packages/torch/optim/optimizer.py", line 154, in maybe_fallback
+    return func(*args, **kwargs)
+  File "/home/yichuan/miniconda3/envs/ebm/lib/python3.9/site-packages/torch/optim/adamw.py", line 782, in adamw
+    func(
+  File "/home/yichuan/miniconda3/envs/ebm/lib/python3.9/site-packages/torch/optim/adamw.py", line 606, in _multi_tensor_adamw
+    exp_avg_sq_sqrt = torch._foreach_sqrt(device_exp_avg_sqs)
+KeyboardInterrupt
+Error in atexit._run_exitfuncs:
+Traceback (most recent call last):
+  File "/home/yichuan/miniconda3/envs/ebm/lib/python3.9/threading.py", line 1080, in _wait_for_tstate_lock
+    if lock.acquire(block, timeout):
+KeyboardInterrupt

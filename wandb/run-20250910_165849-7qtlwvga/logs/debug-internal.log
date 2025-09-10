@@ -1,0 +1,7 @@
+{"time":"2025-09-10T16:58:49.854603345+08:00","level":"INFO","msg":"stream: starting","core version":"0.19.11","symlink path":"/home/yichuan/HKU/EBM/ire_reasoning/wandb/run-20250910_165849-7qtlwvga/logs/debug-core.log"}
+{"time":"2025-09-10T16:58:50.200486895+08:00","level":"INFO","msg":"created new stream","id":"7qtlwvga"}
+{"time":"2025-09-10T16:58:50.200593744+08:00","level":"INFO","msg":"stream: started","id":"7qtlwvga"}
+{"time":"2025-09-10T16:58:50.200634986+08:00","level":"INFO","msg":"sender: started","stream_id":"7qtlwvga"}
+{"time":"2025-09-10T16:58:50.200674234+08:00","level":"INFO","msg":"writer: Do: started","stream_id":"7qtlwvga"}
+{"time":"2025-09-10T16:58:50.200764175+08:00","level":"INFO","msg":"handler: started","stream_id":"7qtlwvga"}
+{"time":"2025-09-10T16:58:50.55771039+08:00","level":"INFO","msg":"Starting system monitor"}

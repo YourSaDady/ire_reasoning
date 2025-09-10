@@ -1,0 +1,7 @@
+{"time":"2025-09-10T16:09:00.758488207+08:00","level":"INFO","msg":"stream: starting","core version":"0.19.11","symlink path":"/home/yichuan/HKU/EBM/ire_reasoning/wandb/run-20250910_160900-bediwpwp/logs/debug-core.log"}
+{"time":"2025-09-10T16:09:01.097443147+08:00","level":"INFO","msg":"created new stream","id":"bediwpwp"}
+{"time":"2025-09-10T16:09:01.097543677+08:00","level":"INFO","msg":"stream: started","id":"bediwpwp"}
+{"time":"2025-09-10T16:09:01.097583496+08:00","level":"INFO","msg":"sender: started","stream_id":"bediwpwp"}
+{"time":"2025-09-10T16:09:01.097659813+08:00","level":"INFO","msg":"handler: started","stream_id":"bediwpwp"}
+{"time":"2025-09-10T16:09:01.097588588+08:00","level":"INFO","msg":"writer: Do: started","stream_id":"bediwpwp"}
+{"time":"2025-09-10T16:09:01.58526852+08:00","level":"INFO","msg":"Starting system monitor"}
