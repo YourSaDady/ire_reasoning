@@ -965,9 +965,9 @@ class SequentialEBMsTrainer:
                                 cal_spent = time() - cal_t
                                 log = {
                                     'i': i,
-                                    'ce_losses': ce_losses,
-                                    'contrast_losses': contrast_losses,
-                                    'total_losses': total_losses,
+                                    'ce_losses': {k: v.detach().cpu().item() for k, v in ce_losses.items()},
+                                    'contrast_losses': {k: v.detach().cpu().item() for k, v in contrast_losses.items()},
+                                    'total_losses': {k: v.detach().cpu().item() for k, v in total_losses.items()},
                                     'cal_spent': cal_spent,
                                 }
                                 with open(f'{self.local_log_prefix}_loss.jsonl', 'a', encoding='utf-8') as logfile:

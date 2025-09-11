@@ -208,8 +208,8 @@ def train(rank, world_size, config):
         if config.train.local_log and sebm_trainer.device == 0:
             # print(f'epoch{epoch}: val_ce: {val_ce}, val_acc: {val_acc}')
             val_log = {'epoch': epoch, 'val_ce': val_ce, 'val_acc': val_acc}
-            with open(f'{self.local_log_prefix}_val.jsonl', 'a', encoding='utf-8') as logfile:
-                logfile.write(json.dumps(log) + '\n')
+            with open(f'{sebm_trainer.local_log_prefix}_val.jsonl', 'a', encoding='utf-8') as logfile:
+                logfile.write(json.dumps(val_log) + '\n')
         if converge or (epoch == sebm_trainer.epochs-1):
             print(f'\n\n你converged!!\ndevice: {sebm_trainer.device}\nepoch: {epoch}\nval_acc: {val_acc}\nval_ce: {val_ce}\n\n')
             break

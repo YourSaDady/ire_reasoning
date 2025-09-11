@@ -1,7 +1,7 @@
 # arguments
 task_name: sudoku # countdown
 param_type: fast # mlp, transformer, bert, gpt, fast
-model_arc: bert #bert
+model_arc: gpt #bert
 model_scale: tiny #tiny: 6M, 
 is_ebm: False
 # max_len: 128
@@ -12,7 +12,7 @@ cont_epoch: 0
 parallel: False ########currently only supports training with parallel_train.py
 device: cuda #cpu, cuda
 visualize: False ###########
-project_root: /home/yichuan/HKU/EBM/ire_reasoning
+project_root: /root/EBM/ire_reasoning
 
 
 # 这个参数暂时无用 (全部看config json file, 不管是不是build-from-scratch)
@@ -29,7 +29,7 @@ models:
 
   gpt: #from scratch (no use now, Sep10th)
     # d_model: #?
-    max_len: 50 #512
+    # max_len: 50 #512
     d_model: 384 #The same as "n_embd" in config.json
     n_layers: 3
     heads: 12
@@ -102,7 +102,7 @@ train:
 sampling:
   stage: inference #sft(default mask rate is t),inference(fully mask, depend on sampler)
   epochs: 1
-  batch_size: 32 #32
+  batch_size: 4 #32
   times: 4 #4: 93.7
   # steps: 1 #?
   sampler: gibbs #argmin_energy(traditional loss), gibbs(ebm method)
