@@ -51,8 +51,8 @@ class ParallelSequentialEBMsTrainer(SequentialEBMsTrainer):
         # betas=(0.9, 0.999),
         # warmup_steps=10000,
         # log_freq=10,
-        train_wandb=True,
-        test_wandb=False,
+        log_train=True,
+        log_test=False,
         train_size=-1,
         test_size=-1,
         sampler='gibbs',
@@ -69,8 +69,8 @@ class ParallelSequentialEBMsTrainer(SequentialEBMsTrainer):
             test_dataloader, 
             lr,
             sampler=sampler,
-            train_wandb=train_wandb,
-            test_wandb=test_wandb,
+            log_train=log_train,
+            log_test=log_test,
             train_size=train_size,
             test_size=test_size,
             is_ebm=is_ebm,
@@ -163,9 +163,9 @@ def train(rank, world_size, config):
         lr=config.train.lr,
         train_size=train_size, #the total number of trai samples, not batch size
         test_size=test_size, #similar
-        train_wandb=config.train.wandb,
+        log_train=config.train.local_log,
         sampler=config.sampling.sampler,
-        test_wandb=config.sampling.wandb,
+        log_test=config.sampling.local_log,
         is_ebm=config.is_ebm,
         contrast=config.train.contrast,
         sampling_times=config.sampling.times,
@@ -174,17 +174,7 @@ def train(rank, world_size, config):
         continue_train=config.continue_train,
     )
     
-    if config.train.wandb and sebm_trainer.device == 0:
-        print(f'\n\n\nStart training and initialize wandb...')
-        import wandb
-        # wandb.login()
-        run = wandb.init(
-            project=f'EBM_train-{task_config.name}_{config.param_type}_rank0',
-            config={ # Track hyperparameters and metadata
-                "learning_rate": config.train.lr,
-                "epochs": config.train.epochs,
-            },
-        )
+    print(f'\n\n\nStart training...')
         
     '''0. Set the early_stopper'''
     early_stopper = EarlyStopper(patience=25, min_delta=5e-4, ema_beta=0.9, mode='min')
@@ -215,9 +205,11 @@ def train(rank, world_size, config):
         #     torch.save(sebm_trainer.sebm.model.state_dict(), sebm_trainer.ckpts_path)
         #     print(f'\n\nval_acc: {val_acc} is over 98%, saved to {sebm_trainer.ckpts_path}\n\n')
         #     break
-        if config.train.wandb and sebm_trainer.device == 0:
+        if config.train.local_log and sebm_trainer.device == 0:
             # print(f'epoch{epoch}: val_ce: {val_ce}, val_acc: {val_acc}')
-            wandb.log({'val_ce': val_ce, 'val_acc': val_acc})
+            val_log = {'epoch': epoch, 'val_ce': val_ce, 'val_acc': val_acc}
+            with open(f'{sebm_trainer.local_log_prefix}_val.jsonl', 'a', encoding='utf-8') as logfile:
+                logfile.write(json.dumps(val_log) + '\n')
         if converge or (epoch == sebm_trainer.epochs-1):
             print(f'\n\n你converged!!\ndevice: {sebm_trainer.device}\nepoch: {epoch}\nval_acc: {val_acc}\nval_ce: {val_ce}\n\n')
             break

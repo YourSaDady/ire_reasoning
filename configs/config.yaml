@@ -1,18 +1,19 @@
 # arguments
-task_name: cd4  # countdown
+task_name: sudoku # countdown
 param_type: fast # mlp, transformer, bert, gpt, fast
-model_arc: gpt #bert
+model_arc: bert #bert
 model_scale: tiny #tiny: 6M, 
 is_ebm: False
+max_k: 10 
 # max_len: 128
 # special_tokens: ['<mask>']
 load_ebm_ckpts: False ###########
 continue_train: False #######for further training with fully masked t2 (inference) after trained on mlm
 cont_epoch: 0
-parallel: True ########currently only supports training with parallel_train.py
+parallel: False ########currently only supports training with parallel_train.py
 device: cuda #cpu, cuda
 visualize: False ###########
-project_root: /home/yichuan/HKU/EBM/ire_reasoning
+project_root: /home/sasa/LEARN/researches/Harvard/EBM/ire_reasoning
 
 
 # 这个参数暂时无用 (全部看config json file, 不管是不是build-from-scratch)
@@ -89,15 +90,16 @@ tasks:
     max_len: 92 #9x9 + 9 padding positions for batchalized unmasking schedule
 
 
+
 train:
   stage: inference #pretrain (mm_energy), sft (), inference
   epochs: 600 #600 #same as diffusion-vs-ar ########
   lr: 1e-3 #3e-4  #有用: init optimizer
   early_stop_threshold: 0.01 #没用?
   contrast: True ##############
-  batch_size:  10 #14 #16 #200 #100 #sudoku must be 1 #pseudolikelihood_batched: at most 16
+  batch_size:  2 #14 #16 #200 #100 #sudoku must be 1 #pseudolikelihood_batched: at most 16
   visualize: True
-  wandb: False ####################### 
+  local_log: True ####################### 
 
 sampling:
   stage: inference #sft(default mask rate is t),inference(fully mask, depend on sampler)
@@ -106,7 +108,7 @@ sampling:
   times: 4 #4: 93.7
   # steps: 1 #?
   sampler: gibbs #argmin_energy(traditional loss), gibbs(ebm method)
-  wandb: False
+  local_log: False
   # temperature: 1.0cd
 
 # visualize:

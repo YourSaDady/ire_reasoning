@@ -29,5 +29,5 @@
         "i",
         "j"
     ],
-    "model_max_length": 512
+    "model_max_length": 75
 }
