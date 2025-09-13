@@ -41,6 +41,7 @@ from models.gpt import EnergyGPT
 inf = 1000000
 IGNORE_INDEX = -100
 
+
 def swish(x): #当做一种mlp的activation就好：在linear与ReLU之间可调。beta=1的时候(i.e. this definition)叫SiLU (Sigmoid Linear Unit)
     return x * torch.sigmoid(x)
 
@@ -1399,7 +1400,7 @@ class FastSequentialEBMs():
         '''
         row_size, col_size = array.shape
         if type == 'remove_pad':
-            coords = torch.nonzero(array != val, as_tuple=False)
+            coords = torch.nonzero((array != val), as_tuple=False)
             n = torch.count_nonzero(array[0] != val) #number of non-val elements per sample
         elif type == 'prev_unmask':
             coords = torch.nonzero(array < val, as_tuple=False)
@@ -1439,13 +1440,12 @@ class FastSequentialEBMs():
         # 1. Get all the sizes needed
         # if self.device == 0: ####test
         #     print(f'at the start of pseudolikelihood calculation, \n{torch.cuda.memory_summary()}')
-        u = self.get_2D_indices(
+        u = self.get_2D_indices( #这样牺牲品IGNORE在这一步并不会被筛掉
             array=xu,
             val=self.tokenizer.pad_token_id,
             type='remove_pad',
         )
         xu_ = xu.clone()
-        xu_[xu_ == self.tokenizer.unk_token_id] = self.tokenizer.pad_token_id
         B, full_len = xo.shape
         device = self.device
         U, V = u.size(1), self.vocab_size
@@ -1476,23 +1476,25 @@ class FastSequentialEBMs():
         idx_u = u.unsqueeze(2).expand(B,U,V).unsqueeze(-1) #B,U,V,1
         val_v = torch.arange(V, device=device).view(1,1,V,1).expand(B,U,V,1) #B,U,V,1
         x_base = x_base.scatter(dim=-1, index=idx_u, src=val_v.long())
-        # if U == 2:
-        #     print(f'x_base with varied v ({x_base.shape}): \n{x_base}')
-        # 4. Flatten the x_base and compute the energies in a single forward (might result in OOM!)
-        flat = x_base.reshape(-1, full_len) #(B*U*V,full_len)
-        # if U == 2:
-        #     print(f'after falttened for energy() to take in, flat({flat.shape}): \n{flat}')
-        # if self.device == 0: ####test
-        #     print(f'before energy calculation, \n{torch.cuda.memory_summary()}')
-        # if U == 2:
-        flat_energy = self.energy(flat) #(B*U*V)
-        energy_dist = flat_energy.view(B,U,V) #B,U,V
-        # if U == 2:
-        #     print(f'the final energy_dist({energy_dist.shape}): \n{energy_dist}')
+        '''Method1: Not filter out the padding (IGNORE) tokens to allow batchalized operation'''
+        # # 4. Flatten the x_base and compute the energies in a single forward (might result in OOM!)
+        # flat = x_base.reshape(-1, full_len) #(B*U*V,full_len)
+        # flat[flat == IGNORE_INDEX] = self.tokenizer.pad_token_id
+        # flat_energy = self.energy(flat) #(B*U*V)
+        # energy_dist = flat_energy.view(B,U,V) #B,U,V
+        
+        '''Method2: Allocate high energy to invalid padding positions'''
+        valid_mask = (xu.gather(dim=1, index=u) != IGNORE_INDEX) #(B,U), where n_valid_pos are True
+        valid_mask_expanded = valid_mask.unsqueeze(-1).unsqueeze(-1).expand(B,U,V,full_len) #(B,U,V,full_len)
+        valid = x_base[valid_mask_expanded].reshape(-1, full_len) #(n_valid_pos*V, full_len)
+        valid_energy = self.energy(valid).view(-1, V) # (n_valid_pos,V)
+        energy_dist = inf * torch.zeros(B,U,V, dtype=valid_energy.dtype, \
+            device=valid_energy.device)
+        idx = valid_mask.nonzero(as_tuple=False) #list of linear positions, of size(B*U)
+        energy_dist[idx[:,0], idx[:,1]] = valid_energy
+        
         # 5. Gibbs distribution
         log_gibbs_dist = self.log_gibbs_dist(energy_dist)
-        # if U == 2:
-        #     print(f'the logp_xu before permuting ({pseudolikelihood.shape}): \n{pseudolikelihood}')
         
         return log_gibbs_dist.permute(0,2,1).contiguous(), energy_dist.permute(0,2,1).contiguous()
             
@@ -1660,44 +1662,10 @@ class FastSequentialEBMs():
         # print(f'\nnoise_mask: \n{noise_mask}, \nu_val: \n{u_val}, \nneg_u_val: \n{neg_u_val}')
         return neg_u_val.to(device)
     
-    def contrast_loss_old(self, energy_dist, xu, loss_type='l2', threshold=2):
-        '''
-        Revised version of fast_contrast_loss().
-        inputs:
-            - energy_dist: (B,V,U), the energy landscape spanned by V and U, an intermediate result from pseudolikelihood()
-            - xu: (B, full_len), the zero-padded label for specific k
-        returns:
-            - contrast_loss: Size(1), scalar L2 contrast
-        '''
-        B, V, U = energy_dist.size()
-        u = self.get_2D_indices(
-            array=xu,
-            val=self.tokenizer.pad_token_id,
-            type='remove_pad'
-        ) #(B,U)
-        assert u.size(0)==B and u.size(1)==U, f'u.shape: {u.shape}, B: {B}, V: {V}, U: {U}'
-        # 1. get the (B,U) postive token values at the current step k
-        pos_u_val = xu.clone().gather(dim=1, index=u) #(B,U)
-        # print(f'pos_u_val({pos_u_val.shape}): {pos_u_val}')
-        # 2. get the corresponding corrupted negative token values of (B,U)
-        neg_u_val = self.make_negative(pos_u_val, energy_dist)
-        # 3. index the calculated energy landcape with positive and negative token value
-        pos_energy = energy_dist.gather(dim=1, index=pos_u_val.unsqueeze(1)).squeeze(1).sum(dim=1) #(B,)
-        neg_energy = energy_dist.gather(dim=1, index=neg_u_val.unsqueeze(1)).squeeze(1).sum(dim=1)
-        # 4. calculate the L2 contrast loss
-        if loss_type == 'l2':
-            contrast_criterion = nn.MSELoss(reduction='mean')
-            l2 = contrast_criterion(pos_energy, neg_energy)
-            contrast_loss = torch.pow(torch.clamp(threshold - l2, min=0.0), 2)
-        else:
-            raise NotImplementedError
-        
-        return contrast_loss.squeeze()
-
     def contrast_loss_revised(self, energy_dist, xu, threshold=2.0, mode='hinge'):
         """
         energy_dist: (B, V, U) energies
-        xu: (B, full_len), zero-padded
+        xu: (B, full_len), zero-padded, unmasked paddings are -100
         Returns scalar tensor.
         """
         B, V, U = energy_dist.shape
@@ -1706,6 +1674,8 @@ class FastSequentialEBMs():
         assert u.size(0) == B and u.size(1) == U
         # Gold token ids at those positions: (B, U)
         pos_ids = xu.gather(dim=1, index=u)
+        pos_ids[pos_ids == IGNORE_INDEX] = self.tokenizer.pad_token_id
+        valid_mask = (xu.gather(dim=1, index=u) != IGNORE_INDEX) #(B,U)
         # Positive energies per position: (B, U)
         pos_E = energy_dist.gather(dim=1, index=pos_ids.unsqueeze(1)).squeeze(1)
         # Hard negative per position = best competitor under current model.
@@ -1726,7 +1696,7 @@ class FastSequentialEBMs():
             per_pos = F.softplus(pos_E - neg_E)
         else:
             raise ValueError("mode must be 'hinge' or 'softplus'.")
-        return per_pos.mean()
+        return per_pos[valid_mask].mean()
     
     # a InfoNCE-style conrtast loss
     def contrast_loss_infonce(self, energy_dist, xu, k=5, temperature=1.0):

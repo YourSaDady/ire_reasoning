@@ -1,28 +1,23 @@
 # arguments
-task_name: sudoku # countdown
+task_name: cd3 # countdown
 param_type: fast # mlp, transformer, bert, gpt, fast
-model_arc: bert #bert
+model_arc: gpt #bert
 model_scale: tiny #tiny: 6M, 
 is_ebm: False
 max_k: 10 
 # max_len: 128
 # special_tokens: ['<mask>']
-load_ebm_ckpts: False ###########
+load_ebm_ckpts: True ###########
 continue_train: False #######for further training with fully masked t2 (inference) after trained on mlm
 cont_epoch: 0
 parallel: False ########currently only supports training with parallel_train.py
 device: cuda #cpu, cuda
 visualize: False ###########
-project_root: /home/sasa/LEARN/researches/Harvard/EBM/ire_reasoning
+project_root: /home/yichuan/HKU/EBM/ire_reasoning
 
 
 # 这个参数暂时无用 (全部看config json file, 不管是不是build-from-scratch)
 models:
-  llama3.1-8b-instruct:
-    # regular tokens: [0-127999]
-    # special indices: [128000, 128009]
-    # special_tokens_map: {'bos_token': '<|begin_of_text|>', 'eos_token': '<|eot_id|>'}
-    name: meta-llama/Llama-3.1-8B-Instruct
   bert:
     d_model: 384 #128 # 32
     n_layers: 3 #6
@@ -38,56 +33,33 @@ models:
 
 #all tasks
 tasks:
-  # binary-addition:
-  #   name: binary-addition
-  #   inp_len: 18
-  #   out_len: 9 #k
-  #   num_classes: 3 #MASK token + vocabulary(size=2)  #vocab_size = binary + 4 special tokens for BERT
-  #   train_size: 1800
-  #   val_size: 200
-  #   metrics: ['acc']
-
-  # binary-inversion:
-  #   name: binary-inversion
-  #   inp_len: 12
-  #   out_len: 10 #k
-  #   num_classes: 2 #d #binary (exclude special tokens, eg. <mask>)
-  #   train_size: 1800
-  #   val_size: 200
-  #   metrics: ['acc']
-
-  # binary-subtraction:
-  #   name: binary-subtraction
-  #   inp_len: 12
-  #   out_len: 10 #k
-  #   num_classes: 2 #d #binary (exclude special tokens, eg. <mask>)
-  #   train_size: 1800
-  #   val_size: 200
-  #   metrics: ['acc']
-
   cd3:
     name: cd3 #TODO: 4,5
     metrics: ['acc']
     num_classes: 31 #?
     max_len: 50
+    warmup_steps: 10000
 
   cd4:
     name: cd4
     metrics: ['acc']
     num_classes: 31
     max_len: 55
+    warmup_steps: 10000
 
   cd5: 
     name: cd5
     metrics: ['acc']
     num_classes: 31
     max_len: 75
+    warmup_steps: 10000
 
   sudoku:
     name: sudoku
     metrics: ['acc']
     num_classes: 14 #1~9 + 5 special_toks
     max_len: 92 #9x9 + 9 padding positions for batchalized unmasking schedule
+    warmup_steps: 10000
 
 
 
@@ -96,8 +68,8 @@ train:
   epochs: 600 #600 #same as diffusion-vs-ar ########
   lr: 1e-3 #3e-4  #有用: init optimizer
   early_stop_threshold: 0.01 #没用?
-  contrast: True ##############
-  batch_size:  2 #14 #16 #200 #100 #sudoku must be 1 #pseudolikelihood_batched: at most 16
+  contrast: False ##############
+  batch_size:  1 #14 #16 #200 #100 #sudoku must be 1 #pseudolikelihood_batched: at most 16
   visualize: True
   local_log: True ####################### 
 

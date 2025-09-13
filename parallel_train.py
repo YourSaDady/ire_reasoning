@@ -62,6 +62,7 @@ class ParallelSequentialEBMsTrainer(SequentialEBMsTrainer):
         device=None,
         epochs=1,
         continue_train=False,
+        warmup_steps=10000,
         
     ):
         super().__init__(sebm, 
@@ -80,6 +81,7 @@ class ParallelSequentialEBMsTrainer(SequentialEBMsTrainer):
             parallel=True,
             epochs=epochs,
             continue_train=continue_train,
+            warmup_steps=warmup_steps,
         )
         
         # Wrap the model with DistributedDataParallel
@@ -172,6 +174,7 @@ def train(rank, world_size, config):
         device=rank,
         epochs=config.train.epochs,
         continue_train=config.continue_train,
+        warmup_steps=config.tasks[config.task_name].warmup_steps,
     )
     
     print(f'\n\n\nStart training...')

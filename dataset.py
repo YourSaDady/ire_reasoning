@@ -70,7 +70,7 @@ class SudokuDataset(Dataset): #TODO
         q_str, s_str = ''.join([str(ch) for ch in q_tensor.tolist()]), ''.join([str(ch) for ch in s_tensor.tolist()])
         quiz, sol = self.tokenizer.encode(q_str), self.tokenizer.encode(s_str)
         quiz = [self.tokenizer.mask_token_id if x == self.tokenizer.unk_token_id else x for x in quiz]
-        sol = [self.tokenizer.pad_token_id if x == self.tokenizer.unk_token_id else x for x in sol]
+        sol = [self.tokenizer.mask_token_id if x == self.tokenizer.unk_token_id else x for x in sol]
         # print(f'encoded quiz: \n{torch.tensor(quiz).view(9,9)}\nencoded sol: \n{torch.tensor(sol).view(9,9)}')
         input_padding = [self.tokenizer.pad_token_id] * (self.max_len - len(quiz)) #[0,0,0,0], total = 85
         label_padding = [IGNORE_INDEX] * (self.max_len - len(sol)) #[-100, -100, -100, -100], total = 85
