@@ -15,7 +15,7 @@ from transformers import AutoConfig
 # print(f'The current working directory: {os.getcwd()}')
 import hydra
 from sequential_ebms import BERTSequentialEBMs, GPTSequentialEBMs, FastSequentialEBMs
-from main import unmasking_schedule, ScheduledOptim, SequentialEBMsTrainer, EarlyStopper
+from main import SequentialEBMsTrainer, EarlyStopper
 from dataset import load_data
 from utils import convert_time, VisualizeEBMs
 import random as rand
@@ -59,6 +59,7 @@ class ParallelSequentialEBMsTrainer(SequentialEBMsTrainer):
         sampling_times=10,
         is_ebm=True,
         contrast=False,
+        steps=10,
         device=None,
         epochs=1,
         continue_train=False,
@@ -76,6 +77,7 @@ class ParallelSequentialEBMsTrainer(SequentialEBMsTrainer):
             test_size=test_size,
             is_ebm=is_ebm,
             contrast=contrast,
+            steps=steps,
             sampling_times=sampling_times,
             device=device,
             parallel=True,
@@ -170,6 +172,7 @@ def train(rank, world_size, config):
         log_test=config.sampling.local_log,
         is_ebm=config.is_ebm,
         contrast=config.train.contrast,
+        steps=config.max_k,
         sampling_times=config.sampling.times,
         device=rank,
         epochs=config.train.epochs,

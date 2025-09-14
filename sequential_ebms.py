@@ -1485,9 +1485,17 @@ class FastSequentialEBMs():
         
         '''Method2: Allocate high energy to invalid padding positions'''
         valid_mask = (xu.gather(dim=1, index=u) != IGNORE_INDEX) #(B,U), where n_valid_pos are True
+        all_false = ~valid_mask.any()
+        if all_false: #all the unmasking positions are paddings, skip
+            return None, None
         valid_mask_expanded = valid_mask.unsqueeze(-1).unsqueeze(-1).expand(B,U,V,full_len) #(B,U,V,full_len)
         valid = x_base[valid_mask_expanded].reshape(-1, full_len) #(n_valid_pos*V, full_len)
-        valid_energy = self.energy(valid).view(-1, V) # (n_valid_pos,V)
+        try:
+            valid_energy = self.energy(valid).view(-1, V) # (n_valid_pos,V)
+        except:
+            print(f'xu({xu.shape}): \n{xu}')
+            print(f'valid_mask: \n{valid_mask}')
+            raise
         energy_dist = inf * torch.zeros(B,U,V, dtype=valid_energy.dtype, \
             device=valid_energy.device)
         idx = valid_mask.nonzero(as_tuple=False) #list of linear positions, of size(B*U)
@@ -1861,7 +1869,10 @@ class FastSequentialEBMs():
                 # raise######test
             # end of time t iter
             if get_logits:
-                pseudo_xu_logits = torch.cat(pseudo_xu_logits, dim=1).permute(0,2,1).contiguous() #(B,V,U)
+                try:
+                    pseudo_xu_logits = torch.cat(pseudo_xu_logits, dim=1).permute(0,2,1).contiguous() #(B,V,U)
+                except:
+                    print(f'Your pseudo-logits seems to be empty: \n{pseudo_xu_logits}')
                 assert pseudo_xu_logits.size() == (B,V,U), f'pseudo_xu_logits.size: {pseudo_xu_logits.size}'
                 stat = {'pseudo_xu_logits': pseudo_xu_logits}
                 

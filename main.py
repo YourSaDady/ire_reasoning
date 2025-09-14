@@ -51,13 +51,15 @@ def test(model, test_data):
         output_dict = model.generate(x, k)
         print(f'\n___________\n{k}-th output_dict: \n{output_dict}\n__________\n')
         
-def unmasking_schedule(k, scheduler='cosine'):
+def unmasking_schedule(k, scheduler='icos'):
     if scheduler == 'cosine':
         return 0.5 * (1 + np.cos(np.linspace(0, np.pi, k)))
     elif scheduler == 'linear':
         return np.linspace(1, 0, k)
     elif scheduler == 'quadratic':
         return np.linspace(1, 0, k) ** 2
+    elif scheduler == 'icos':
+        return 0.5 * (1 - np.cos(np.linspace(0, np.pi, k)))
     else:
         raise NotImplementedError
 
@@ -144,6 +146,7 @@ class SequentialEBMsTrainer:
         log_test=False,
         is_ebm=True,
         contrast=False,
+        steps=10,
         device='cpu', ########debugging
         parallel=False,
         epochs=-1,
@@ -158,6 +161,8 @@ class SequentialEBMsTrainer:
         self.test_data = test_dataloader
         self.train_size=train_size
         self.test_size=test_size
+        self.scheduler = 'icos'
+        self.K = steps
         # Schedule the optimizer (as stated in paper)
         self.optim = optim.AdamW(self.sebm.model.parameters(), lr=lr, betas=betas, weight_decay=weight_decay)
         self.optim_schedule = ScheduledOptim(
@@ -197,13 +202,13 @@ class SequentialEBMsTrainer:
     def test(self, epoch, stage): #暂时无用
         self.iteration(epoch, self.test_data, stage, train=False)
         
-    def validate(self, epoch, early_stopper):
+    def validate(self, epoch, early_stopper): #TODO: sudoku还有问题mmd
         '''validate on the test set'''
         self.sebm.model.eval()
         val_loss = 0.0
         total_correct, total_samples = 0, 0
         with torch.no_grad():
-            t_list = unmasking_schedule(10+2, 'cosine')[1:-1]
+            # t_list = unmasking_schedule(10+2, 'icos')[1:-1]
             if self.sebm.param_type == 'fast':
                 if (not self.parallel) or self.device == 0:
                     data_iter = data_iter = tqdm(
@@ -220,18 +225,23 @@ class SequentialEBMsTrainer:
             self.sebm.special_tok_size = len(special_tokens)
             
             for i, data in data_iter:
-                B = data['label'].size(0)
-                scheduled_data, K = self.add_schedule_new(data, t_list)
+                B, K = data['label'].size(0), self.K
+                # scheduled_data, K = self.add_schedule_new(data, t_list)
+                scheduled_data = self.add_schedule_batch(data, k=K, scheduler='icos')
                 partial_pred = scheduled_data['input'].clone()
                 partial_pred[partial_pred == IGNORE_INDEX] = self.sebm.tokenizer.pad_token_id
+                secondlast_xu, secondlast_pseudo_xu_logits = None, None
                 for k in range(K):
                     data = self.prepare_partial_data(scheduled_data, k+1)
                     data = {k:v.to(self.device) for k,v in data.items()}
-                    u = self.sebm.get_2D_indices(
-                        array=data['label'],
-                        val=self.sebm.tokenizer.pad_token_id,
-                        type='remove_pad',
-                    )
+                    try:
+                        u = self.sebm.get_2D_indices(
+                            array=data['label'],
+                            val=self.sebm.tokenizer.pad_token_id,
+                            type='remove_pad',
+                        )
+                    except:
+                        print(f"data['label]: \n{data['label']}, \nscheduled_data['label]: \n{scheduled_data['label']}")
                     if k == K-1:
                         get_logits=True
                     else:
@@ -279,7 +289,7 @@ class SequentialEBMsTrainer:
             else:
                 return False, final_acc, val_ce
     
-    def evaluate(self, k, scheduler='cosine', stage='pretrain', visualize=False): #Inference
+    def evaluate(self, k, scheduler='icos', stage='pretrain', visualize=False): #Inference
         '''
         Recover a fully masked sequence using a specified scheduler, with decreasing t
         '''
@@ -291,7 +301,149 @@ class SequentialEBMsTrainer:
             self.iteration(1, self.test_data, stage=stage, train=False, \
                 schedule=t_list, parallel=self.parallel, visualize=visualize)
       
-    def add_schedule_new(self, data, schedule):
+    def smooth_positive(self, step_quota: torch.LongTensor) -> torch.LongTensor:
+        """
+        Helper function to smooth a integer quota scheme so that each step are positive and are +-1 deviated from its original value. 
+        step_quota : int64 tensor of shape (k,) - may contain zeros
+        returns    : int64 tensor of the same shape - all ≥1, same total
+        """
+        k = step_quota.numel()
+        total = step_quota.sum().item()
+        device = step_quota.device
+        # 1. ideal fractional shares
+        ideal = step_quota.float()                       # (k,)
+        floor = ideal.floor().long()                     # (k,)
+        deficit = total - floor.sum().item()             # how many +1 we still need
+        # 2. distribute the +1's to the largest fractions
+        _, idx = torch.topk(ideal - floor, k, largest=True)
+        floor[idx[:deficit]] += 1
+        # 3. ensure every slot is ≥1
+        zeros = (floor == 0).nonzero(as_tuple=True)[0]
+        while zeros.numel():                    # very rarely >1 iteration
+            # steal 1 from the largest element
+            big = floor.argmax()
+            floor[big] -= 1
+            floor[zeros[0]] += 1
+            zeros = (floor == 0).nonzero(as_tuple=True)[0]
+        return floor
+    
+    def add_schedule_batch(self, data_dict, k=10, scheduler='icos'):
+        '''
+        Add the unmasking schedule labels to the data label in a batch style, so that
+        at each step, a same and positive number of token positions are unmasked for each sample 
+        within the batch. 
+        '''
+        label = data_dict['label']
+        schedule_label = torch.zeros_like(label)
+        B, full_len = label.shape
+        device = self.device
+        
+        pad_mask = (label == self.sebm.tokenizer.pad_token_id) 
+        mask_mask = (label == self.sebm.tokenizer.mask_token_id)
+        ignore_mask = (label == IGNORE_INDEX)
+        n_valid = (~(pad_mask | mask_mask | ignore_mask)).sum(dim=1)                # (B,)
+        min_valid, max_valid = n_valid.min().item(), n_valid.max().item() 
+        n_pad = (ignore_mask).sum(dim=1)
+        # print(f'n_vaild: {n_valid}')
+        if scheduler == 'icos':
+            cum_ratio = 0.5 * (1 - np.cos(np.linspace(0, np.pi, k)))
+        elif scheduler == 'linear':
+            cum_ratio = np.linspace(0, 1, k)
+        elif scheduler == 'cos':
+            cum_ratio = 0.5 * (1 + np.cos(np.linspace(0, np.pi, k)))[::-1]  # 1→0 翻转
+        else:
+            raise ValueError(f'Unknown scheduler: {scheduler}')
+        diff_ratio =  torch.tensor(np.diff(cum_ratio, prepend=0.0), device=device) #(k,)
+        ref = torch.round(diff_ratio * min_valid).long()
+        residual = int(min_valid) - int(ref.sum())
+        if residual != 0:                       # fix the sum
+            _, idx = torch.topk((diff_ratio * min_valid - ref).abs(),
+                                k=abs(residual), largest=True)
+            ref[idx] += 1 if residual > 0 else -1
+        # print(f'ref (sum: {int(ref.sum())}): {ref}')         
+        smoothed_ref = self.smooth_positive(ref) #make each pos positive while maintain the sum
+        # overwrite the last step quota to make sure the last step unmasks all the remained valid positions
+        smoothed_ref[-1] += (max_valid - min_valid)
+        # print(f'\nsmooth_ref (sum: {int(smoothed_ref.sum())}): \n{smoothed_ref}')
+        pools = [torch.where(~(pad_mask | mask_mask | ignore_mask)[i])[0][torch.randperm(n_valid[i])] for i in range(B)] #valid pool
+        pad_pools = [torch.where((ignore_mask)[i])[0][torch.randperm(n_pad[i])] for i in range(B)] #paddings pool
+        for b in range(B):
+            for t in range(k):
+                valid_cnt = int(smoothed_ref[t])
+                valid_pos = pools[b][:valid_cnt]
+                schedule_label[b, valid_pos] = t+1
+                pools[b] = pools[b][valid_cnt:]
+                if t == k-1 and valid_cnt > valid_pos.numel():
+                    pad_cnt = valid_cnt - valid_pos.numel()
+                    pad_pos = pad_pools[b][:pad_cnt]
+                    schedule_label[b, pad_pos] = t+1
+                    pad_pools[b] = pad_pools[b][pad_cnt:]
+                    # print(f'k={t+1}, b={b}, valid_cnt:{valid_cnt}, pad_cnt: {pad_cnt}, valid_pos: {valid_pos}, pad_pos: {pad_pos}')
+                # else:
+                #     print(f'k={t+1}, b={b}, valid_cnt:{valid_cnt}, valid_pos: {valid_pos}')
+
+        data_dict['schedule_label'] = schedule_label
+        # print(f'\n\nAfter added schedule, data_dict: \nlabel:\n{data_dict["label"]}\nschedule_label:\n{data_dict["schedule_label"]}')
+        # raise
+        return data_dict
+        
+    
+    # def add_schedule_batch_(self, data_dict, k=10, scheduler='icos'):  #暂时废了    可行，但是最后一个step总是全都变成paddings
+    #     '''
+    #     Add a schedule label to the batchalized data dict. All the token positions will be unmasked in exact k steps.
+    #     '''
+    #     label = data_dict['label']                      # (B, full_len)
+    #     B, full_len = label.shape
+    #     device = label.device
+
+    #     pad_mask = (label == self.sebm.tokenizer.pad_token_id) 
+    #     mask_mask = (label == self.sebm.tokenizer.mask_token_id)
+    #     ignore_mask = (label == IGNORE_INDEX)
+    #     n_valid = (~(pad_mask | mask_mask | ignore_mask)).sum(dim=1)                # (B,)
+    #     n_pad = (ignore_mask).sum(dim=1)
+    #     # print(f'\nn_valid: \n{n_valid}') #(46, 48)
+
+    #     if scheduler == 'icos':
+    #         cum_ratio = 0.5 * (1 - np.cos(np.linspace(0, np.pi, k)))
+    #     elif scheduler == 'linear':
+    #         cum_ratio = np.linspace(0, 1, k)
+    #     elif scheduler == 'cos':
+    #         cum_ratio = 0.5 * (1 + np.cos(np.linspace(0, np.pi, k)))[::-1]  # 1→0 翻转
+    #     else:
+    #         raise ValueError(f'Unknown scheduler: {scheduler}')
+
+    #     cum_cnt = torch.round(torch.as_tensor(cum_ratio, device=device) * n_valid.unsqueeze(1)).long()  # (B, k)
+    #     cum_cnt = cum_cnt.clamp(min=1)
+    #     step_quota = torch.diff(torch.cat([torch.zeros(B, 1, dtype=torch.long, device=device), cum_cnt], dim=1), dim=1)  # (B, k)
+    #     step_quota = step_quota.clamp(min=1)
+    #     print(f'\nstep_quota({step_quota.shape}): \n{step_quota}') #(B,K)
+    #     # 2. We modify the raw step quota to have each sample having same number of tokens to be unmasked
+    #     col_max = step_quota.amax(dim=0)
+    #     print(f'col_max: {col_max}') #[1, 1, 5, 7, 8, 9, 8, 7, 5, 1]
+    #     pools = [torch.where(~(pad_mask | mask_mask | ignore_mask)[i])[0][torch.randperm(n_valid[i])] for i in range(B)] #valid pool
+    #     pad_pools = [torch.where((ignore_mask)[i])[0][torch.randperm(n_pad[i])] for i in range(B)] #paddings pool
+    #     schedule_label = torch.zeros_like(label)
+    #     for b in range(B):
+    #         for t in range(k):
+    #             valid_cnt = int(step_quota[b, t]) #raw quota
+    #             valid_pos = pools[b][:valid_cnt]
+    #             schedule_label[b, valid_pos] = t+1
+    #             pad_cnt = int(col_max[t]) - valid_cnt #>=0
+    #             if (valid_cnt > valid_pos.numel()):
+    #                 # print(f'Ahh. valild_cnt({valid_cnt}) > len(valid_pos)({valid_pos.numel()})')
+    #                 pad_cnt += (valid_cnt - valid_pos.numel())
+    #             pad_pos = pad_pools[b][:pad_cnt]
+    #             schedule_label[b, pad_pos] = t+1
+    #             pools[b], pad_pools[b] = pools[b][valid_cnt:], pad_pools[b][pad_cnt:]
+    #             print(f'k={t+1}, b={b}, valid_cnt:{valid_cnt}, pad_cnt: {pad_cnt}, valid_pos: {valid_pos}, pad_pos: {pad_pos}')
+    #             # print(f'schedule_label: \n{schedule_label}')
+    #             assert int((schedule_label[b] == t+1).sum()) == valid_pos.numel() + pad_pos.numel()
+            
+    #     data_dict['schedule_label'] = schedule_label
+    #     print(f'\n\nAfter added schedule, data_dict: \nlabel:\n{data_dict["label"]}\nschedule_label:\n{data_dict["schedule_label"]}')
+    #     return data_dict
+    
+    def add_schedule_new(self, data, schedule): #works for CD tasks
         '''
         For batchalized scheduling. PAD and EOS can be subject to unmask.
         Each sample within a batch has the same number of tokens to be unmasked.
@@ -309,9 +461,12 @@ class SequentialEBMsTrainer:
         unmask_num = max_out_len
         # determine the number of tokens to be unmasked for each time stamp (k)
         K = 0
-        for mask_rate in schedule:
+        for rate in schedule: #t_list: [0.02025351 0.07937323 0.17256963 0.29229249 0.42884258 0.57115742, 0.70770751 0.82743037 0.92062677 0.97974649]
             K += 1
-            u_num = max(1, int((1-mask_rate)*unmask_num))
+            if self.scheduler == 'cosine':
+                u_num = max(1, int((1-rate)*unmask_num))
+            elif self.scheduler == 'icos':
+                u_num = max(1, int(rate*unmask_num))
             labeled_num = torch.count_nonzero(schedule_label[0]).item()
             sample_num = u_num - labeled_num
             # print(f'unmask_num: {unmask_num}')
@@ -331,7 +486,7 @@ class SequentialEBMsTrainer:
                     try:
                         unmask_pad = rand.sample(padding_pos, sample_num-len(unlabeled_pos))
                     except:
-                        print(f'unlabeled_pos < sample_num: {unlabeled_pos} < {sample_num}, \npadding_pos: {padding_pos}')
+                        print(f'\n\nunlabeled_pos < sample_num: {unlabeled_pos} < {sample_num}, \npadding_pos: {padding_pos}')
                         raise
                     unmask_pos.extend(unmask_pad)
                     scheduled_data['label'][b][unmask_pad] = self.sebm.tokenizer.unk_token_id #replace the PADs to be unmasked temperorily with UNK
@@ -349,29 +504,18 @@ class SequentialEBMsTrainer:
             matching_rows = (pred == label).all(dim=1)  # Check for equality along the rows
             return matching_rows.sum().item()  # Sum up the True values
         
-    def prepare_partial_data(self, scheduled_data, order_label): #TODO: 当前只有bert版本;当前只有train版本（history tgt tokens来自sample label)
+    def prepare_partial_data(self, scheduled_data, order_label):
+        '''return dict:
+        - input: original input y and previously unmasked output x
+        - label: the currently unmasking output at step k, zero-padded
         '''
-        for the diffusion-style masking process, prepare the partially masked data according to k
-        return dict:
-            - input: original bert_input with history tgt tokens replacing the masks
-            - output: only the current tgt tokens, rest are zeros
-        '''
-        partial_data = {
+        # print(f'\nInside prepare_partial_data, k={order_label}, schedule_label: \n{scheduled_data["schedule_label"]}')
+        curr_data = {
             'input': scheduled_data['input'].clone(),
-            'label': torch.zeros(scheduled_data['label'].size(), dtype=scheduled_data['label'].dtype),
-            # 'segment_label': scheduled_data['segment_label'].clone().to(scheduled_data['segment_label'].dtype),
+            'label': torch.where(scheduled_data['schedule_label']==order_label,scheduled_data['label'],0).to(self.device)
         }
-        for b in range(scheduled_data['schedule_label'].size(0)):
-            history_idx = ((scheduled_data['schedule_label'][b] > 0) & \
-                (scheduled_data['schedule_label'][b] < order_label)).nonzero(as_tuple=True)[0]
-            current_idx = ((scheduled_data['schedule_label'][b] > 0) & \
-                (scheduled_data['schedule_label'][b] == order_label)).nonzero(as_tuple=True)[0] #<= is also workable(also fits infernce better), but results in OOM
-            partial_data['input'][b][history_idx] = scheduled_data['label'][b][history_idx]
-            partial_data['label'][b][current_idx] = scheduled_data['label'][b][current_idx] 
-            
-            
-        # print(f'\nk={order_label}, xo: \n{partial_data["bert_input"][0]}, xu: \n{partial_data["bert_label"][0]}')
-        return partial_data        
+        
+        return curr_data        
         
     def to_device(self, data_dict): #暂时废了
         for k,v in data_dict.items():
@@ -420,9 +564,12 @@ class SequentialEBMsTrainer:
         #     print(f'before iter on batches, {torch.cuda.memory_summary()}')
         for i, data in data_iter:
             # prepare unmasking schedule
-            max_K = 10
-            t_list = unmasking_schedule(max_K+2, 'cosine')[1:-1]
-            scheduled_data, K = self.add_schedule_new(data, t_list)
+            K = self.K
+            # t_list = unmasking_schedule(K+2, 'icos')[1:-1] #use inverse cosine schedule for a smoother unmasking procedure
+            # if i == 0:
+            #     print(f'\nt_list: {t_list}\n')
+            # scheduled_data, K = self.add_schedule_new(data, t_list)
+            scheduled_data = self.add_schedule_batch(data, k=K, scheduler='icos')
             # print(f"scheduled_data: \ninput: {scheduled_data['input'][0]}\nlabel: {scheduled_data['label'][0]}\nschedule_label: {scheduled_data['schedule_label'][0]}")
             if (not train) and stage == 'inference':
                 partial_pred = scheduled_data['input'].clone()
@@ -432,7 +579,7 @@ class SequentialEBMsTrainer:
             ce_losses, contrast_losses, total_losses = {}, {}, {}
             for k in range(K):
                 # if i < 10:
-                #     print(f'___________i={i}, k={k}___________')
+                #     print(f'___________i={i}, k={k+1}___________')
                 data = self.prepare_partial_data(scheduled_data, k+1) #AR-like, the previously unmasked tokens won't be predicted again
                 data = {k:v.to(self.device) for k,v in data.items()}
                 try:
@@ -469,6 +616,9 @@ class SequentialEBMsTrainer:
                     cal_t = time()
                     # calculate losses
                     logp_xu, energy_dist = self.sebm.pseudolikelihood_revised(xo, xu) #both of (B,V,U), paddings are manually assigned high energy
+                    # if logp_xu == None: #all unmasking tokens are paddings for the last step
+                    #     self.K -= 1
+                    #     break
                     ce_loss = self.criterion(logp_xu, xu.gather(dim=1, index=u))
                     # if i < 10:
                     #     print(f'ce_loss({ce_loss.shape}): {ce_loss}')
@@ -676,6 +826,7 @@ def main(config):
         sampler=config.sampling.sampler,
         is_ebm=config.is_ebm,
         contrast=config.train.contrast,
+        steps=config.max_k,
         sampling_times=config.sampling.times,
         device=config.device, #可能是这里导致报错
         parallel=config.parallel,
@@ -704,7 +855,15 @@ def main(config):
             '''3.2 validate converge or not'''
             if sebm_trainer.device == 0:
                 print(f'\n\nEpoch{epoch} finished, start validate!\n\n')
-            converge, val_acc, val_ce = sebm_trainer.validate(epoch, early_stopper)
+            converge, val_acc, val_ce = sebm_trainer.validate(epoch, early_stopper) ######################################
+            # converge, val_acc, val_ce = False, -1, -1######################################
+            
+            if config.train.local_log:
+                # print(f'epoch{epoch}: val_ce: {val_ce}, val_acc: {val_acc}')
+                val_log = {'epoch': epoch, 'val_ce': val_ce, 'val_acc': val_acc}
+                with open(f'{sebm_trainer.local_log_prefix}_val.jsonl', 'a', encoding='utf-8') as logfile:
+                    logfile.write(json.dumps(val_log) + '\n')
+                
             if converge or (epoch == sebm_trainer.epochs-1):
                 if sebm_trainer.device == 0:
                     print(f'\n\n你converged!!\nepoch: {epoch}\nval_acc: {val_acc}\nval_ce: {val_ce}\n\n')
